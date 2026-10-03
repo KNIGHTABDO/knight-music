@@ -118,7 +118,7 @@ actor SyncEngine {
             let progress = expectedAlbums > 0 ? Double(albumIds.count) / Double(max(expectedAlbums, albumIds.count)) : 0.5
             await self.status.update(phase: "Syncing albums… \(albumIds.count)", fraction: 0.06 + 0.24 * progress)
         })
-        if guardSweep(seen: albumIds.count, expected: expectedAlbums, what: "albums") {
+        if guardSweep(seen: albumIds.count, expected: expectedAlbums, ratio: 0.9, what: "albums") {
             let removed = try await sweep("album", keeping: albumIds)
             Log.sync.info("albums: \(albumIds.count) (removed \(removed))")
         }
@@ -142,9 +142,9 @@ actor SyncEngine {
     }
 
     /// Only delete rows when the pass clearly saw (almost) everything the server advertised.
-    private func guardSweep(seen: Int, expected: Int, what: String) -> Bool {
+    private func guardSweep(seen: Int, expected: Int, ratio: Double = 0.98, what: String) -> Bool {
         if expected == 0 { return seen > 0 }
-        if Double(seen) >= Double(expected) * 0.98 { return true }
+        if Double(seen) >= Double(expected) * ratio { return true }
         Log.sync.warning("skipping sweep of \(what): saw \(seen) of ~\(expected)")
         return false
     }

@@ -38,7 +38,7 @@ enum Log {
         if let logger = loggers[category] {
             switch level {
             case .debug: logger.debug("\(message, privacy: .public)")
-            case .info: logger.info("\(message, privacy: .public)")
+            case .info: logger.notice("\(message, privacy: .public)")
             case .warning: logger.warning("\(message, privacy: .public)")
             case .error: logger.error("\(message, privacy: .public)")
             }
