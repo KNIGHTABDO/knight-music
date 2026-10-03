@@ -9,158 +9,85 @@ struct MainTabsView: View {
 
     @Namespace private var playerZoomNamespace
 
+    private struct LibraryTabItem: Identifiable {
+        let id: Route
+        let title: String
+        let systemImage: String
+        let route: Route
+    }
+
+    private static let libraryItems: [LibraryTabItem] = [
+        LibraryTabItem(id: .artists, title: "Artists", systemImage: "music.mic", route: .artists),
+        LibraryTabItem(id: .albums, title: "Albums", systemImage: "square.stack", route: .albums),
+        LibraryTabItem(id: .songs, title: "Songs", systemImage: "music.note", route: .songs),
+        LibraryTabItem(id: .favoriteArtists, title: "Favorite Artists", systemImage: "heart.fill", route: .favoriteArtists),
+        LibraryTabItem(id: .albumList(.favorites), title: "Favorite Albums", systemImage: "heart.fill", route: .albumList(.favorites)),
+        LibraryTabItem(id: .songList(.favorites), title: "Favorite Songs", systemImage: "heart.fill", route: .songList(.favorites)),
+        LibraryTabItem(id: .songList(.downloaded), title: "Downloaded Songs", systemImage: "arrow.down.circle", route: .songList(.downloaded)),
+        LibraryTabItem(id: .radioStations, title: "Radio Stations", systemImage: "dot.radiowaves.left.and.right", route: .radioStations),
+        LibraryTabItem(id: .genres, title: "Genres", systemImage: "guitars", route: .genres),
+        LibraryTabItem(id: .playlists, title: "Playlists", systemImage: "music.note.list", route: .playlists),
+        LibraryTabItem(id: .albumList(.recentlyPlayed), title: "Recently Played", systemImage: "clock", route: .albumList(.recentlyPlayed)),
+        LibraryTabItem(id: .albumList(.recentlyAdded), title: "Recently Added", systemImage: "plus.square.on.square", route: .albumList(.recentlyAdded)),
+        LibraryTabItem(id: .albumList(.frequentlyPlayed), title: "Frequently Played", systemImage: "flame", route: .albumList(.frequentlyPlayed)),
+        LibraryTabItem(id: .albumList(.random), title: "Random", systemImage: "shuffle", route: .albumList(.random))
+    ]
+
     var body: some View {
+        @Bindable var ui = ui
+
+        Group {
+            if horizontalSizeClass == .regular {
+                regularTabs
+            } else {
+                compactTabs
+            }
+        }
+        .fullScreenCover(isPresented: $ui.isPlayerPresented) {
+            FullPlayerView()
+                .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
+        }
+        .onChange(of: horizontalSizeClass) { _, newSizeClass in
+            keepSelectedTabValid(for: newSizeClass)
+        }
+        .onAppear {
+            keepSelectedTabValid(for: horizontalSizeClass)
+        }
+    }
+
+    private var regularTabs: some View {
         @Bindable var ui = ui
         @Bindable var nav = nav
 
-        TabView(selection: $ui.selectedTab) {
-            if horizontalSizeClass == .regular {
-                Tab("Home", systemImage: "house", value: UIState.Tab.home) {
-                    NavigationStack(path: $nav.home) {
-                        HomeView()
-                            .withAppRoutes()
-                    }
+        return TabView(selection: $ui.selectedTab) {
+            Tab("Home", systemImage: "house", value: UIState.Tab.home) {
+                NavigationStack(path: $nav.home) {
+                    HomeView()
+                        .withAppRoutes()
                 }
+            }
 
-                Tab(value: UIState.Tab.search, role: .search) {
-                    NavigationStack(path: $nav.search) {
-                        SearchView()
-                            .withAppRoutes()
-                    }
+            Tab(value: UIState.Tab.search, role: .search) {
+                NavigationStack(path: $nav.search) {
+                    SearchView()
+                        .withAppRoutes()
                 }
+            }
 
-                Tab("Settings", systemImage: "gearshape", value: UIState.Tab.settings) {
-                    NavigationStack(path: $nav.settings) {
-                        SettingsView()
-                            .withAppRoutes()
-                    }
+            Tab("Settings", systemImage: "gearshape", value: UIState.Tab.settings) {
+                NavigationStack(path: $nav.settings) {
+                    SettingsView()
+                        .withAppRoutes()
                 }
+            }
 
-                TabSection("Library") {
-                    Tab("Artists", systemImage: "music.mic", value: UIState.Tab.section(.artists)) {
-                        NavigationStack(path: $nav.artists) {
-                            RouteRootView(route: .artists)
+            TabSection("Library") {
+                ForEach(Self.libraryItems) { item in
+                    Tab(item.title, systemImage: item.systemImage, value: UIState.Tab.section(item.route)) {
+                        NavigationStack(path: nav.binding(for: item.route)) {
+                            RouteRootView(route: item.route)
                                 .withAppRoutes()
                         }
-                    }
-
-                    Tab("Albums", systemImage: "square.stack", value: UIState.Tab.section(.albums)) {
-                        NavigationStack(path: $nav.albums) {
-                            RouteRootView(route: .albums)
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Songs", systemImage: "music.note", value: UIState.Tab.section(.songs)) {
-                        NavigationStack(path: $nav.songs) {
-                            RouteRootView(route: .songs)
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Favorite Artists", systemImage: "heart.fill", value: UIState.Tab.section(.favoriteArtists)) {
-                        NavigationStack(path: $nav.favoriteArtists) {
-                            RouteRootView(route: .favoriteArtists)
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Favorite Albums", systemImage: "heart.fill", value: UIState.Tab.section(.albumList(.favorites))) {
-                        NavigationStack(path: $nav.favoriteAlbums) {
-                            RouteRootView(route: .albumList(.favorites))
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Favorite Songs", systemImage: "heart.fill", value: UIState.Tab.section(.songList(.favorites))) {
-                        NavigationStack(path: $nav.favoriteSongs) {
-                            RouteRootView(route: .songList(.favorites))
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Downloaded Songs", systemImage: "arrow.down.circle", value: UIState.Tab.section(.songList(.downloaded))) {
-                        NavigationStack(path: $nav.downloaded) {
-                            RouteRootView(route: .songList(.downloaded))
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Radio Stations", systemImage: "dot.radiowaves.left.and.right", value: UIState.Tab.section(.radioStations)) {
-                        NavigationStack(path: $nav.radioStations) {
-                            RouteRootView(route: .radioStations)
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Genres", systemImage: "guitars", value: UIState.Tab.section(.genres)) {
-                        NavigationStack(path: $nav.genres) {
-                            RouteRootView(route: .genres)
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Playlists", systemImage: "music.note.list", value: UIState.Tab.section(.playlists)) {
-                        NavigationStack(path: $nav.playlists) {
-                            RouteRootView(route: .playlists)
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Recently Played", systemImage: "clock", value: UIState.Tab.section(.albumList(.recentlyPlayed))) {
-                        NavigationStack(path: $nav.recentlyPlayed) {
-                            RouteRootView(route: .albumList(.recentlyPlayed))
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Recently Added", systemImage: "plus.square.on.square", value: UIState.Tab.section(.albumList(.recentlyAdded))) {
-                        NavigationStack(path: $nav.recentlyAdded) {
-                            RouteRootView(route: .albumList(.recentlyAdded))
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Frequently Played", systemImage: "flame", value: UIState.Tab.section(.albumList(.frequentlyPlayed))) {
-                        NavigationStack(path: $nav.frequentlyPlayed) {
-                            RouteRootView(route: .albumList(.frequentlyPlayed))
-                                .withAppRoutes()
-                        }
-                    }
-
-                    Tab("Random", systemImage: "shuffle", value: UIState.Tab.section(.albumList(.random))) {
-                        NavigationStack(path: $nav.random) {
-                            RouteRootView(route: .albumList(.random))
-                                .withAppRoutes()
-                        }
-                    }
-                }
-            } else {
-                Tab("Home", systemImage: "house", value: UIState.Tab.home) {
-                    NavigationStack(path: $nav.home) {
-                        HomeView()
-                            .withAppRoutes()
-                    }
-                }
-
-                Tab("Library", systemImage: "square.stack.fill", value: UIState.Tab.library) {
-                    NavigationStack(path: $nav.library) {
-                        LibraryHubView()
-                            .withAppRoutes()
-                    }
-                }
-
-                Tab("Settings", systemImage: "gearshape", value: UIState.Tab.settings) {
-                    NavigationStack(path: $nav.settings) {
-                        SettingsView()
-                            .withAppRoutes()
-                    }
-                }
-
-                Tab(value: UIState.Tab.search, role: .search) {
-                    NavigationStack(path: $nav.search) {
-                        SearchView()
-                            .withAppRoutes()
                     }
                 }
             }
@@ -180,15 +107,45 @@ struct MainTabsView: View {
         .tabViewBottomAccessory(isEnabled: player.currentSong != nil) {
             MiniPlayerView(namespace: playerZoomNamespace)
         }
-        .fullScreenCover(isPresented: $ui.isPlayerPresented) {
-            FullPlayerView()
-                .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
+    }
+
+    private var compactTabs: some View {
+        @Bindable var ui = ui
+        @Bindable var nav = nav
+
+        return TabView(selection: $ui.selectedTab) {
+            Tab("Home", systemImage: "house", value: UIState.Tab.home) {
+                NavigationStack(path: $nav.home) {
+                    HomeView()
+                        .withAppRoutes()
+                }
+            }
+
+            Tab("Library", systemImage: "square.stack.fill", value: UIState.Tab.library) {
+                NavigationStack(path: $nav.library) {
+                    LibraryHubView()
+                        .withAppRoutes()
+                }
+            }
+
+            Tab("Settings", systemImage: "gearshape", value: UIState.Tab.settings) {
+                NavigationStack(path: $nav.settings) {
+                    SettingsView()
+                        .withAppRoutes()
+                }
+            }
+
+            Tab(value: UIState.Tab.search, role: .search) {
+                NavigationStack(path: $nav.search) {
+                    SearchView()
+                        .withAppRoutes()
+                }
+            }
         }
-        .onChange(of: horizontalSizeClass) { _, newSizeClass in
-            keepSelectedTabValid(for: newSizeClass)
-        }
-        .onAppear {
-            keepSelectedTabValid(for: horizontalSizeClass)
+        .tabViewStyle(.sidebarAdaptable)
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabViewBottomAccessory(isEnabled: player.currentSong != nil) {
+            MiniPlayerView(namespace: playerZoomNamespace)
         }
     }
 
