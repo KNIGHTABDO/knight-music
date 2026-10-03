@@ -71,7 +71,7 @@ struct RadioStationsView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle("Radio Stations")
         .refreshable { await app.pullToRefresh() }
         .observing(query)

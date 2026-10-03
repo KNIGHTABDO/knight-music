@@ -52,7 +52,7 @@ struct FavoriteArtistsView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(Color.black)
+            .background(Color.black.ignoresSafeArea())
             .overlay(alignment: .trailing) {
                 if sortOrder == .name && sections.count > 1 && query.isLoaded {
                     AlphabetIndexScrubber(

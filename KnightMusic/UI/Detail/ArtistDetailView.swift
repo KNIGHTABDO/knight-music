@@ -41,7 +41,7 @@ struct ArtistDetailView: View {
                 )
             }
         }
-        .background(Theme.background)
+        .background(Color.black.ignoresSafeArea())
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -87,6 +87,7 @@ struct ArtistDetailView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    .scrollClipDisabled()
                 }
 
                 // About section (biography from artistInfo, HTML stripped, 4 lines + "More")

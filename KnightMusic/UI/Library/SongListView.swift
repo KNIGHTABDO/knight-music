@@ -91,7 +91,7 @@ struct SongListView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle(kind.title)
         .refreshable { await app.pullToRefresh() }
         .toolbar {

@@ -85,7 +85,7 @@ struct PlaybackSettingsView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle("Playback")
         .onChange(of: settings.replayGainMode) {
             player.settingsDidChange()

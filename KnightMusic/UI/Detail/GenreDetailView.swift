@@ -44,7 +44,7 @@ struct GenreDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Theme.background)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle(genre)
         .navigationBarTitleDisplayMode(.large)
         .scrollEdgeEffectStyle(.soft, for: .top)

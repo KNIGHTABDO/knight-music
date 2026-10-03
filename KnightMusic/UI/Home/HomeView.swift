@@ -58,7 +58,7 @@ struct HomeView: View {
             .padding(.vertical, 16)
         }
         .scrollContentBackground(.hidden)
-        .background(Theme.background)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle(app.activeAccount?.name ?? "Home")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -145,6 +145,7 @@ struct HomeView: View {
                     SongActionsMenu(song: entry.song)
                 }
             }
+            .scrollClipDisabled()
         }
     }
 
@@ -160,6 +161,7 @@ struct HomeView: View {
                 AlbumContextMenu(album: album)
             }
         }
+        .scrollClipDisabled()
         .overlay(alignment: .top) {
             NavigationLink(value: route) {
                 Color.clear
@@ -181,6 +183,7 @@ struct HomeView: View {
             }
             .buttonStyle(.plain)
         }
+        .scrollClipDisabled()
         .overlay(alignment: .top) {
             NavigationLink(value: Route.playlists) {
                 Color.clear

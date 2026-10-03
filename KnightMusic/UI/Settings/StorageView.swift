@@ -128,7 +128,7 @@ struct StorageView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle("Storage")
         .task {
             initStorageManager()

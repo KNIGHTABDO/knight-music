@@ -66,7 +66,7 @@ struct AddressesView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle("Manage Addresses")
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

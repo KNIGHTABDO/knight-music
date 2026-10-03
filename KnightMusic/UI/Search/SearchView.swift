@@ -37,7 +37,7 @@ struct SearchView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
-        .background(Theme.background)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, prompt: "Search library...")
@@ -330,6 +330,7 @@ struct SearchView: View {
                 addRecentSearch(debouncedQuery)
             })
         }
+        .scrollClipDisabled()
     }
 
     // MARK: - Albums Section
@@ -348,6 +349,7 @@ struct SearchView: View {
                 addRecentSearch(debouncedQuery)
             })
         }
+        .scrollClipDisabled()
     }
 
     // MARK: - Songs Section

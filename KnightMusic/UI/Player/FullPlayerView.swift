@@ -292,47 +292,61 @@ struct FullPlayerView: View {
 
     @ViewBuilder
     private func twoColumnLayout(song: Song, geo: GeometryProxy) -> some View {
-        HStack(spacing: 36) {
-            // Left Column: Artwork (or animated artwork in rounded card)
-            GeometryReader { leftGeo in
-                let leftColumnWidth = leftGeo.size.width
-                let availableHeight = leftGeo.size.height
-                let side = max(0, min(leftColumnWidth - 64, availableHeight * 0.62))
+        let side = min(geo.size.width * 0.42, geo.size.height * 0.72)
 
-                VStack {
-                    Spacer()
+        HStack(spacing: 48) {
+            // Left Column: Artwork (or Lyrics/Queue panel when active)
+            Group {
+                switch ui.playerPanel {
+                case .artwork:
+                    VStack {
+                        Spacer()
 
-                    if let animated = animatedArtwork {
-                        AnimatedArtworkView(url: animated.squareVideoURL)
-                            .frame(width: side, height: side)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
-                    } else {
-                        ArtworkView(coverArt: song.coverArt, pointSize: side, cornerRadius: 12)
-                            .frame(width: side, height: side)
-                            .scaleEffect(player.isPlaying ? 1.0 : 0.85)
-                            .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
-                            .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
+                        if let animated = animatedArtwork {
+                            AnimatedArtworkView(url: animated.squareVideoURL)
+                                .frame(width: side, height: side)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
+                        } else {
+                            ArtworkView(coverArt: song.coverArt, pointSize: side, cornerRadius: 12)
+                                .frame(width: side, height: side)
+                                .scaleEffect(player.isPlaying ? 1.0 : 0.85)
+                                .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
+                                .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
+                        }
+
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+
+                case .lyrics:
+                    LyricsView(song: song)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                case .queue:
+                    QueueView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+
+            // Right Column: Controls Column (Vertically centered, max width 480)
+            VStack(spacing: 28) {
+                // Header row: title/artist + heart/stars/••• (plus shrunk artwork thumbnail if panel is open)
+                HStack(alignment: .center, spacing: 14) {
+                    if ui.playerPanel != .artwork {
+                        ArtworkView(coverArt: song.coverArt, pointSize: 56, cornerRadius: 8)
+                            .frame(width: 56, height: 56)
+                            .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
                     }
 
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(width: geo.size.width * 0.45)
-
-            // Right Column: Info, Panels, Scrubber, Transport, Bottom Bar
-            VStack(spacing: 14) {
-                // Header: Title + Artist + Heart + Stars + Menu
-                HStack(alignment: .center, spacing: 14) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(song.title)
-                            .font(.system(size: 24, weight: .bold))
+                            .font(.system(size: ui.playerPanel == .artwork ? 24 : 20, weight: .bold))
                             .foregroundStyle(Color.white)
                             .lineLimit(1)
 
                         Text(song.artist ?? "")
-                            .font(.system(size: 18))
+                            .font(.system(size: ui.playerPanel == .artwork ? 18 : 15))
                             .foregroundStyle(Theme.secondaryLabel)
                             .lineLimit(1)
                     }
@@ -347,6 +361,8 @@ struct FullPlayerView: View {
                             .font(.system(size: 20))
                             .foregroundStyle(song.starred != nil ? Theme.accent : Theme.secondaryLabel)
                             .contentTransition(.symbolEffect(.replace))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
 
@@ -359,41 +375,22 @@ struct FullPlayerView: View {
                             .font(.system(size: 20))
                             .foregroundStyle(Theme.secondaryLabel)
                             .frame(width: 32, height: 32)
-                    }
-                }
-                .padding(.horizontal, Theme.margin)
-                .padding(.top, 8)
-
-                // Inline middle panel: Lyrics or Queue or ambient space
-                Group {
-                    switch ui.playerPanel {
-                    case .artwork:
-                        Spacer()
-
-                    case .lyrics:
-                        LyricsView(song: song)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    case .queue:
-                        QueueView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
                     }
                 }
 
-                // Controls at bottom of right column
-                VStack(spacing: 16) {
-                    PlayerScrubberView()
-                        .padding(.horizontal, Theme.margin)
+                PlayerScrubberView()
 
-                    PlayerTransportBar()
+                PlayerTransportBar()
 
-                    PlayerBottomBar(isShowingSettings: $isShowingSettings)
-                        .padding(.bottom, 8)
-                }
+                PlayerVolumeRow()
+
+                PlayerBottomBar(isShowingSettings: $isShowingSettings)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: 480)
+            .frame(maxHeight: .infinity, alignment: .center)
         }
-        .padding(.horizontal, Theme.margin)
+        .padding(.horizontal, 56)
     }
 
     // MARK: - Empty State View

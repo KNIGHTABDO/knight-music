@@ -30,13 +30,14 @@ struct RootView: View {
     var body: some View {
         @Bindable var ui = ui
 
-        ZStack(alignment: .top) {
+        Group {
             if shouldShowLogin {
                 LoginView()
             } else {
                 MainTabsView(playerZoomNamespace: playerZoomNamespace)
             }
-
+        }
+        .overlay(alignment: .top) {
             if let toast = ui.toast {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle.fill")

@@ -31,7 +31,7 @@ struct AlbumDetailView: View {
                 )
             }
         }
-        .background(Theme.background)
+        .background(Color.black.ignoresSafeArea())
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -67,6 +67,7 @@ struct AlbumDetailView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    .scrollClipDisabled()
                     .padding(.top, 24)
                     .padding(.bottom, 32)
                 } else {

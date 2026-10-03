@@ -136,7 +136,7 @@ struct DiagnosticsView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle("Diagnostics")
         .task {
             logLines = Log.recentLines

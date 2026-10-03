@@ -54,7 +54,7 @@ struct AlbumsView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.black)
+            .background(Color.black.ignoresSafeArea())
             .overlay(alignment: .trailing) {
                 if isScrubberVisible {
                     AlphabetIndexScrubber(

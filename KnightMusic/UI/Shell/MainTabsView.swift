@@ -3,6 +3,8 @@ import SwiftUI
 struct MainTabsView: View {
     var playerZoomNamespace: Namespace.ID
 
+    @AppStorage("sidebarCustomization") private var customization: TabViewCustomization = .init()
+
     @Environment(UIState.self) private var ui
     @Environment(AppModel.self) private var app
     @Environment(PlayerEngine.self) private var player
@@ -14,23 +16,24 @@ struct MainTabsView: View {
         let title: String
         let systemImage: String
         let route: Route
+        let customizationId: String
     }
 
     private static let libraryItems: [LibraryTabItem] = [
-        LibraryTabItem(id: .artists, title: "Artists", systemImage: "music.mic", route: .artists),
-        LibraryTabItem(id: .albums, title: "Albums", systemImage: "square.stack", route: .albums),
-        LibraryTabItem(id: .songs, title: "Songs", systemImage: "music.note", route: .songs),
-        LibraryTabItem(id: .favoriteArtists, title: "Favorite Artists", systemImage: "heart.fill", route: .favoriteArtists),
-        LibraryTabItem(id: .albumList(.favorites), title: "Favorite Albums", systemImage: "heart.fill", route: .albumList(.favorites)),
-        LibraryTabItem(id: .songList(.favorites), title: "Favorite Songs", systemImage: "heart.fill", route: .songList(.favorites)),
-        LibraryTabItem(id: .songList(.downloaded), title: "Downloaded Songs", systemImage: "arrow.down.circle", route: .songList(.downloaded)),
-        LibraryTabItem(id: .radioStations, title: "Radio Stations", systemImage: "dot.radiowaves.left.and.right", route: .radioStations),
-        LibraryTabItem(id: .genres, title: "Genres", systemImage: "guitars", route: .genres),
-        LibraryTabItem(id: .playlists, title: "Playlists", systemImage: "music.note.list", route: .playlists),
-        LibraryTabItem(id: .albumList(.recentlyPlayed), title: "Recently Played", systemImage: "clock", route: .albumList(.recentlyPlayed)),
-        LibraryTabItem(id: .albumList(.recentlyAdded), title: "Recently Added", systemImage: "plus.square.on.square", route: .albumList(.recentlyAdded)),
-        LibraryTabItem(id: .albumList(.frequentlyPlayed), title: "Frequently Played", systemImage: "flame", route: .albumList(.frequentlyPlayed)),
-        LibraryTabItem(id: .albumList(.random), title: "Random", systemImage: "shuffle", route: .albumList(.random))
+        LibraryTabItem(id: .artists, title: "Artists", systemImage: "music.mic", route: .artists, customizationId: "library.artists"),
+        LibraryTabItem(id: .albums, title: "Albums", systemImage: "square.stack", route: .albums, customizationId: "library.albums"),
+        LibraryTabItem(id: .songs, title: "Songs", systemImage: "music.note", route: .songs, customizationId: "library.songs"),
+        LibraryTabItem(id: .favoriteArtists, title: "Favorite Artists", systemImage: "heart.fill", route: .favoriteArtists, customizationId: "library.favoriteArtists"),
+        LibraryTabItem(id: .albumList(.favorites), title: "Favorite Albums", systemImage: "heart.fill", route: .albumList(.favorites), customizationId: "library.favoriteAlbums"),
+        LibraryTabItem(id: .songList(.favorites), title: "Favorite Songs", systemImage: "heart.fill", route: .songList(.favorites), customizationId: "library.favoriteSongs"),
+        LibraryTabItem(id: .songList(.downloaded), title: "Downloaded Songs", systemImage: "arrow.down.circle", route: .songList(.downloaded), customizationId: "library.downloadedSongs"),
+        LibraryTabItem(id: .radioStations, title: "Radio Stations", systemImage: "dot.radiowaves.left.and.right", route: .radioStations, customizationId: "library.radioStations"),
+        LibraryTabItem(id: .genres, title: "Genres", systemImage: "guitars", route: .genres, customizationId: "library.genres"),
+        LibraryTabItem(id: .playlists, title: "Playlists", systemImage: "music.note.list", route: .playlists, customizationId: "library.playlists"),
+        LibraryTabItem(id: .albumList(.recentlyPlayed), title: "Recently Played", systemImage: "clock", route: .albumList(.recentlyPlayed), customizationId: "library.recentlyPlayed"),
+        LibraryTabItem(id: .albumList(.recentlyAdded), title: "Recently Added", systemImage: "plus.square.on.square", route: .albumList(.recentlyAdded), customizationId: "library.recentlyAdded"),
+        LibraryTabItem(id: .albumList(.frequentlyPlayed), title: "Frequently Played", systemImage: "flame", route: .albumList(.frequentlyPlayed), customizationId: "library.frequentlyPlayed"),
+        LibraryTabItem(id: .albumList(.random), title: "Random", systemImage: "shuffle", route: .albumList(.random), customizationId: "library.random")
     ]
 
     var body: some View {
@@ -60,6 +63,8 @@ struct MainTabsView: View {
                         .withAppRoutes()
                 }
             }
+            .customizationID("tab.home")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab(value: UIState.Tab.search, role: .search) {
                 NavigationStack(path: $nav.search) {
@@ -67,6 +72,8 @@ struct MainTabsView: View {
                         .withAppRoutes()
                 }
             }
+            .customizationID("tab.search")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab("Settings", systemImage: "gearshape", value: UIState.Tab.settings) {
                 NavigationStack(path: $nav.settings) {
@@ -74,6 +81,8 @@ struct MainTabsView: View {
                         .withAppRoutes()
                 }
             }
+            .customizationID("tab.settings")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             TabSection("Library") {
                 ForEach(Self.libraryItems) { item in
@@ -83,11 +92,14 @@ struct MainTabsView: View {
                                 .withAppRoutes()
                         }
                     }
+                    .customizationID(item.customizationId)
                 }
             }
+            .customizationID("section.library")
         }
         .tabViewStyle(.sidebarAdaptable)
         .defaultAdaptableTabBarPlacement(.sidebar)
+        .tabViewCustomization($customization)
         .tabBarMinimizeBehavior(.onScrollDown)
         .tabViewSidebarHeader {
             let accountName = (app.activeAccount?.name).flatMap { $0.isEmpty ? nil : $0 } ?? "KNIGHT"
@@ -112,6 +124,8 @@ struct MainTabsView: View {
                         .withAppRoutes()
                 }
             }
+            .customizationID("compact.tab.home")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab("Library", systemImage: "square.stack.fill", value: UIState.Tab.library) {
                 NavigationStack(path: $nav.library) {
@@ -119,6 +133,8 @@ struct MainTabsView: View {
                         .withAppRoutes()
                 }
             }
+            .customizationID("compact.tab.library")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab("Settings", systemImage: "gearshape", value: UIState.Tab.settings) {
                 NavigationStack(path: $nav.settings) {
@@ -126,6 +142,8 @@ struct MainTabsView: View {
                         .withAppRoutes()
                 }
             }
+            .customizationID("compact.tab.settings")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab(value: UIState.Tab.search, role: .search) {
                 NavigationStack(path: $nav.search) {
@@ -133,6 +151,8 @@ struct MainTabsView: View {
                         .withAppRoutes()
                 }
             }
+            .customizationID("compact.tab.search")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
         }
         .tabViewStyle(.sidebarAdaptable)
         .tabBarMinimizeBehavior(.onScrollDown)

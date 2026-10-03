@@ -137,7 +137,7 @@ struct ServerStatusView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(Color.black.ignoresSafeArea())
         .navigationTitle("Server Status")
         .refreshable {
             await reloadAll()
