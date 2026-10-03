@@ -15,6 +15,8 @@ struct AlbumsView: View {
         let albums = query.value
         let sections = letterSections(from: albums)
 
+        let isScrubberVisible = hasLetterSections && sections.count > 1 && query.isLoaded
+
         ScrollViewReader { proxy in
             ScrollView {
                 if !query.isLoaded {
@@ -38,6 +40,7 @@ struct AlbumsView: View {
                                 AdaptiveAlbumGrid(items: section.items) { album in
                                     tile(album)
                                 }
+                                .padding(.trailing, isScrubberVisible ? 22 : 0)
                             }
                         }
                     }
@@ -46,13 +49,14 @@ struct AlbumsView: View {
                     AdaptiveAlbumGrid(items: albums) { album in
                         tile(album)
                     }
+                    .padding(.trailing, isScrubberVisible ? 22 : 0)
                     .padding(.vertical, Theme.margin)
                 }
             }
             .scrollContentBackground(.hidden)
             .background(Color.black)
             .overlay(alignment: .trailing) {
-                if hasLetterSections && sections.count > 1 && query.isLoaded {
+                if isScrubberVisible {
                     AlphabetIndexScrubber(
                         activeLetters: Set(sections.map(\.letter))
                     ) { letter in

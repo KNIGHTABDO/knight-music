@@ -294,24 +294,30 @@ struct FullPlayerView: View {
     private func twoColumnLayout(song: Song, geo: GeometryProxy) -> some View {
         HStack(spacing: 36) {
             // Left Column: Artwork (or animated artwork in rounded card)
-            VStack {
-                Spacer()
+            GeometryReader { leftGeo in
+                let leftColumnWidth = leftGeo.size.width
+                let availableHeight = leftGeo.size.height
+                let side = max(0, min(leftColumnWidth - 64, availableHeight * 0.62))
 
-                let artworkSize = min(geo.size.width * 0.44, geo.size.height * 0.65)
-                if let animated = animatedArtwork {
-                    AnimatedArtworkView(url: animated.squareVideoURL)
-                        .frame(width: artworkSize, height: artworkSize)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
-                } else {
-                    ArtworkView(coverArt: song.coverArt, pointSize: artworkSize, cornerRadius: 16)
-                        .frame(width: artworkSize, height: artworkSize)
-                        .scaleEffect(player.isPlaying ? 1.0 : 0.85)
-                        .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
-                        .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
+                VStack {
+                    Spacer()
+
+                    if let animated = animatedArtwork {
+                        AnimatedArtworkView(url: animated.squareVideoURL)
+                            .frame(width: side, height: side)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
+                    } else {
+                        ArtworkView(coverArt: song.coverArt, pointSize: side, cornerRadius: 12)
+                            .frame(width: side, height: side)
+                            .scaleEffect(player.isPlaying ? 1.0 : 0.85)
+                            .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
+                            .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
+                    }
+
+                    Spacer()
                 }
-
-                Spacer()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(width: geo.size.width * 0.45)
 

@@ -122,6 +122,7 @@ enum DebugLaunch {
                     default:
                         break
                     }
+                    try? await Task.sleep(nanoseconds: 200_000_000)
                     ui.isPlayerPresented = true
                 }
             }

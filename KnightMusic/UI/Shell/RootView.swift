@@ -4,10 +4,12 @@ struct RootView: View {
     @State private var ui = UIState()
     @State private var nav = TabNavigationModel()
     @State private var hasAppliedDebugRouting = false
+    @Namespace private var playerZoomNamespace
 
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
     @Environment(PlayerEngine.self) private var player
+    @Environment(AppSettings.self) private var settings
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var shouldShowLogin: Bool {
@@ -26,11 +28,13 @@ struct RootView: View {
     }
 
     var body: some View {
+        @Bindable var ui = ui
+
         ZStack(alignment: .top) {
             if shouldShowLogin {
                 LoginView()
             } else {
-                MainTabsView()
+                MainTabsView(playerZoomNamespace: playerZoomNamespace)
             }
 
             if let toast = ui.toast {
@@ -52,6 +56,11 @@ struct RootView: View {
                 .zIndex(100)
             }
         }
+        .fullScreenCover(isPresented: $ui.isPlayerPresented) {
+            FullPlayerView()
+                .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
+        }
+        .tint(settings.accentColor)
         .animation(.smooth, value: ui.toast != nil)
         .environment(ui)
         .environment(nav)
@@ -98,6 +107,7 @@ struct RootView: View {
         }
         guard app.session == .ready else { return }
         await app.waitForSync()
+        try? await Task.sleep(nanoseconds: 300_000_000)
         hasAppliedDebugRouting = true
         let isRegular = horizontalSizeClass == .regular
         await DebugLaunch.applyRouting(

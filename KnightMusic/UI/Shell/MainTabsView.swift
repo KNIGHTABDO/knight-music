@@ -1,13 +1,13 @@
 import SwiftUI
 
 struct MainTabsView: View {
+    var playerZoomNamespace: Namespace.ID
+
     @Environment(UIState.self) private var ui
     @Environment(AppModel.self) private var app
     @Environment(PlayerEngine.self) private var player
     @Environment(TabNavigationModel.self) private var nav
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-    @Namespace private var playerZoomNamespace
 
     private struct LibraryTabItem: Identifiable {
         let id: Route
@@ -34,18 +34,12 @@ struct MainTabsView: View {
     ]
 
     var body: some View {
-        @Bindable var ui = ui
-
         Group {
             if horizontalSizeClass == .regular {
                 regularTabs
             } else {
                 compactTabs
             }
-        }
-        .fullScreenCover(isPresented: $ui.isPlayerPresented) {
-            FullPlayerView()
-                .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
         }
         .onChange(of: horizontalSizeClass) { _, newSizeClass in
             keepSelectedTabValid(for: newSizeClass)
@@ -93,22 +87,18 @@ struct MainTabsView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .defaultAdaptableTabBarPlacement(.sidebar)
         .tabBarMinimizeBehavior(.onScrollDown)
         .tabViewSidebarHeader {
-            if let name = app.activeAccount?.name, !name.isEmpty {
-                Text(name.uppercased())
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(Theme.label)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-            }
+            let accountName = (app.activeAccount?.name).flatMap { $0.isEmpty ? nil : $0 } ?? "KNIGHT"
+            Text(accountName.uppercased())
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Theme.label)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
         }
-        .tabViewBottomAccessory {
-            if player.currentSong != nil {
-                MiniPlayerView(namespace: playerZoomNamespace)
-            }
-        }
+        .miniPlayerBottomAccessory(isEnabled: player.currentSong != nil, namespace: playerZoomNamespace)
     }
 
     private var compactTabs: some View {
@@ -146,11 +136,7 @@ struct MainTabsView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory {
-            if player.currentSong != nil {
-                MiniPlayerView(namespace: playerZoomNamespace)
-            }
-        }
+        .miniPlayerBottomAccessory(isEnabled: player.currentSong != nil, namespace: playerZoomNamespace)
     }
 
     private func keepSelectedTabValid(for sizeClass: UserInterfaceSizeClass?) {
@@ -163,5 +149,32 @@ struct MainTabsView: View {
                 ui.selectedTab = .section(.albums)
             }
         }
+    }
+}
+
+private struct MiniPlayerBottomAccessoryModifier: ViewModifier {
+    let isEnabled: Bool
+    let namespace: Namespace.ID
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.1, *) {
+            content.tabViewBottomAccessory(isEnabled: isEnabled) {
+                MiniPlayerView(namespace: namespace)
+            }
+        } else {
+            if isEnabled {
+                content.tabViewBottomAccessory {
+                    MiniPlayerView(namespace: namespace)
+                }
+            } else {
+                content
+            }
+        }
+    }
+}
+
+private extension View {
+    func miniPlayerBottomAccessory(isEnabled: Bool, namespace: Namespace.ID) -> some View {
+        modifier(MiniPlayerBottomAccessoryModifier(isEnabled: isEnabled, namespace: namespace))
     }
 }
