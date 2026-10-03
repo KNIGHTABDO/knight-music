@@ -1,7 +1,19 @@
 import SwiftUI
+import UIKit
+
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        DownloadManager.backgroundCompletionHandler = completionHandler
+    }
+}
 
 @main
 struct KnightMusicApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var app: AppModel
     @Environment(\.scenePhase) private var scenePhase
 

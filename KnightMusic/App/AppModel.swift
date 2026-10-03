@@ -33,6 +33,8 @@ final class AppModel {
     /// Screen requested via `-KMScreen` in screenshot mode; the shell routes on it.
     var debugScreen: String?
 
+    @ObservationIgnored let playbackServices = PlaybackServices()
+    @ObservationIgnored var lastConfiguredDatabaseId: ObjectIdentifier?
     @ObservationIgnored private var syncEngine: SyncEngine?
     @ObservationIgnored private var password: String?
     @ObservationIgnored private var observers: [@MainActor (AppModel) -> Void] = []
@@ -50,6 +52,7 @@ final class AppModel {
             Task { @MainActor in self?.library.dropCaches() }
         }
         restoreSession()
+        installServiceWiring()
     }
 
     // MARK: - Offline
@@ -169,6 +172,8 @@ final class AppModel {
     }
 
     private func networkChanged() {
+        player.networkDidChange()
+        downloads.networkDidChange()
         networkTask?.cancel()
         networkTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
