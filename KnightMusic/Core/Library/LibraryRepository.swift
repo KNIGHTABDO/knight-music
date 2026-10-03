@@ -15,6 +15,7 @@ final class LibraryRepository {
     @ObservationIgnored private var client: SubsonicClient?
     @ObservationIgnored private var syncEngine: SyncEngine?
     @ObservationIgnored var isOfflineProvider: () -> Bool = { false }
+    @ObservationIgnored var onSongStarChanged: ((String, Bool) -> Void)?
 
     @ObservationIgnored private var cache: [String: AnyObject] = [:]
     @ObservationIgnored private var cacheOrder: [String] = []
@@ -330,6 +331,9 @@ final class LibraryRepository {
             case (.artist, true): try await client.star(artistId: id)
             case (.artist, false): try await client.unstar(artistId: id)
             }
+            if kind == .song {
+                onSongStarChanged?(id, on)
+            }
         } catch {
             try? await write(database, "UPDATE \(table) SET starred = ? WHERE id = ?", [previous, id])
             report(error, "Could not update favorite")
@@ -339,6 +343,12 @@ final class LibraryRepository {
 
     func toggleStar(_ kind: StarKind, id: String, currentlyStarred: Bool) async throws {
         try await setStarred(kind, id: id, !currentlyStarred)
+    }
+
+    /// Updates only the local mirror row for a song's star status (used when the server has already been notified).
+    func applyLocalStar(songId: String, starred: Bool) async {
+        guard let database else { return }
+        try? await write(database, "UPDATE song SET starred = ? WHERE id = ?", [starred ? Date() : nil, songId])
     }
 
     /// Rating 0...5 (0 clears). Songs and albums.
