@@ -36,7 +36,7 @@ ci_round() { # commit, push, wait; returns 0 when green
   git add -A
   git diff --cached --quiet && { say "no changes to commit"; }
   git commit -qm "$1" 2>/dev/null
-  git push -q -u origin "$BRANCH" 2>>"$LOG"
+  for _ in 1 2 3 4; do git push -q -u origin "$BRANCH" 2>>"$LOG" && break; say "push failed, retrying"; sleep 15; done
   local sha; sha=$(git rev-parse HEAD); local id=""
   for _ in $(seq 1 40); do
     id=$(gh run list --branch "$BRANCH" --limit 5 --json databaseId,headSha -q ".[] | select(.headSha==\"$sha\") | .databaseId" | head -1)
@@ -87,6 +87,10 @@ $(cat "$FILE")"
     agy_run "Code review feedback on your work. Address EVERY point thoroughly (the reviewer will check each one). Same rules as before.
 $(cat "$FILE")"
     fix_loop "Address review feedback (Gemini)$(grep -q "\[shots\]" "$STATE/brief.md" && echo " [shots]")"
+    ;;
+  ci)
+    say "resuming CI loop"
+    fix_loop "Retry CI (Gemini)$(grep -q "\[shots\]" "$STATE/brief.md" && echo " [shots]")"
     ;;
   *) echo "usage: $0 new|feedback <branch> <file> [base]"; exit 2;;
 esac
