@@ -118,7 +118,7 @@ final class AppModel {
     func refresh(force: Bool = false) async -> Bool {
         guard syncEngine != nil, let account = activeAccount else { return false }
         let task = Task { () -> Bool in
-            await self.reresolveAddress()
+            await self.reresolveAddress(maxAge: 20)
             guard self.serverReachable, let engine = self.syncEngine else { return false }
             let ok = await engine.sync(force: force)
             if ok {
@@ -143,8 +143,10 @@ final class AppModel {
 
     // MARK: - Address resolution
 
-    func reresolveAddress() async {
+    func reresolveAddress(maxAge: TimeInterval = 0) async {
         guard let account = activeAccount, let password else { return }
+        if maxAge > 0, serverReachable, network.isConnected,
+           let last = addressResolver.lastResolvedAt, Date().timeIntervalSince(last) < maxAge { return }
         guard network.isConnected else {
             serverReachable = false
             return
@@ -167,6 +169,7 @@ final class AppModel {
         networkTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled, let self else { return }
+            await self.reresolveAddress()
             await self.refresh()
         }
     }

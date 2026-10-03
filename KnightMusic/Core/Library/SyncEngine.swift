@@ -249,7 +249,7 @@ actor SyncEngine {
 
         let stale = remote.filter { p in
             guard let l = local[p.id] else { return true }
-            return l.changed != p.changed || l.songCount != p.songCount || (entryCounts[p.id] ?? 0) != (p.songCount ?? 0)
+            return !sameInstant(l.changed, p.changed) || l.songCount != p.songCount || (entryCounts[p.id] ?? 0) != (p.songCount ?? 0)
         }
         for batch in stale.chunked(into: 4) {
             try Task.checkCancellation()
@@ -313,5 +313,14 @@ private func clearStaleStars(_ db: Database, table: String, keep: Set<String>) t
     let starred = try String.fetchAll(db, sql: "SELECT id FROM \(table) WHERE starred IS NOT NULL")
     for id in starred where !keep.contains(id) {
         try db.execute(sql: "UPDATE \(table) SET starred = NULL WHERE id = ?", arguments: [id])
+    }
+}
+
+/// Dates round-trip through SQLite with millisecond precision; compare with that tolerance.
+private func sameInstant(_ a: Date?, _ b: Date?) -> Bool {
+    switch (a, b) {
+    case (nil, nil): return true
+    case let (a?, b?): return abs(a.timeIntervalSince(b)) < 0.01
+    default: return false
     }
 }
