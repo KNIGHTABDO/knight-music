@@ -370,7 +370,7 @@ extension PlayerEngine {
         let status = player.timeControlStatus
         let playing = status != .paused
         if isPlaying != playing { isPlaying = playing }
-        let buffering = status == .waitingToPlayAtSpecificRate && player.reasonForWaitingToPlay != .noItemToPlay
+        let buffering = status == .waitingToPlayAtSpecifiedRate && player.reasonForWaitingToPlay != .noItemToPlay
         if isBuffering != buffering { isBuffering = buffering }
         nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: status == .playing ? 1 : 0)
     }
