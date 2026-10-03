@@ -104,8 +104,10 @@ struct MainTabsView: View {
                     .padding(.top, 8)
             }
         }
-        .tabViewBottomAccessory(isEnabled: player.currentSong != nil) {
-            MiniPlayerView(namespace: playerZoomNamespace)
+        .tabViewBottomAccessory {
+            if player.currentSong != nil {
+                MiniPlayerView(namespace: playerZoomNamespace)
+            }
         }
     }
 
@@ -144,8 +146,10 @@ struct MainTabsView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .tabBarMinimizeBehavior(.onScrollDown)
-        .tabViewBottomAccessory(isEnabled: player.currentSong != nil) {
-            MiniPlayerView(namespace: playerZoomNamespace)
+        .tabViewBottomAccessory {
+            if player.currentSong != nil {
+                MiniPlayerView(namespace: playerZoomNamespace)
+            }
         }
     }
 
