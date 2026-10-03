@@ -4,3 +4,5 @@ DerivedData/
 .DS_Store
 screens/
 KnightMusic/Resources/Info.plist
+.gemini-tasks/
+.claude/worktrees/
