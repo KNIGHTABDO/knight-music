@@ -98,7 +98,7 @@ final class AppModel {
     func performBackgroundSync() async -> Bool {
         guard session == .ready, let engine = syncEngine else { return false }
         await reresolveAddress()
-        guard serverReachable else { return false }
+        guard network.isConnected else { return false }
         return await withTaskCancellationHandler {
             await engine.sync()
         } onCancel: {
@@ -119,12 +119,11 @@ final class AppModel {
         guard syncEngine != nil, let account = activeAccount else { return false }
         let task = Task { () -> Bool in
             await self.reresolveAddress(maxAge: 20)
-            guard self.serverReachable, let engine = self.syncEngine else { return false }
+            // Even if the quick probe failed, try the real sync (15s timeout): a slow link is not an offline one.
+            guard self.network.isConnected, let engine = self.syncEngine else { return false }
             let ok = await engine.sync(force: force)
-            if ok {
-                self.serverReachable = true
-                self.accounts.touchSync(account.id)
-            }
+            self.serverReachable = ok || self.serverReachable && !self.syncStatusIndicatesTransportFailure
+            if ok { self.accounts.touchSync(account.id) }
             return ok
         }
         syncTask = task
@@ -162,6 +161,11 @@ final class AppModel {
         } else {
             serverReachable = false
         }
+    }
+
+    private var syncStatusIndicatesTransportFailure: Bool {
+        guard let message = syncStatus.lastError else { return false }
+        return message.contains("Could not reach") || message.contains("did not respond") || message.contains("not connected")
     }
 
     private func networkChanged() {
