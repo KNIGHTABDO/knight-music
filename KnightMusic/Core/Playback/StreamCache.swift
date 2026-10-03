@@ -172,6 +172,7 @@ final class StreamCache: @unchecked Sendable {
             let job = queued.removeFirst()
             let task = Task.detached(priority: .utility) { [weak self] in
                 await self?.run(job)
+                return
             }
             active[job.songId] = task
         }
