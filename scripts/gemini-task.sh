@@ -62,7 +62,7 @@ fix_loop() {
     say "fix round $i"
     agy_run "The CI build (Xcode 26, iOS 26 SDK) failed with these compiler errors. Open each file, understand the cause (check the real declarations of the types you use), and fix all of them properly — no stubs, no deleting features to silence errors.
 $(cat "$STATE/errors.txt")"
-    set -- "Fix compile errors (round $i)"
+    set -- "Fix compile errors (round $i)$(grep -q "\[shots\]" "$STATE/brief.md" 2>/dev/null && echo " [shots]")"
   done
   ci_round "Fix compile errors (final)" && return 0
   say "still failing after $MAX_FIX rounds"; return 1
@@ -86,7 +86,7 @@ $(cat "$FILE")"
     say "feedback round from $FILE"
     agy_run "Code review feedback on your work. Address EVERY point thoroughly (the reviewer will check each one). Same rules as before.
 $(cat "$FILE")"
-    fix_loop "Address review feedback (Gemini)"
+    fix_loop "Address review feedback (Gemini)$(grep -q "\[shots\]" "$STATE/brief.md" && echo " [shots]")"
     ;;
   *) echo "usage: $0 new|feedback <branch> <file> [base]"; exit 2;;
 esac
