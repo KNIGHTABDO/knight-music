@@ -3,6 +3,8 @@ import SwiftUI
 /// Root of the object graph. Owns every long-lived service and wires them together.
 @MainActor @Observable
 final class AppModel {
+    public static var shared: AppModel?
+
     enum SessionState: Equatable {
         case loggedOut
         case connecting
@@ -53,6 +55,7 @@ final class AppModel {
         }
         restoreSession()
         installServiceWiring()
+        WidgetBridge.shared.start(app: self)
     }
 
     // MARK: - Offline

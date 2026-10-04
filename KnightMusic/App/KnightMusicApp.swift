@@ -19,6 +19,7 @@ struct KnightMusicApp: App {
 
     init() {
         let model = AppModel()
+        AppModel.shared = model
         _app = State(initialValue: model)
         // BGTaskScheduler registration must happen before launch finishes.
         BackgroundSync.register(
@@ -40,6 +41,18 @@ struct KnightMusicApp: App {
                 .environment(app.syncStatus)
                 .preferredColorScheme(.dark)
                 .task { await app.start() }
+                .onOpenURL { url in
+                    guard url.scheme?.lowercased() == "knightmusic" else { return }
+                    if url.host == "album" {
+                        let albumId = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                        if !albumId.isEmpty {
+                            NotificationCenter.default.post(name: Notification.Name("KMOpenAlbum"), object: albumId)
+                        }
+                    } else if let idx = url.pathComponents.firstIndex(of: "album"), idx + 1 < url.pathComponents.count {
+                        let albumId = url.pathComponents[idx + 1]
+                        NotificationCenter.default.post(name: Notification.Name("KMOpenAlbum"), object: albumId)
+                    }
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
