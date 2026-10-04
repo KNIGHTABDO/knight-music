@@ -32,6 +32,9 @@ struct RouteRootView: View {
             GenresView()
         case .radioStations:
             RadioStationsView()
+        case .knightChat(let id, let draft):
+            KnightChatView(conversationId: id, initialDraft: draft)
         }
     }
 }
+
