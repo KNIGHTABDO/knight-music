@@ -10,74 +10,60 @@ extension Notification.Name {
 /// Builds iOS 26 `MPMediaItemAnimatedArtwork` values for the lock screen / Control Center.
 /// Deliberately a nonisolated enum: MediaPlayer invokes the handlers on its own queues.
 enum NowPlayingAnimatedArtwork {
-    private static let previewCache = NSCache<NSString, UIImage>()
-
     static func entries(albumId: String, artwork: AnimatedArtwork, fallbackPreview: UIImage?) async -> [String: Any] {
         let squareURL = artwork.lockSquareVideoURL ?? artwork.squareVideoURL
         let tallURL = artwork.lockTallVideoURL ?? artwork.tallVideoURL
         return await entries(albumId: albumId, lockSquareURL: squareURL, lockTallURL: tallURL, fallbackPreview: fallbackPreview)
     }
 
-    static func entries(albumId: String, lockSquareURL: URL, lockTallURL: URL?, fallbackPreview: UIImage?) async -> [String: Any] {
+    /// Each slot only gets a video of its own shape: a 3:4 clip handed over as 1:1 is rejected by the system.
+    static func entries(albumId: String, lockSquareURL: URL?, lockTallURL: URL?, fallbackPreview: UIImage?) async -> [String: Any] {
         var out: [String: Any] = [:]
-        out[MPNowPlayingInfoProperty1x1AnimatedArtwork] = make(
-            id: "\(albumId)-square",
-            videoURL: lockSquareURL,
-            fallbackPreview: fallbackPreview
-        )
-        if let lockTallURL {
-            out[MPNowPlayingInfoProperty3x4AnimatedArtwork] = make(
-                id: "\(albumId)-tall",
-                videoURL: lockTallURL,
-                fallbackPreview: fallbackPreview
-            )
+        if let lockSquareURL,
+           let art = await make(albumId: albumId, variant: "1x1", videoURL: lockSquareURL, fallbackPreview: fallbackPreview) {
+            out[MPNowPlayingInfoProperty1x1AnimatedArtwork] = art
+        }
+        if let lockTallURL,
+           let art = await make(albumId: albumId, variant: "3x4", videoURL: lockTallURL, fallbackPreview: fallbackPreview) {
+            out[MPNowPlayingInfoProperty3x4AnimatedArtwork] = art
         }
         return out
     }
 
-    private static func make(id: String, videoURL: URL, fallbackPreview: UIImage?) -> MPMediaItemAnimatedArtwork {
-        MPMediaItemAnimatedArtwork(
+    /// The preview is rendered up front so the system's request never comes back empty.
+    /// The artwork ID carries the file's identity: the system caches animated artwork by ID (including
+    /// failures), so a re-downloaded or re-encoded clip must never reuse an old ID.
+    private static func make(albumId: String, variant: String, videoURL: URL, fallbackPreview: UIImage?) async -> MPMediaItemAnimatedArtwork? {
+        guard let preview = await firstFrame(of: videoURL) ?? fallbackPreview else {
+            Log.artwork.error("lockscreen art: no preview for \(albumId) \(variant), skipping")
+            return nil
+        }
+        let id = "\(albumId)-\(variant)-\(fileSignature(videoURL))"
+        Log.artwork.info("lockscreen art: providing \(id) -> \(videoURL.lastPathComponent)")
+        return MPMediaItemAnimatedArtwork(
             artworkID: id,
             previewImageRequestHandler: { size in
-                let w = Int(size.width)
-                let h = Int(size.height)
-                Log.artwork.info("preview handler called size=\(w)x\(h)")
-                return await generatePreview(for: videoURL, size: size, fallback: fallbackPreview)
+                scale(preview, to: size)
             },
-            videoAssetFileURLRequestHandler: { size in
-                let w = Int(size.width)
-                let h = Int(size.height)
-                Log.artwork.info("video handler called size=\(w)x\(h) -> \(videoURL.lastPathComponent)")
-                return videoURL
+            videoAssetFileURLRequestHandler: { _ in
+                videoURL
             }
         )
     }
 
-    private static func generatePreview(for videoURL: URL, size: CGSize, fallback: UIImage?) async -> UIImage? {
-        let key = "\(videoURL.path)-\(Int(size.width))x\(Int(size.height))" as NSString
-        if let cached = previewCache.object(forKey: key) {
-            return cached
-        }
+    private static func fileSignature(_ url: URL) -> String {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+        let modified = Int((attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)
+        return "v3-\(size)-\(modified)"
+    }
 
-        let asset = AVURLAsset(url: videoURL)
-        let generator = AVAssetImageGenerator(asset: asset)
+    private static func firstFrame(of url: URL) async -> UIImage? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
-        if size.width > 0 && size.height > 0 {
-            generator.maximumSize = size
-        }
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
-
-        if let result = try? await generator.image(at: .zero) {
-            let image = UIImage(cgImage: result.image)
-            previewCache.setObject(image, forKey: key)
-            return image
-        }
-
-        guard let fallback else { return nil }
-        let scaled = scale(fallback, to: size)
-        previewCache.setObject(scaled, forKey: key)
-        return scaled
+        generator.maximumSize = CGSize(width: 1200, height: 1200)
+        guard let result = try? await generator.image(at: .zero) else { return nil }
+        return UIImage(cgImage: result.image)
     }
 
     private static func scale(_ image: UIImage, to targetSize: CGSize) -> UIImage {

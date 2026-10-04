@@ -91,10 +91,6 @@ actor AnimatedArtworkStore {
             }
         }
 
-        if resultSquare == nil, let tallLock = resultTall {
-            resultSquare = tallLock
-        }
-
         return (resultSquare, resultTall)
     }
 

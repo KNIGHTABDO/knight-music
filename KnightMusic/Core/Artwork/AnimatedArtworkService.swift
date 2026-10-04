@@ -53,15 +53,10 @@ final class AnimatedArtworkService {
         let hasSquare = squareLock != nil
         let hasTall = tallLock != nil
         Log.artwork.info("lockscreen art: lookup album=\(albumId) found square=\(hasSquare) tall=\(hasTall)")
-        guard let squareURL = squareLock else { return [:] }
+        guard squareLock != nil || tallLock != nil else { return [:] }
         let cover = await ArtworkLoader.shared.image(coverArt: song.coverArt, size: 600)
-        let art = AnimatedArtwork(
-            squareVideoURL: squareURL,
-            tallVideoURL: tallLock,
-            lockSquareVideoURL: squareURL,
-            lockTallVideoURL: tallLock
-        )
-        return await NowPlayingAnimatedArtwork.entries(albumId: albumId, artwork: art, fallbackPreview: cover)
+        return await NowPlayingAnimatedArtwork.entries(albumId: albumId, lockSquareURL: squareLock, lockTallURL: tallLock,
+                                                       fallbackPreview: cover)
     }
 
     private static func request(for song: Song) -> AnimatedArtworkRequest? {
