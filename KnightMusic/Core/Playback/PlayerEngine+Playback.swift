@@ -197,7 +197,7 @@ extension PlayerEngine {
     func makePrepared(entry: QueueEntry, resolved: ResolvedSource) -> PreparedItem {
         let item = AVPlayerItem(asset: AVURLAsset(url: resolved.url))
         let prepared = PreparedItem(item: item, entry: entry, resolved: resolved)
-        if settings.autoMix, resolved.kind != .radio { attachTap(prepared) }
+        if settings.autoMix { attachTap(prepared) }
         prepared.observations = [
             item.observe(\.status, options: [.new]) { [weak self, weak prepared] _, _ in
                 Task { @MainActor in
@@ -293,13 +293,15 @@ extension PlayerEngine {
     func syncCache() {
         guard settings.streamCacheEnabled, !services.isOffline, currentRadio == nil,
               services.urls != nil, currentIndex < order.count else {
-            if !settings.streamCacheEnabled || currentRadio != nil { streamCache.retainOnly([]) }
+            // AutoMix still needs its incoming song as a local file when the stream cache is off.
+            let keep = plannedMix.map { Set([$0.to.id]) } ?? []
+            if !settings.streamCacheEnabled || currentRadio != nil { streamCache.retainOnly(keep) }
             return
         }
         let depth = services.network == .cellular ? 2 : 3
         let upper = min(order.count, currentIndex + depth)
         let songs = order[currentIndex..<upper].map(\.song)
-        streamCache.retainOnly(Set(songs.map(\.id)))
+        streamCache.retainOnly(Set(songs.map(\.id) + (plannedMix.map { [$0.to.id] } ?? [])))
         let quality = currentQuality()
         for song in songs where downloads?.localFileURL(for: song.id) == nil && !streamCache.contains(song.id) {
             guard let url = streamURL(for: song, quality: quality) else { continue }
