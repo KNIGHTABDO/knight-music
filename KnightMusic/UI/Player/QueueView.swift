@@ -10,6 +10,7 @@ struct QueueView: View {
     @Environment(PlayerEngine.self) private var player
 
     @State private var isHistoryExpanded = false
+    @State private var isReordering = false
 
     private var historySongs: [Song] {
         Array(player.history.suffix(20))
@@ -33,7 +34,7 @@ struct QueueView: View {
                                 .foregroundStyle(Theme.secondaryLabel)
                         }
                         .listRowBackground(Color.clear)
-                        .listRowSeparatorTint(Color.white.opacity(0.12))
+                        .listRowSeparator(.hidden)
                     }
                 }
 
@@ -42,7 +43,7 @@ struct QueueView: View {
                     Section {
                         currentSongRow(current)
                             .listRowBackground(Color.clear)
-                            .listRowSeparatorTint(Color.white.opacity(0.12))
+                            .listRowSeparator(.hidden)
                     } header: {
                         Text("Now Playing")
                             .font(.system(size: 13, weight: .semibold))
@@ -51,13 +52,14 @@ struct QueueView: View {
                     }
                 }
 
-                // Upcoming songs with always-on drag handles
+                // Upcoming songs with reordering when toggled, and swipe-to-delete
                 Section {
                     if player.upcoming.isEmpty {
                         Text("No upcoming songs")
                             .font(.system(size: 15))
                             .foregroundStyle(Theme.secondaryLabel)
                             .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                             .padding(.vertical, 8)
                     } else {
                         ForEach(Array(player.upcoming.enumerated()), id: \.element.id) { offset, entry in
@@ -72,7 +74,7 @@ struct QueueView: View {
                             }
                         }
                         .listRowBackground(Color.clear)
-                        .listRowSeparatorTint(Color.white.opacity(0.12))
+                        .listRowSeparator(.hidden)
                     }
                 } header: {
                     Text("Upcoming")
@@ -83,7 +85,7 @@ struct QueueView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .environment(\.editMode, .constant(.active))
+            .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
         }
     }
 
@@ -127,18 +129,30 @@ struct QueueView: View {
             }
 
             if !player.upcoming.isEmpty {
+                Button(isReordering ? "Done" : "Reorder") {
+                    Haptics.impact(.light)
+                    withAnimation(.smooth) {
+                        isReordering.toggle()
+                    }
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isReordering ? Theme.accent : Color.white.opacity(0.85))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 6)
+                .glassEffect(.regular.interactive(), in: .capsule)
+
                 Button("Clear") {
                     Haptics.impact(.light)
                     player.clearUpcoming()
                 }
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.accent)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 11)
                 .padding(.vertical, 6)
                 .glassEffect(.regular.interactive(), in: .capsule)
             }
         }
-        .padding(.horizontal, Theme.margin)
+        .padding(.horizontal, Theme.margin + 4)
         .padding(.vertical, 10)
     }
 
@@ -151,6 +165,7 @@ struct QueueView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .lineLimit(1)
+                    .layoutPriority(1)
 
                 Text(song.artist ?? "")
                     .font(.system(size: 13))
@@ -168,6 +183,7 @@ struct QueueView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.08))
         )
+        .listRowSeparator(.hidden)
     }
 
     private func historyRow(song: Song, offset: Int) -> some View {
@@ -187,6 +203,7 @@ struct QueueView: View {
                         .font(.system(size: 15, weight: .regular))
                         .foregroundStyle(Color.white.opacity(0.75))
                         .lineLimit(1)
+                        .layoutPriority(1)
 
                     Text(song.artist ?? "")
                         .font(.system(size: 13))
@@ -199,6 +216,7 @@ struct QueueView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .listRowSeparator(.hidden)
     }
 
     private func upcomingRow(entry: QueueEntry, offset: Int) -> some View {
@@ -210,6 +228,7 @@ struct QueueView: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Color.white)
                     .lineLimit(1)
+                    .layoutPriority(1)
 
                 Text(entry.song.artist ?? "")
                     .font(.system(size: 13))
@@ -218,11 +237,27 @@ struct QueueView: View {
             }
 
             Spacer()
+
+            if !isReordering {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.white.opacity(0.35))
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture {
+            guard !isReordering else { return }
             Haptics.impact(.light)
             player.skip(toUpcomingOffset: offset)
         }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                Haptics.impact(.light)
+                player.remove(at: offset)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .listRowSeparator(.hidden)
     }
 }

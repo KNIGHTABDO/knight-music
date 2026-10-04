@@ -21,7 +21,7 @@ struct PlayerScrubberView: View {
                 let displayTime = isDragging ? scrubTime : player.currentTime
                 let progress = min(max(displayTime / duration, 0), 1)
                 let bufferFraction = min(max(player.bufferedFraction, 0), 1)
-                let capsuleHeight: CGFloat = isDragging ? 12 : 6
+                let capsuleHeight: CGFloat = isDragging ? 10 : 5
 
                 ZStack(alignment: .leading) {
                     // Track background
@@ -41,7 +41,7 @@ struct PlayerScrubberView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .clipShape(Capsule())
-                .frame(height: 28, alignment: .center)
+                .frame(height: 24, alignment: .center)
                 .contentShape(Rectangle())
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isDragging)
                 .gesture(
@@ -81,21 +81,21 @@ struct PlayerScrubberView: View {
                         }
                 )
             }
-            .frame(height: 28)
+            .frame(height: 24)
 
             // Timestamps and audio stream format description
             HStack {
                 let displayTime = isDragging ? scrubTime : player.currentTime
                 Text(KMFormat.duration(displayTime))
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundStyle(Theme.secondaryLabel)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.85))
 
                 Spacer()
 
                 if !player.formatDescription.isEmpty {
                     Text(player.formatDescription)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.secondaryLabel)
+                        .foregroundStyle(Color.white.opacity(0.65))
                         .lineLimit(1)
                 }
 
@@ -103,8 +103,8 @@ struct PlayerScrubberView: View {
 
                 let remaining = max(0, player.duration - displayTime)
                 Text(player.duration > 0 ? "-\(KMFormat.duration(remaining))" : "--:--")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundStyle(Theme.secondaryLabel)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.85))
             }
         }
     }

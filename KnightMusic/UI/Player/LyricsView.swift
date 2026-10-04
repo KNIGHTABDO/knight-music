@@ -98,8 +98,8 @@ struct LyricsView: View {
                         ForEach(Array(lyrics.line.enumerated()), id: \.offset) { index, line in
                             let isActive = (index == activeIndex)
                             let distance = abs(index - (activeIndex ?? 0))
-                            let blurRadius: CGFloat = distance > 2 ? min(CGFloat(distance - 2) * 1.2, 3.5) : 0
-                            let opacity: Double = isActive ? 1.0 : 0.35
+                            let blurRadius: CGFloat = distance > 2 ? min(CGFloat(distance - 2) * 1.0, 2.0) : 0
+                            let opacity: Double = isActive ? 1.0 : 0.45
 
                             Button {
                                 handleLineTap(index: index, line: line, lyrics: lyrics, proxy: proxy)
@@ -127,6 +127,18 @@ struct LyricsView: View {
                     }
                     .padding(.horizontal, Theme.margin + 8)
                 }
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: .black, location: 0.08),
+                            .init(color: .black, location: 0.88),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 5)
                         .onChanged { _ in
@@ -382,6 +394,18 @@ struct LyricsView: View {
             .padding(.horizontal, Theme.margin + 8)
             .padding(.vertical, 24)
         }
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.0),
+                    .init(color: .black, location: 0.06),
+                    .init(color: .black, location: 0.92),
+                    .init(color: .clear, location: 1.0)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
     private func pauseAutoScroll(proxy: ScrollViewProxy) {

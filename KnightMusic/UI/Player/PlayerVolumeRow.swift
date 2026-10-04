@@ -31,7 +31,7 @@ struct PlayerVolumeRow: View {
         HStack(spacing: 12) {
             Image(systemName: "speaker.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(Theme.secondaryLabel)
+                .foregroundStyle(Color.white.opacity(0.75))
                 .frame(width: 16)
 
             SystemVolumeSlider()
@@ -39,8 +39,9 @@ struct PlayerVolumeRow: View {
 
             Image(systemName: "speaker.wave.3.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(Theme.secondaryLabel)
+                .foregroundStyle(Color.white.opacity(0.75))
                 .frame(width: 16)
         }
+        .padding(.horizontal, Theme.margin + 4)
     }
 }

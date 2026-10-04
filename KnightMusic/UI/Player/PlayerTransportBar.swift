@@ -25,7 +25,7 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(TransportButtonStyle())
 
             Spacer()
 
@@ -42,7 +42,7 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(TransportButtonStyle())
 
             Spacer()
 
@@ -55,10 +55,10 @@ struct PlayerTransportBar: View {
                     .font(.system(size: 44, weight: .semibold))
                     .foregroundStyle(Color.white)
                     .contentTransition(.symbolEffect(.replace))
-                    .frame(minWidth: 54, minHeight: 54)
+                    .frame(minWidth: 64, minHeight: 64)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(TransportButtonStyle())
 
             Spacer()
 
@@ -75,7 +75,7 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(TransportButtonStyle())
 
             Spacer()
 
@@ -90,7 +90,18 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(TransportButtonStyle())
         }
+        .padding(.horizontal, Theme.margin + 4)
+    }
+}
+
+/// Responsive spring button style for player controls providing tactile feedback
+struct TransportButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.88 : 1.0)
+            .opacity(configuration.isPressed ? 0.75 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.65), value: configuration.isPressed)
     }
 }
