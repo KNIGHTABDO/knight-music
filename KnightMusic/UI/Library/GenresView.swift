@@ -47,7 +47,7 @@ struct GenresView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Genres")
         .searchable(text: $searchText, prompt: "Search in Genres")
         .refreshable { await app.pullToRefresh() }

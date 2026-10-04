@@ -190,7 +190,7 @@ struct ServersView: View {
         .observing(counts)
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.groupedBackground.ignoresSafeArea())
         .navigationTitle("Manage Servers")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

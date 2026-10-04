@@ -35,7 +35,7 @@ struct PlaylistDetailView: View {
                 )
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -88,7 +88,7 @@ struct PlaylistDetailView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .environment(\.editMode, $editMode)
         .toolbar {
             toolbarItems(playlist: playlist, songs: songs)

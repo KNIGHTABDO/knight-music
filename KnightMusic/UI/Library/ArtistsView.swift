@@ -56,7 +56,7 @@ struct ArtistsView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .background(Theme.background.ignoresSafeArea())
             .overlay(alignment: .trailing) {
                 if sortOrder == .name && sections.count > 1 && query.isLoaded {
                     AlphabetIndexScrubber(

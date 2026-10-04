@@ -71,7 +71,7 @@ struct ArtistTopSongsView: View {
             }
             .padding(.bottom, 32)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle(artistName)
         .navigationBarTitleDisplayMode(.large)
         .scrollEdgeEffectStyle(.soft, for: .top)

@@ -193,7 +193,7 @@ struct SettingsView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.groupedBackground.ignoresSafeArea())
         .navigationTitle("Settings")
         .task {
             await serverInfo.fetchIfNeeded(app: app)

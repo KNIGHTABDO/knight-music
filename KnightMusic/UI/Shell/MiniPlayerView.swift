@@ -55,7 +55,7 @@ struct MiniPlayerView: View {
                         } label: {
                             Image(systemName: "shuffle")
                                 .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(player.shuffleEnabled ? Theme.accent : Color.white.opacity(0.7))
+                                .foregroundStyle(player.shuffleEnabled ? Theme.accent : Theme.secondaryLabel)
                                 .frame(width: 28, height: 28)
                                 .contentShape(Rectangle())
                         }
@@ -68,7 +68,7 @@ struct MiniPlayerView: View {
                         } label: {
                             Image(systemName: "backward.fill")
                                 .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Theme.label)
                                 .frame(width: 28, height: 28)
                                 .contentShape(Rectangle())
                         }
@@ -81,7 +81,7 @@ struct MiniPlayerView: View {
                     } label: {
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.label)
                             .frame(width: 32, height: 32)
                             .contentShape(Rectangle())
                     }
@@ -92,7 +92,7 @@ struct MiniPlayerView: View {
                     } label: {
                         Image(systemName: "forward.fill")
                             .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.label)
                             .frame(width: 28, height: 28)
                             .contentShape(Rectangle())
                     }
@@ -104,7 +104,7 @@ struct MiniPlayerView: View {
                         } label: {
                             Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
                                 .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(player.repeatMode != .off ? Theme.accent : Color.white.opacity(0.7))
+                                .foregroundStyle(player.repeatMode != .off ? Theme.accent : Theme.secondaryLabel)
                                 .frame(width: 28, height: 28)
                                 .contentShape(Rectangle())
                         }

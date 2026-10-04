@@ -27,7 +27,23 @@ struct CustomizeView: View {
     ]
 
     var body: some View {
+        @Bindable var settings = settings
+
         List {
+            Section("Appearance") {
+                Picker("Appearance", selection: $settings.appearance) {
+                    ForEach(AppSettings.Appearance.allCases) { mode in
+                        Label(mode.title, systemImage: mode.systemImage)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.vertical, 4)
+                .onChange(of: settings.appearance) { _, _ in
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+            }
+
             Section("Accent Color") {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(swatches) { swatch in
@@ -112,7 +128,7 @@ struct CustomizeView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.groupedBackground.ignoresSafeArea())
         .navigationTitle("Customize")
     }
 

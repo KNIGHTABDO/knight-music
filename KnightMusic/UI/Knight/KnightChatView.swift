@@ -79,7 +79,7 @@ struct KnightChatView: View {
                 proxy.scrollTo("bottomID", anchor: .bottom)
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle(conversation?.title ?? "Knight")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

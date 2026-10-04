@@ -30,7 +30,7 @@ struct RadioStationsView: View {
                     HStack(spacing: 14) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.white.opacity(0.08))
+                                .fill(Theme.hairline)
                                 .frame(width: 48, height: 48)
 
                             if isPlayingThisStation {
@@ -71,7 +71,7 @@ struct RadioStationsView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Radio Stations")
         .refreshable { await app.pullToRefresh() }
         .observing(query)

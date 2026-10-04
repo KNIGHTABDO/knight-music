@@ -59,7 +59,7 @@ struct HomeView: View {
             .padding(.vertical, 16)
         }
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle(app.activeAccount?.name ?? "Home")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {

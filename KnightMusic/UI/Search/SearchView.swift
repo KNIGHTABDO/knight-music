@@ -44,7 +44,7 @@ struct SearchView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, prompt: "Search library...")

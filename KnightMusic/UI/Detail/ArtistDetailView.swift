@@ -11,6 +11,7 @@ struct ArtistDetailView: View {
     @Environment(DownloadManager.self) private var downloads
     @Environment(UIState.self) private var ui
     @Environment(HermesService.self) private var hermes: HermesService?
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var artistInfo: ArtistInfo?
     @State private var isBioExpanded = false
@@ -42,7 +43,7 @@ struct ArtistDetailView: View {
                 )
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -141,12 +142,12 @@ struct ArtistDetailView: View {
                 .frame(width: geo.size.width, height: 320)
                 .clipped()
 
-                // Gradient fade to black at the bottom
+                // Gradient fade to background at the bottom
                 LinearGradient(
                     colors: [
                         Color.clear,
-                        Color.black.opacity(0.35),
-                        Color.black.opacity(0.85),
+                        Theme.background.opacity(0.35),
+                        Theme.background.opacity(0.85),
                         Theme.background
                     ],
                     startPoint: .top,
@@ -161,7 +162,7 @@ struct ArtistDetailView: View {
                         .font(.system(size: 34, weight: .heavy))
                         .foregroundStyle(Theme.label)
                         .lineLimit(2)
-                        .shadow(color: .black.opacity(0.7), radius: 6, y: 3)
+                        .shadow(color: colorScheme == .dark ? .black.opacity(0.7) : .clear, radius: 6, y: 3)
 
                     Spacer(minLength: 8)
 

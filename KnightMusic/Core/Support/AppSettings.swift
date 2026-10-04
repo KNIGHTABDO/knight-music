@@ -5,8 +5,35 @@ import SwiftUI
 final class AppSettings {
     enum OfflineMode: String, CaseIterable, Codable { case automatic, manual }
     enum ReplayGainMode: String, CaseIterable, Codable { case off, track, album }
+    enum Appearance: String, CaseIterable, Codable, Identifiable {
+        case system, light, dark
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .system: return "System"
+            case .light: return "Light"
+            case .dark: return "Dark"
+            }
+        }
+        var systemImage: String {
+            switch self {
+            case .system: return "circle.lefthalf.filled"
+            case .light: return "sun.max.fill"
+            case .dark: return "moon.fill"
+            }
+        }
+        /// nil = follow the system setting.
+        var colorScheme: ColorScheme? {
+            switch self {
+            case .system: return nil
+            case .light: return .light
+            case .dark: return .dark
+            }
+        }
+    }
 
     var accentColorHex: String { didSet { save(accentColorHex, "accentColorHex") } }
+    var appearance: Appearance { didSet { save(appearance.rawValue, "appearance") } }
 
     /// 0 = no limit. Format "raw" = original file, otherwise a server transcode target such as "mp3" / "opus".
     var wifiMaxBitRate: Int { didSet { save(wifiMaxBitRate, "wifiMaxBitRate") } }
@@ -35,6 +62,7 @@ final class AppSettings {
         func string(_ key: String, _ fallback: String) -> String { d.string(forKey: key) ?? fallback }
 
         accentColorHex = string("accentColorHex", "#FA2D48")
+        appearance = Appearance(rawValue: string("appearance", "")) ?? .dark
         wifiMaxBitRate = int("wifiMaxBitRate", 0)
         wifiFormat = string("wifiFormat", "raw")
         cellularMaxBitRate = int("cellularMaxBitRate", 320)

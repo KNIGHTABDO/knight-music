@@ -65,9 +65,7 @@ targets:
           UIColorName: ""
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        UIRequiresFullScreen: false
         UIBackgroundModes: [audio, fetch, processing]
-        UIUserInterfaceStyle: Dark
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
