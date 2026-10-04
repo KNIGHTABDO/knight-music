@@ -35,42 +35,18 @@ Knight Music is an open-source, native client for [Navidrome](https://www.navidr
 
 ## Screenshots
 
-<table>
-  <tr>
-    <th colspan="3">iPadOS</th>
-  </tr>
-  <tr>
-    <td align="center" valign="top" width="33%">
-      <img src="docs/screenshots/ipad-home.png" alt="iPadOS Home Screen" width="100%" /><br />
-      <sub><b>Home &amp; Sidebar</b></sub>
-    </td>
-    <td align="center" valign="top" width="33%">
-      <img src="docs/screenshots/ipad-player.png" alt="iPadOS Full Player" width="100%" /><br />
-      <sub><b>Full Player &amp; Queue</b></sub>
-    </td>
-    <td align="center" valign="top" width="33%">
-      <img src="docs/screenshots/ipad-album.png" alt="iPadOS Album Detail" width="100%" /><br />
-      <sub><b>Album Detail</b></sub>
-    </td>
-  </tr>
-  <tr>
-    <th colspan="3">iOS</th>
-  </tr>
-  <tr>
-    <td align="center" valign="top" width="33%">
-      <img src="docs/screenshots/iphone-home.png" alt="iOS Home Screen" width="100%" /><br />
-      <sub><b>Home View</b></sub>
-    </td>
-    <td align="center" valign="top" width="33%">
-      <img src="docs/screenshots/iphone-player.png" alt="iOS Now Playing Player" width="100%" /><br />
-      <sub><b>Now Playing</b></sub>
-    </td>
-    <td align="center" valign="top" width="33%">
-      <img src="docs/screenshots/iphone-lyrics.png" alt="iOS Synced Lyrics" width="100%" /><br />
-      <sub><b>Synced Lyrics</b></sub>
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/screenshots/ipad-home.jpg" width="49%" alt="Home on iPad" />
+  <img src="docs/screenshots/ipad-album.jpg" width="49%" alt="Album on iPad" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/ipad-player.jpg" width="49%" alt="Player with animated artwork" />
+  <img src="docs/screenshots/ipad-player-animated.jpg" width="49%" alt="Player with animated tall artwork" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/ipad-lockscreen.jpg" width="60%" alt="Lock screen Now Playing" />
+</p>
+<p align="center"><sub>iPadOS 26 · real library on Navidrome · animated Apple Music artwork in the player</sub></p>
 
 ## Features
 
