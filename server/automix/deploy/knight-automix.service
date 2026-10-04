@@ -1,0 +1,21 @@
+[Unit]
+Description=Knight Music AutoMix (track analysis + transition plans)
+After=network-online.target navidrome.service
+Wants=navidrome.service
+
+[Service]
+User=knight
+WorkingDirectory=/home/knight/automix/app
+Environment=AUTOMIX_THREADS=4
+Environment=AUTOMIX_DATA=/home/knight/automix/data
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/knight/automix/.venv/bin/python -m automix.service
+Restart=always
+RestartSec=5
+# Analysis is background work: never slow down Navidrome or the desktop.
+Nice=10
+CPUWeight=20
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

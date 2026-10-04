@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Quick settings sheet presented from the player's bottom bar:
-/// - Gapless playback toggle
+/// - AutoMix and gapless playback toggles
 /// - ReplayGain mode picker (off / track / album)
 /// - Streaming quality options for Wi-Fi and Cellular
 /// - Stream cache limit picker
@@ -17,6 +17,13 @@ struct PlaybackSettingsSheet: View {
                 settings.gaplessEnabled = $0
                 player.settingsDidChange()
             }
+        )
+    }
+
+    private var autoMixBinding: Binding<Bool> {
+        Binding(
+            get: { settings.autoMixEnabled },
+            set: { settings.autoMixEnabled = $0 }
         )
     }
 
@@ -60,6 +67,12 @@ struct PlaybackSettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Toggle("AutoMix", isOn: autoMixBinding)
+                } footer: {
+                    Text("Beat-matched transitions between songs, like a DJ.")
+                }
+
                 Section {
                     Toggle("Gapless Playback", isOn: gaplessBinding)
 

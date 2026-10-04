@@ -76,6 +76,7 @@ extension AppModel {
             s.downloadMaxBitRate = self.settings.downloadMaxBitRate
             s.downloadFormat = (dlFormat.isEmpty || dlFormat == "raw") ? nil : dlFormat
             s.gapless = self.settings.gaplessEnabled
+            s.autoMix = self.settings.autoMixEnabled
             s.replayGain = ReplayGainMode(rawValue: self.settings.replayGainMode.rawValue) ?? .off
             s.scrobblingEnabled = self.settings.scrobblingEnabled
             s.offlineMode = self.isOffline
@@ -109,6 +110,9 @@ extension AppModel {
             ArtworkLoader.configure(provider: app.client)
             app.playbackServices.urls = app.client
             app.playbackServices.server = app.client.map(SubsonicServerActions.init)
+            app.playbackServices.autoMix = app.client.map { client in
+                AutoMixClient(urls: { path, items in client.autoMixURL(path: path, items: items) })
+            }
             if let db = app.database {
                 let dbId = ObjectIdentifier(db)
                 if app.lastConfiguredDatabaseId != dbId {
@@ -137,6 +141,7 @@ extension AppModel {
             _ = settings.manualOfflineEnabled
             _ = settings.streamCacheLimitMB
             _ = settings.gaplessEnabled
+            _ = settings.autoMixEnabled
             _ = settings.replayGainMode
             _ = settings.scrobblingEnabled
             _ = settings.syncPlayQueueWithServer

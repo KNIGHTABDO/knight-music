@@ -29,6 +29,8 @@ struct PlaybackSettings: Equatable, Sendable {
     var downloadFormat: String? = nil
     var downloadOnCellular: Bool = true
     var gapless: Bool = true
+    /// Apple-Music-style AutoMix: beat-matched transitions planned by the server.
+    var autoMix: Bool = true
     var replayGain: ReplayGainMode = .off
     var scrobblingEnabled: Bool = true
     var offlineMode: Bool = false
@@ -58,6 +60,14 @@ protocol PlaybackServerActions: Sendable {
     func setStarred(songId: String, starred: Bool) async throws
 }
 
+protocol AutoMixPlanProvider: Sendable {
+    func plan(from: String, to: String) async -> AutoMixPlan?
+    /// Fetches and stores plans for upcoming pairs in one request, so they also mix offline.
+    func prefetch(pairs: [(from: String, to: String)]) async
+    /// Tempo, key and bar loudness of one song (nil until the server has analysed it).
+    func summary(songId: String) async -> AutoMixTrackSummary?
+}
+
 protocol ArtworkProviding {
     func image(coverArt: String?, size: Int) async -> UIImage?
     /// MPNowPlayingInfo entries for animated lock-screen artwork (empty when none).
@@ -70,6 +80,7 @@ final class PlaybackServices: @unchecked Sendable {
     var urls: PlaybackURLProvider?
     var server: PlaybackServerActions?
     var artwork: ArtworkProviding?
+    var autoMix: AutoMixPlanProvider?
     var settingsProvider: () -> PlaybackSettings = { PlaybackSettings() }
     var networkProvider: () -> PlaybackNetworkStatus = { .wifi }
 

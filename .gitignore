@@ -7,3 +7,5 @@ KnightMusic/Resources/Info.plist
 .gemini-tasks/
 .claude/worktrees/
 .gemini-tasks-*.out
+__pycache__/
+*.pyc

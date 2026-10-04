@@ -375,6 +375,16 @@ actor SubsonicClient {
         ]
     }
 
+    /// AutoMix service on the Navidrome host: same origin under /automix through a proxy (Tailscale, HTTPS),
+    /// or port 4534 next to Navidrome's own port on a direct LAN address. Authenticated like Subsonic calls.
+    nonisolated func autoMixURL(path: String, items: [URLQueryItem] = []) -> URL? {
+        guard var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        if let port = comps.port, port != 443 { comps.port = 4534 }
+        comps.path = "/automix/v1/" + path
+        comps.percentEncodedQuery = Self.encodeQuery(authItems() + items)
+        return comps.url
+    }
+
     private nonisolated func endpointURL(_ endpoint: String) -> URL {
         baseURL.appendingPathComponent("rest").appendingPathComponent(endpoint)
     }

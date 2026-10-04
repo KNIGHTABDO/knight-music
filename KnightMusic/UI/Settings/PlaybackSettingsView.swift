@@ -3,6 +3,7 @@ import SwiftUI
 struct PlaybackSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(PlayerEngine.self) private var player
+    @State private var isShowingAutoMix = false
 
     private let bitrateOptions = [0, 320, 256, 192, 128]
     private let formatOptions = ["raw", "mp3", "opus", "aac"]
@@ -51,6 +52,15 @@ struct PlaybackSettingsView: View {
                 }
             }
 
+            Section {
+                Toggle("AutoMix", isOn: $settings.autoMixEnabled)
+                    .tint(Theme.accent)
+                Button("See How AutoMix Blends the Next Song") { isShowingAutoMix = true }
+                    .foregroundStyle(Theme.accent)
+            } footer: {
+                Text("Songs blend into each other like a DJ set: beats are matched and tempos eased together, using an analysis of your library made by the AutoMix service on your server. Continuous albums stay gapless.")
+            }
+
             Section("Playback Options") {
                 Toggle("Gapless Playback", isOn: $settings.gaplessEnabled)
                     .tint(Theme.accent)
@@ -87,6 +97,7 @@ struct PlaybackSettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.groupedBackground.ignoresSafeArea())
         .navigationTitle("Playback")
+        .sheet(isPresented: $isShowingAutoMix) { AutoMixPreviewSheet() }
         .onChange(of: settings.replayGainMode) {
             player.settingsDidChange()
         }
