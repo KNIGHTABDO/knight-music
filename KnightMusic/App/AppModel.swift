@@ -23,6 +23,7 @@ final class AppModel {
     let player: PlayerEngine
     let hermes = HermesService()
     let updates = UpdateChecker()
+    @ObservationIgnored private var autoMixShowcase: AutoMixShowcase?
 
     private(set) var session: SessionState = .loggedOut
 
@@ -92,12 +93,17 @@ final class AppModel {
     func start() async {
         started = true
         updates.checkIfDue()
+        if autoMixShowcase == nil { autoMixShowcase = AutoMixShowcase(app: self) }
+        autoMixShowcase?.start()
         let handled = await DebugLaunch.applyIfNeeded(self)
         if !handled { await refresh() }
     }
 
     func handleForeground() {
-        if started { updates.checkIfDue() }
+        if started {
+            updates.checkIfDue()
+            autoMixShowcase?.refreshIfDue()
+        }
         guard started, session == .ready else { return }
         Task { await refresh() }
     }

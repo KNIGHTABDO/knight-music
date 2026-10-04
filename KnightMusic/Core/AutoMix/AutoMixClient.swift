@@ -98,6 +98,19 @@ actor AutoMixClient: AutoMixPlanProvider {
         }
     }
 
+    func showcase() async -> [String] {
+        guard let url = urls("showcase", [URLQueryItem(name: "limit", value: "50")]) else { return [] }
+        struct Reply: Decodable { var ids: [String] }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 90))
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
+            return try JSONDecoder().decode(Reply.self, from: data).ids
+        } catch {
+            Log.playback.warning("AutoMix showcase unavailable: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     private static func key(_ from: String, _ to: String) -> String {
         "\(safeFileComponent(from))__\(safeFileComponent(to))"
     }

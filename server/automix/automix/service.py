@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import planner
+from . import planner, showcase
 from .analyze import ANALYSIS_VERSION
 
 log = logging.getLogger("automix")
@@ -131,7 +131,8 @@ class Worker(threading.Thread):
                 self.lock.wait(timeout=SCAN_INTERVAL)
                 if not self.pending:
                     return None
-            track_id = self.urgent.pop(0) if self.urgent else self.pending[0]
+            # With an external (Colab) worker taking the queue front to back, work from the back: no overlap.
+            track_id = self.urgent.pop(0) if self.urgent else (self.pending[-1] if batch_token() else self.pending[0])
             if track_id in self.pending:
                 self.pending.remove(track_id)
             return track_id
@@ -301,6 +302,9 @@ def make_handler(store: Store, worker: Worker, auth: Auth):
                 if not a_id or not b_id:
                     return self._send(400, {"error": "from and to are required"})
                 return self._send(200, self._plan(a_id, b_id))
+            if path == "/automix/v1/showcase":
+                limit = min(int(query.get("limit", "50") or 50), 100)
+                return self._send(200, {"ids": showcase.cached(store, worker, limit)})
             if path == "/automix/v1/matches":
                 a_id = query.get("from")
                 a = store.get(a_id) if a_id else None

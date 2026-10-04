@@ -391,6 +391,23 @@ final class LibraryRepository {
         }
     }
 
+    /// Creates the playlist `name`, or replaces its songs when it exists (no-op when already identical).
+    @discardableResult
+    func upsertPlaylist(named name: String, songIds: [String]) async throws -> Playlist {
+        let client = try requireClient()
+        let database = try requireDatabase()
+        let existing = try await database.pool.read { db in try LibraryQueries.playlists(db) }.first { $0.name == name }
+        if let existing, try await playlistSongIds(database, id: existing.id) == songIds { return existing }
+        let (playlist, songs) = try await client.createPlaylist(name: existing == nil ? name : nil,
+                                                                playlistId: existing?.id, songIds: songIds)
+        if songs.isEmpty && !songIds.isEmpty {
+            try await refreshPlaylist(id: playlist.id)
+        } else {
+            try await database.storePlaylist(playlist, songs: songs)
+        }
+        return playlist
+    }
+
     func renamePlaylist(id: String, name: String) async throws {
         let client = try requireClient()
         let database = try requireDatabase()

@@ -15,6 +15,7 @@ struct AutoMixPreviewSheet: View {
     @State private var isPreviewing = false
     @State private var matches: [Song] = []
     @State private var matchesFor: String?
+    @State private var isLoadingShowcase = false
 
     var body: some View {
         NavigationStack {
@@ -28,8 +29,10 @@ struct AutoMixPreviewSheet: View {
                         statsGrid(mix)
                         explanation(mix)
                         matchesSection
+                        showcaseButton
                     } else {
                         emptyState
+                        showcaseButton
                     }
                 }
                 .padding(.horizontal, Theme.margin + 4)
@@ -115,6 +118,47 @@ struct AutoMixPreviewSheet: View {
                 }
             }
         }
+    }
+
+    private var showcaseButton: some View {
+        Button {
+            Haptics.impact(.medium)
+            Task { await playShowcase() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isLoadingShowcase ? "hourglass" : "music.note.list")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Play the AutoMix Showcase")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.label)
+                    Text("A playlist where every song blends beat-matched into the next, kept up to date as your library is analysed.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.secondaryLabel)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .disabled(isLoadingShowcase)
+    }
+
+    private func playShowcase() async {
+        isLoadingShowcase = true
+        defer { isLoadingShowcase = false }
+        let ids = await player.autoMixShowcase()
+        let songs = await library.songs(ids: ids)
+        let byId = Dictionary(songs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ordered = ids.compactMap { byId[$0] }
+        guard ordered.count >= 2 else { return }
+        isPreviewing = false
+        player.play(ordered, startAt: 0, shuffle: false)
     }
 
     private func loadMatches(for songId: String) async {

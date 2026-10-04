@@ -68,6 +68,8 @@ protocol AutoMixPlanProvider: Sendable {
     func summary(songId: String) async -> AutoMixTrackSummary?
     /// Songs of the library that would blend beat-matched after `songId`, closest tempos first.
     func matches(after songId: String) async -> [String]
+    /// An ordered chain of songs in which every song blends beat-matched into the next.
+    func showcase() async -> [String]
 }
 
 protocol ArtworkProviding {
