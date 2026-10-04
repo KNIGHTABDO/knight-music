@@ -17,9 +17,11 @@ struct PlayerBackgroundView: View {
 
             if let animated = animatedArtwork {
                 let videoURL = isTall ? (animated.tallVideoURL ?? animated.squareVideoURL) : animated.squareVideoURL
+                // AVPlayerLayer already aspect-fills; a SwiftUI .fill here makes the 3:4 video
+                // report a size wider than the phone and drags the whole player layout off-screen.
                 AnimatedArtworkView(url: videoURL)
                     .id(videoURL)
-                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .ignoresSafeArea()
                     .transition(.opacity.animation(.easeInOut(duration: 0.8)))
 
@@ -40,6 +42,8 @@ struct PlayerBackgroundView: View {
                     .transition(.opacity.animation(.easeInOut(duration: 0.8)))
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .task(id: song?.id) {
             guard let song else {
                 animatedArtwork = nil

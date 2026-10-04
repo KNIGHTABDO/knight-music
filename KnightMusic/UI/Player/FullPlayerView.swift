@@ -32,22 +32,8 @@ struct FullPlayerView: View {
             let isLandscape = geo.size.width > geo.size.height
             let isTwoColumn = (hSizeClass == .regular) || isLandscape
 
-            ZStack {
+            Group {
                 if let song = player.currentSong {
-                    // Full-bleed animated artwork or organic palette background
-                    PlayerBackgroundView(song: song, isTall: !isTwoColumn)
-                        .ignoresSafeArea()
-
-                    // Frosted legibility veil for Lyrics and Queue modes so text is crisp over video
-                    if ui.playerPanel != .artwork {
-                        Rectangle()
-                            .fill(.ultraThinMaterial)
-                            .overlay(Color.black.opacity(0.45))
-                            .ignoresSafeArea()
-                            .transition(.opacity.animation(.easeInOut(duration: 0.3)))
-                    }
-
-                    // Main player content
                     VStack(spacing: 0) {
                         // Top drag grabber indicator
                         grabberHandle
@@ -59,13 +45,31 @@ struct FullPlayerView: View {
                             singleColumnLayout(song: song, geo: geo)
                         }
                     }
-                    .padding(.top, max(geo.safeAreaInsets.top, 16))
-                    .padding(.bottom, max(geo.safeAreaInsets.bottom, 12))
+                    // geo is already inside the safe area; only add breathing room where there is no inset.
+                    .padding(.top, geo.safeAreaInsets.top > 0 ? 0 : 16)
+                    .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? 0 : 12)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    // Background (full-bleed video can be far wider than the phone) lives in
+                    // .background so it can never resize the controls laid out on top of it.
+                    .background {
+                        ZStack {
+                            PlayerBackgroundView(song: song, isTall: !isTwoColumn)
+
+                            // Legibility veil for Lyrics and Queue so text stays crisp over bright covers
+                            if ui.playerPanel != .artwork {
+                                Rectangle()
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(Color.black.opacity(0.45))
+                                    .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+                            }
+                        }
+                        .ignoresSafeArea()
+                    }
                 } else {
                     emptyPlayerView
+                        .frame(width: geo.size.width, height: geo.size.height)
                 }
             }
-            .frame(width: geo.size.width, height: geo.size.height)
             .offset(y: max(0, dragOffset))
             // Apply full-screen dismiss gesture when in artwork mode
             .gesture(ui.playerPanel == .artwork ? dismissDragGesture : nil)
