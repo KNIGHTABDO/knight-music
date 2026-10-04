@@ -88,6 +88,19 @@ $(cat "$FILE")"
 $(cat "$FILE")"
     fix_loop "Address review feedback (Gemini)$(grep -q "\[shots\]" "$STATE/brief.md" && echo " [shots]")"
     ;;
+  write)   # code only: no push, no CI (the integrator merges + builds once)
+    BASE=${4:-main}
+    rm -f "$STATE/conv"; : > "$LOG"
+    git -C "$ROOT" fetch -q origin
+    [ -d "$WT" ] || git -C "$ROOT" worktree add -q -B "$BRANCH" "$WT" "origin/$BASE" 2>>"$LOG"
+    cp "$FILE" "$STATE/brief.md"
+    say "task $BRANCH (write-only) started in $WT"
+    agy_run "$RULES
+
+Your task brief:
+$(cat "$FILE")"
+    cd "$WT" && git add -A && git commit -qm "$(head -1 "$FILE" | sed 's/^# *//') (Gemini)" && say "WRITE DONE (committed locally)"
+    ;;
   ci)
     say "resuming CI loop"
     fix_loop "Retry CI (Gemini)$(grep -q "\[shots\]" "$STATE/brief.md" && echo " [shots]")"
