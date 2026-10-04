@@ -30,8 +30,8 @@ struct PlayerBottomBar: View {
     @Binding var isShowingSettings: Bool
 
     var body: some View {
-        GlassEffectContainer(spacing: 10) {
-            HStack(spacing: 12) {
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
                 // 1. AirPlay
                 RoutePickerViewRepresentable()
                     .frame(width: 44, height: 44)
@@ -53,7 +53,24 @@ struct PlayerBottomBar: View {
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Playback Settings")
 
-                // 3. Lyrics toggle
+                // 3. Dismiss full player
+                Button {
+                    Haptics.impact(.light)
+                    withAnimation(.smooth) {
+                        ui.isPlayerPresented = false
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Dismiss Player")
+
+                // 4. Lyrics toggle
                 Button {
                     Haptics.impact(.light)
                     withAnimation(.smooth) {
@@ -70,7 +87,7 @@ struct PlayerBottomBar: View {
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Lyrics")
 
-                // 4. Queue toggle
+                // 5. Queue toggle
                 Button {
                     Haptics.impact(.light)
                     withAnimation(.smooth) {
@@ -87,7 +104,7 @@ struct PlayerBottomBar: View {
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Queue")
 
-                // 5. Sleep timer menu
+                // 6. Sleep timer menu
                 Menu {
                     if player.sleepTimer.isActive {
                         if let remaining = player.sleepTimer.remaining {
