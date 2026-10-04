@@ -32,6 +32,10 @@ final class PreparedItem {
     let entry: QueueEntry
     let resolved: ResolvedSource
     var observations: [NSKeyValueObservation] = []
+    /// AutoMix gain/filter automation, applied by the item's audio tap.
+    let automation = MixAutomation()
+    var tapRequested = false
+    var tapAttached = false
     var isRadio: Bool { resolved.kind == .radio }
 
     init(item: AVPlayerItem, entry: QueueEntry, resolved: ResolvedSource) {
@@ -66,7 +70,7 @@ final class PlayerEngine {
     var isScrubbing = false
     var serverQueueAvailable = false
     var serverQueuePreview: ServerPlayQueue?
-    private var _volume: Float = 1
+    var _volume: Float = 1
 
     var volume: Float {
         get { _volume }
@@ -127,6 +131,10 @@ final class PlayerEngine {
     @ObservationIgnored var playerObservations: [NSKeyValueObservation] = []
     @ObservationIgnored var notificationTokens: [NSObjectProtocol] = []
     @ObservationIgnored var localSavedAt: Date?
+    @ObservationIgnored var spareDeck = AVQueuePlayer()
+    @ObservationIgnored var mixSession: MixSession?
+    @ObservationIgnored var mixTail: MixTail?
+    @ObservationIgnored var autoMixPlanTask: Task<Void, Never>?
 
     var settings: PlaybackSettings { services.settings }
 
@@ -235,6 +243,7 @@ final class PlayerEngine {
     func pause() {
         userWantsPlaying = false
         player.pause()
+        pauseAutoMixDecks()
         isPlaying = false
         isBuffering = false
         nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: 0)
@@ -250,13 +259,20 @@ final class PlayerEngine {
             load(index: currentIndex, autoplay: true, startAt: currentTime)
             return
         }
-        player.play()
+        if !resumeAutoMixDecks() { player.play() }
         isPlaying = true
         nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: 1)
     }
 
     func next() {
         guard !order.isEmpty, currentRadio == nil else { return }
+        // Skipping mid-blend finishes it: the incoming song simply carries on alone.
+        if let session = mixSession, session.phase == .mixing {
+            settleAutoMix(keepIncoming: true)
+            return
+        }
+        if let session = mixSession { cancelMix(reprepare: session.phase != .planned) }
+        if mixTail != nil { settleAutoMix(keepIncoming: true) }
         guard let target = nextExplicitIndex() else {
             finishQueue()
             return
@@ -278,6 +294,8 @@ final class PlayerEngine {
 
     func previous() {
         guard !order.isEmpty, currentRadio == nil else { return }
+        if mixSession != nil { cancelMix(reprepare: false) }
+        if mixTail != nil { settleAutoMix(keepIncoming: true) }
         if currentTime > 3 || (currentIndex == 0 && repeatMode != .all) {
             seek(to: 0)
             return
@@ -292,6 +310,11 @@ final class PlayerEngine {
 
     func seek(to time: TimeInterval) {
         guard let tracked, !tracked.isRadio else { return }
+        if mixTail != nil { settleAutoMix(keepIncoming: true) }
+        if let session = mixSession, session.phase != .planned {
+            cancelMix(reprepare: false)
+            prepareNext()                   // re-plans: the blend happens again when the song gets there
+        }
         let target = max(0, duration > 0 ? min(time, duration) : time)
         seekGeneration += 1
         let generation = seekGeneration
@@ -382,9 +405,10 @@ final class PlayerEngine {
     func applyVolume() {
         let gain = currentSong.map { replayGainFactor(for: $0) } ?? 1
         player.volume = _volume * gain * sleepFade
+        applyDeckVolumes()
     }
 
-    private func replayGainFactor(for song: Song) -> Float {
+    func replayGainFactor(for song: Song) -> Float {
         let mode = settings.replayGain
         guard mode != .off, currentRadio == nil, let rg = song.replayGain else { return 1 }
         let gain: Double?

@@ -1,13 +1,14 @@
 import SwiftUI
 
 /// Queue management view:
-/// - Header: "Playing Next", shuffle/repeat glass capsule toggles, "Clear" upcoming button
+/// - Header: "Playing Next" with Reorder/Clear, then Shuffle · Repeat · AutoMix glass toggles
 /// - Collapsible "History" section (last 20 songs) with tap-to-skip
 /// - Highlighted "Now Playing" row with animated equalizer indicator
 /// - Upcoming reorderable list with always-on drag handles (.editMode active), swipe-to-delete, and tap-to-skip
 /// - Transparent background displaying over the player's background
 struct QueueView: View {
     @Environment(PlayerEngine.self) private var player
+    @Environment(AppSettings.self) private var settings
 
     @State private var isHistoryExpanded = false
     @State private var isReordering = false
@@ -90,70 +91,81 @@ struct QueueView: View {
     }
 
     private var header: some View {
-        HStack {
-            Text("Playing Next")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(Color.white)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Playing Next")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Color.white)
 
-            Spacer()
+                Spacer()
 
-            // Shuffle and repeat glass capsule toggles
-            HStack(spacing: 8) {
-                Button {
-                    Haptics.impact(.light)
-                    player.toggleShuffle()
-                } label: {
-                    Image(systemName: "shuffle")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(player.shuffleEnabled ? Theme.accent : Color.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .contentShape(Capsule())
+                if !player.upcoming.isEmpty {
+                    Button(isReordering ? "Done" : "Reorder") {
+                        Haptics.impact(.light)
+                        withAnimation(.smooth) {
+                            isReordering.toggle()
+                        }
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isReordering ? Theme.accent : Color.white.opacity(0.85))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+
+                    Button("Clear") {
+                        Haptics.impact(.light)
+                        player.clearUpcoming()
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .glassEffect(.regular.interactive(), in: .capsule)
                 }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
-
-                Button {
-                    Haptics.impact(.light)
-                    player.cycleRepeat()
-                } label: {
-                    Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(player.repeatMode != .off ? Theme.accent : Color.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
             }
 
-            if !player.upcoming.isEmpty {
-                Button(isReordering ? "Done" : "Reorder") {
-                    Haptics.impact(.light)
-                    withAnimation(.smooth) {
-                        isReordering.toggle()
+            // Shuffle · Repeat · AutoMix, as in Apple Music's queue
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    queueToggle(systemImage: "shuffle", title: "Shuffle", isOn: player.shuffleEnabled) {
+                        player.toggleShuffle()
                     }
+                    queueToggle(systemImage: player.repeatMode == .one ? "repeat.1" : "repeat", title: "Repeat",
+                                isOn: player.repeatMode != .off) {
+                        player.cycleRepeat()
+                    }
+                    queueToggle(systemImage: "waveform.path", title: "AutoMix", isOn: settings.autoMixEnabled) {
+                        settings.autoMixEnabled.toggle()
+                    }
+                    .accessibilityHint("Blends songs into each other with beat-matched transitions")
                 }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isReordering ? Theme.accent : Color.white.opacity(0.85))
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .glassEffect(.regular.interactive(), in: .capsule)
-
-                Button("Clear") {
-                    Haptics.impact(.light)
-                    player.clearUpcoming()
-                }
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.accent)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .glassEffect(.regular.interactive(), in: .capsule)
             }
         }
         .padding(.horizontal, Theme.margin + 4)
         .padding(.vertical, 10)
+    }
+
+    private func queueToggle(systemImage: String, title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.impact(.light)
+            action()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(isOn ? Theme.accent : Color.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(isOn ? .regular.tint(Theme.accent.opacity(0.18)).interactive() : .regular.interactive(), in: .capsule)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     private func currentSongRow(_ song: Song) -> some View {

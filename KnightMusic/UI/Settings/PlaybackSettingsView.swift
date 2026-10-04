@@ -51,6 +51,13 @@ struct PlaybackSettingsView: View {
                 }
             }
 
+            Section {
+                Toggle("AutoMix", isOn: $settings.autoMixEnabled)
+                    .tint(Theme.accent)
+            } footer: {
+                Text("Songs blend into each other like a DJ set: beats are matched and tempos eased together, using an analysis of your library made by the AutoMix service on your server. Continuous albums stay gapless.")
+            }
+
             Section("Playback Options") {
                 Toggle("Gapless Playback", isOn: $settings.gaplessEnabled)
                     .tint(Theme.accent)

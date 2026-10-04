@@ -48,6 +48,7 @@ final class AppSettings {
 
     var streamCacheLimitMB: Int { didSet { save(streamCacheLimitMB, "streamCacheLimitMB") } }
     var gaplessEnabled: Bool { didSet { save(gaplessEnabled, "gaplessEnabled") } }
+    var autoMixEnabled: Bool { didSet { save(autoMixEnabled, "autoMixEnabled") } }
     var replayGainMode: ReplayGainMode { didSet { save(replayGainMode.rawValue, "replayGainMode") } }
     var scrobblingEnabled: Bool { didSet { save(scrobblingEnabled, "scrobblingEnabled") } }
     var animatedArtworkEnabled: Bool { didSet { save(animatedArtworkEnabled, "animatedArtworkEnabled") } }
@@ -73,6 +74,7 @@ final class AppSettings {
         manualOfflineEnabled = bool("manualOfflineEnabled", false)
         streamCacheLimitMB = int("streamCacheLimitMB", 2048)
         gaplessEnabled = bool("gaplessEnabled", true)
+        autoMixEnabled = bool("autoMixEnabled", true)
         replayGainMode = ReplayGainMode(rawValue: string("replayGainMode", "")) ?? .off
         scrobblingEnabled = bool("scrobblingEnabled", true)
         animatedArtworkEnabled = bool("animatedArtworkEnabled", true)

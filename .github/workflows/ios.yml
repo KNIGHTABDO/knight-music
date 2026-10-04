@@ -8,7 +8,7 @@ on:
   push:
     branches: ['**']
     tags: ['v*']
-    paths-ignore: ['**.md', 'ref/**']
+    paths-ignore: ['**.md', 'ref/**', 'server/**']
   workflow_dispatch:
     inputs:
       screens:

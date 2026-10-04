@@ -111,6 +111,7 @@ extension PlayerEngine {
     }
 
     func activate(entry: QueueEntry, resolved: ResolvedSource, autoplay: Bool, startAt: TimeInterval) {
+        settleAutoMix(keepIncoming: false)
         scrobbler.end()
         seekGeneration += 1
         seekTarget = nil
@@ -153,6 +154,7 @@ extension PlayerEngine {
     }
 
     func stopPlayer() {
+        settleAutoMix(keepIncoming: false)
         tracked?.observations.removeAll()
         nextPrepared?.observations.removeAll()
         tracked = nil
@@ -195,6 +197,7 @@ extension PlayerEngine {
     func makePrepared(entry: QueueEntry, resolved: ResolvedSource) -> PreparedItem {
         let item = AVPlayerItem(asset: AVURLAsset(url: resolved.url))
         let prepared = PreparedItem(item: item, entry: entry, resolved: resolved)
+        if settings.autoMix, resolved.kind != .radio { attachTap(prepared) }
         prepared.observations = [
             item.observe(\.status, options: [.new]) { [weak self, weak prepared] _, _ in
                 Task { @MainActor in
@@ -218,8 +221,26 @@ extension PlayerEngine {
         return prepared
     }
 
-    /// Ensure the player holds exactly [current, next-to-play].
+    /// Ensure the player holds exactly [current, next-to-play], and plan an AutoMix transition into it.
     func prepareNext() {
+        guard tracked != nil else { return }
+        if let session = mixSession, session.phase != .planned {
+            // A transition already under way keeps going as long as its song is still the one up next.
+            if settings.autoMix, repeatMode != .one, !endOfSongArmed, let index = naturalNextIndex(),
+               order.indices.contains(index), order[index].id == session.target.id { return }
+            cancelMix(reprepare: false)
+        }
+        prepareGaplessNext()
+        planAutoMix()
+    }
+
+    /// The gapless successor only (used when a planned transition is abandoned for this song).
+    func prepareNextWithoutAutoMix() {
+        autoMixPlanTask?.cancel()
+        prepareGaplessNext()
+    }
+
+    func prepareGaplessNext() {
         guard let tracked else { return }
         for item in player.items() where item !== tracked.item { player.remove(item) }
         nextPrepared?.observations.removeAll()
@@ -248,6 +269,7 @@ extension PlayerEngine {
 
     func advanceAfterEnd() {
         guard tracked != nil else { return }
+        cancelMix(reprepare: false)
         if endOfSongArmed {
             endOfSongArmed = false
             sleepTimer.endOfSongReached()
@@ -337,12 +359,11 @@ extension PlayerEngine {
         let wasPlaying = userWantsPlaying
         let position = elapsedNow()
         let index = currentIndex
-        if let timeObserver { player.removeTimeObserver(timeObserver) }
-        timeObserver = nil
-        playerObservations.forEach { $0.invalidate() }
-        playerObservations = []
+        settleAutoMix(keepIncoming: false)
+        uninstallPlayerObservers()
         stopPlayer()
         player = AVQueuePlayer()
+        spareDeck = AVQueuePlayer()
         installPlayerObservers()
         audioSession.activate()
         guard !order.isEmpty else { return }
@@ -350,6 +371,7 @@ extension PlayerEngine {
     }
 
     func timeTick(_ time: CMTime) {
+        autoMixTick()
         let now = ProcessInfo.processInfo.systemUptime
         let delta = min(max(now - lastTickUptime, 0), 1)
         lastTickUptime = now
