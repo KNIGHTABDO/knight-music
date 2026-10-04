@@ -287,6 +287,7 @@ actor HermesClient {
                                         ?? UUID().uuidString
                                     lastToolId = callId
                                     let toolName = (json["tool_name"] as? String)
+                                        ?? (json["tool"] as? String)
                                         ?? (json["name"] as? String)
                                         ?? "tool"
 
