@@ -14,16 +14,18 @@ struct AutoMixPlan: Codable, Equatable, Sendable {
         var handoff: Double?
         /// A only: after this A is silent and is stopped.
         var stop: Double?
-        /// B only: playback rate during the overlap (time-stretch, pitch kept).
+        /// Playback rate during the overlap (time-stretch, pitch kept). A reaches it through `rateRamp` before
+        /// B comes in when the two tempos meet halfway.
         var rate: Double?
         var gain: [[Double]]
         var hpf: [[Double]]
         var lpf: [[Double]]
-        /// B only: `[mediaTime, rate]` steps easing B back to its own tempo once A is gone.
+        /// `[mediaTime, rate]` steps. A: easing into the blend tempo before B starts. B: easing back to its own
+        /// tempo once A is gone.
         var rateRamp: [[Double]]?
     }
 
-    static let supportedVersion = 2
+    static let supportedVersion = 3
 
     var version: Int
     var mode: Mode
@@ -38,6 +40,7 @@ struct AutoMixPlan: Codable, Equatable, Sendable {
     /// Mixable plan: both decks present and internally consistent.
     var isMix: Bool {
         guard mode != .gapless, let a, let b, let stop = a.stop, let handoff = a.handoff else { return false }
-        return a.start < handoff && handoff <= stop && b.start >= 0 && (b.rate ?? 1) > 0.5 && (b.rate ?? 1) < 2
+        let rates = [a.rate ?? 1, b.rate ?? 1] + (a.rateRamp ?? []).compactMap { $0.last } + (b.rateRamp ?? []).compactMap { $0.last }
+        return a.start < handoff && handoff <= stop && b.start >= 0 && rates.allSatisfy { $0 > 0.8 && $0 < 1.25 }
     }
 }

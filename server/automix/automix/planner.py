@@ -2,6 +2,7 @@
 
 Plan (all times are seconds of that deck's own media timeline, gains are linear amplitude, filters in Hz):
   mode      beatmatch | crossfade | gapless
+  a.rate    A's playback rate from a.start on (reached through a.rateRamp in the bars before)
   a.start   A's media time at which B must start playing (B at b.start, rate b.rate)
   a.handoff A's media time at which the app shows B as the current song
   a.stop    A's media time after which A is silent and is stopped
@@ -18,8 +19,9 @@ import math
 
 from .analyze import fit_grid
 
-PLAN_VERSION = 2
-MAX_STRETCH = 0.06          # beyond ±6 % stretching becomes audible: crossfade instead
+PLAN_VERSION = 3
+MAX_STRETCH = 0.06          # per deck: beyond ±6 % stretching becomes audible
+SPLIT_ABOVE = 0.03          # tempo gaps larger than this are met halfway by both decks
 MIN_STEADINESS = 0.25       # songs without a usable grid anywhere (live, rubato, ambient) are not beat-matched
 CROSSFADE_SECONDS = 6.0
 HPF_OFF, LPF_OFF = 20.0, 20000.0
@@ -70,6 +72,7 @@ def crossfade(a: dict | None, b: dict | None, dur_a: float, reason: str) -> dict
         "version": PLAN_VERSION, "mode": "crossfade", "reason": reason,
         "a": {
             "start": round(x, 4), "handoff": round(x + fade / 2, 4), "stop": round(x + fade + 0.05, 4),
+            "rate": 1.0, "rateRamp": [],
             "gain": [[round(x, 4), 1.0]] + _equal_power(x, x + fade, 1.0, 0.0),
             "hpf": [],
             "lpf": [[round(x, 4), LPF_OFF], [round(x + fade * 0.4, 4), 6000.0], [round(x + fade, 4), 900.0]],
@@ -147,7 +150,7 @@ def beatmatch(a: dict, b: dict) -> dict | None:
     # Half/double-time reading: map A's beats onto B's beats, or onto every other one.
     ratio = bpm_b / bpm_a
     per = min((0.5, 1.0, 2.0), key=lambda k: abs(math.log(ratio / k)))
-    if abs(ratio / per - 1) > MAX_STRETCH:
+    if abs(ratio / per - 1) > 2 * MAX_STRETCH + 0.005:
         return None
 
     bar_seconds = 4 * 60.0 / bpm_a
@@ -172,16 +175,20 @@ def beatmatch(a: dict, b: dict) -> dict | None:
             continue                       # the grid wobbles right where we would mix
         p, h, e = snapped_a
         d, d_end = snapped_b
-        rate = (d_end - d) / (e - p)       # B media seconds per real second: locks both grids end to end
-        if abs(rate - 1) > MAX_STRETCH + 0.01:
+        ratio_ab = (d_end - d) / (e - p)   # B media seconds per A media second: locks both grids end to end
+        if abs(ratio_ab - 1) <= SPLIT_ABOVE:
+            rate_a, rate = 1.0, ratio_ab   # small gap: only B moves
+        else:
+            rate_a, rate = ratio_ab ** -0.5, ratio_ab ** 0.5   # meet halfway: each deck moves by the same factor
+        if abs(rate - 1) > MAX_STRETCH + 0.005 or abs(rate_a - 1) > MAX_STRETCH + 0.005:
             continue
-        a_start = p - (d - s_b) / rate
+        a_start = p - (d - s_b) * rate_a / rate
 
-        def b_at(x: float) -> float:       # B's media time when A (rate 1) is at x
-            return d + (x - p) * rate
+        def b_at(x: float) -> float:       # B's media time when A is at media time x (both decks locked)
+            return d + (x - p) * ratio_ab
 
         beat_a = (e - p) / (4 * t)
-        beat_b = beat_a * rate
+        beat_b = beat_a * ratio_ab
         loud = 1.0
         if a.get("lufs") is not None and b.get("lufs") is not None and b["lufs"] > a["lufs"]:
             loud = max(0.5, 10 ** ((a["lufs"] - b["lufs"]) / 20))
@@ -198,6 +205,13 @@ def beatmatch(a: dict, b: dict) -> dict | None:
         if loud < 0.999:
             b_gain.append([round(b_at(e) + 32 * beat_b, 4), 1.0])
         b_hpf = [[round(s_b, 4), 300.0], [round(b_at(h) - beat_b * 0.25, 4), 300.0], [round(b_at(h), 4), HPF_OFF]]
+        a_ramp = []
+        if abs(rate_a - 1) > 0.0005:
+            # A eases to its blend tempo over the 8 bars before B comes in, finishing two bars early.
+            ramp_end = a_start - 2 * (bar_a / 1.0)
+            ramp_start = ramp_end - 8 * bar_a
+            a_ramp = [[round(ramp_start + (ramp_end - ramp_start) * k / 16, 4), round(1 + (rate_a - 1) * k / 16, 5)]
+                      for k in range(1, 17)]
         ramp = []
         if abs(rate - 1) > 0.002:
             start_ramp = b_at(e) + beat_b
@@ -205,10 +219,10 @@ def beatmatch(a: dict, b: dict) -> dict | None:
         b_gain.sort(key=lambda kf: kf[0])
         return {
             "version": PLAN_VERSION, "mode": "beatmatch",
-            "reason": f"{bpm_a:.1f}→{bpm_b:.1f} BPM, {t} bars, stretch {100 * (rate - 1):+.1f}%",
+            "reason": f"{bpm_a:.1f}→{bpm_b:.1f} BPM, {t} bars, A {100 * (rate_a - 1):+.1f}% B {100 * (rate - 1):+.1f}%",
             "bars": t,
             "a": {"start": round(a_start, 4), "handoff": round(h, 4), "stop": round(e + 0.05, 4),
-                  "gain": a_gain, "hpf": a_hpf, "lpf": []},
+                  "rate": round(rate_a, 6), "rateRamp": a_ramp, "gain": a_gain, "hpf": a_hpf, "lpf": []},
             "b": {"start": round(s_b, 4), "rate": round(rate, 6), "gain": b_gain, "hpf": b_hpf, "lpf": [],
                   "rateRamp": ramp},
         }

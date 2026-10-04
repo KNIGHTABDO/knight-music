@@ -311,8 +311,8 @@ final class PlayerEngine {
     func seek(to time: TimeInterval) {
         guard let tracked, !tracked.isRadio else { return }
         if mixTail != nil { settleAutoMix(keepIncoming: true) }
-        if let session = mixSession, session.phase != .planned {
-            cancelMix(reprepare: false)
+        if let session = mixSession, session.phase != .planned || session.aRampIndex > 0 {
+            cancelMix(reprepare: false)     // also restores A's own tempo if it had started easing
             prepareNext()                   // re-plans: the blend happens again when the song gets there
         }
         let target = max(0, duration > 0 ? min(time, duration) : time)

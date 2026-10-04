@@ -21,6 +21,9 @@ final class MixSession {
     var fetchedAt = ProcessInfo.processInfo.systemUptime
 
     var rate: Float { Float(b.rate ?? 1) }
+    /// A's rate while B plays (1 unless the tempos meet halfway).
+    var aRate: Float { Float(a.rate ?? 1) }
+    var aRampIndex = 0
 
     init(plan: AutoMixPlan, a: AutoMixPlan.Deck, b: AutoMixPlan.Deck, outgoing: PreparedItem, target: QueueEntry) {
         self.plan = plan
@@ -37,16 +40,19 @@ final class MixTail {
     let player: AVQueuePlayer
     let prepared: PreparedItem
     let stopAt: Double
+    let outgoingRate: Float
     /// The incoming song's media time after which its automation is flat (gain 1, filters open).
     let automationEnd: Double
     var ramp: [[Double]]
     var rampIndex = 0
     var finished = false
 
-    init(player: AVQueuePlayer, prepared: PreparedItem, stopAt: Double, automationEnd: Double, ramp: [[Double]]) {
+    init(player: AVQueuePlayer, prepared: PreparedItem, stopAt: Double, outgoingRate: Float, automationEnd: Double,
+         ramp: [[Double]]) {
         self.player = player
         self.prepared = prepared
         self.stopAt = stopAt
+        self.outgoingRate = outgoingRate
         self.automationEnd = automationEnd
         self.ramp = ramp
     }
@@ -105,6 +111,7 @@ extension PlayerEngine {
         tickTail()
         guard let session = mixSession else { return }
         let t = elapsedNow()
+        if session.phase != .scheduled, session.phase != .mixing { rampOutgoing(session, at: t) }
         switch session.phase {
         case .planned:
             if session.plan.final != true, ProcessInfo.processInfo.systemUptime - session.fetchedAt > 20,
@@ -127,6 +134,17 @@ extension PlayerEngine {
             if t >= session.a.start { session.phase = .mixing }
         case .mixing:
             if t >= (session.a.handoff ?? session.a.start) { handOff(session) }
+        }
+    }
+
+    /// A eases into the blend tempo in the bars before B comes in (only when the tempos meet halfway).
+    private func rampOutgoing(_ session: MixSession, at t: Double) {
+        guard let ramp = session.a.rateRamp, tracked === session.outgoing else { return }
+        while session.aRampIndex < ramp.count, ramp[session.aRampIndex].count >= 2, t >= ramp[session.aRampIndex][0] {
+            let rate = Float(ramp[session.aRampIndex][1])
+            player.defaultRate = rate
+            if player.rate > 0 { player.rate = rate }
+            session.aRampIndex += 1
         }
     }
 
@@ -219,6 +237,11 @@ extension PlayerEngine {
     /// Starts B at the host time A reaches `a.start`: both decks then run off the same clock, beat for beat.
     private func schedule(_ session: MixSession) {
         guard session.phase == .ready, let deck = session.deck, let timebase = session.outgoing.item.timebase else { return }
+        // The host-time conversion below assumes A already runs at its blend tempo.
+        guard abs(player.rate - session.aRate) < 0.0005 else {
+            if (session.a.rateRamp ?? []).isEmpty, player.rate > 0 { player.rate = session.aRate }
+            return
+        }
         let hostClock = CMClockGetHostTimeClock()
         let startOnA = CMTime(seconds: session.a.start, preferredTimescale: 600_000)
         let hostStart = CMSyncConvertTime(startOnA, from: timebase, to: hostClock)
@@ -262,7 +285,7 @@ extension PlayerEngine {
         let curves = [session.b.gain, session.b.hpf, session.b.lpf, session.b.rateRamp ?? []]
         let automationEnd = curves.compactMap { $0.last?.first }.max() ?? 0
         mixTail = MixTail(player: outgoingPlayer, prepared: session.outgoing, stopAt: session.a.stop ?? session.a.start,
-                          automationEnd: automationEnd, ramp: session.b.rateRamp ?? [])
+                          outgoingRate: session.aRate, automationEnd: automationEnd, ramp: session.b.rateRamp ?? [])
         applyVolume()
         prepareNext()
         syncCache()
@@ -323,6 +346,11 @@ extension PlayerEngine {
         }
         session.incoming?.observations.removeAll()
         session.outgoing.automation.clear()
+        if tracked === session.outgoing, player.defaultRate != 1 {
+            // A may have started easing into the blend tempo: back to its own.
+            player.defaultRate = 1
+            if player.rate > 0 { player.rate = 1 }
+        }
         if reprepare, tracked === session.outgoing { prepareNextWithoutAutoMix() }
     }
 
@@ -367,7 +395,7 @@ extension PlayerEngine {
             otherRate = session.rate
         } else if let tail = mixTail, !tail.finished {
             other = tail.player
-            otherRate = 1
+            otherRate = tail.outgoingRate
         } else {
             return false
         }

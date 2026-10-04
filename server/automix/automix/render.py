@@ -85,16 +85,20 @@ def render(path_a: str, path_b: str, plan: dict, lead: float = 10.0, tail: float
         return mix, {"overlapStart": lead, "overlapEnd": lead}
     pa, pb = plan["a"], plan["b"]
     t0 = max(pa["start"] - lead, 0.0)                      # A media time where the excerpt starts (A runs at 1x)
-    total = (pa["stop"] - t0) + tail
+    total = (pa["start"] - t0) + (pa["stop"] - pa["start"]) / pa.get("rate", 1.0) + tail
     n = int(total * SR)
     deck_a = np.zeros((n, 2), dtype=np.float32)
     deck_b = np.zeros((n, 2), dtype=np.float32)
 
+    rate_a = pa.get("rate", 1.0)
     a_seg = a_audio[int(t0 * SR):int(pa["stop"] * SR)]
-    deck_a[:len(a_seg)] = _deck(a_seg, t0 + np.arange(len(a_seg)) / SR, pa)
+    a_proc = _deck(a_seg, t0 + np.arange(len(a_seg)) / SR, pa)
+    split = int((pa["start"] - t0) * SR)                   # A at 1x before B comes in, at a.rate after
+    a_proc = np.concatenate([a_proc[:split], _stretch(a_proc[split:], rate_a)])[:n]
+    deck_a[:len(a_proc)] = a_proc
 
     rate = pb.get("rate", 1.0)
-    b_offset = int((pa["start"] - t0) * SR)                # where B starts in the excerpt
+    b_offset = split                                        # where B starts in the excerpt
     b_media_len = (n - b_offset) / SR * rate
     b_seg = b_audio[int(pb["start"] * SR):int((pb["start"] + b_media_len) * SR) + SR]
     b_proc = _stretch(_deck(b_seg, pb["start"] + np.arange(len(b_seg)) / SR, pb), rate)[:n - b_offset]
@@ -103,7 +107,8 @@ def render(path_a: str, path_b: str, plan: dict, lead: float = 10.0, tail: float
     peak = float(np.abs(mix).max())
     if peak > 0.99:
         mix *= 0.99 / peak
-    return mix, {"overlapStart": pa["start"] - t0, "overlapEnd": pa["stop"] - t0, "handoff": pa["handoff"] - t0,
+    real = lambda media: (pa["start"] - t0) + (media - pa["start"]) / rate_a   # A media time -> excerpt seconds
+    return mix, {"overlapStart": pa["start"] - t0, "overlapEnd": real(pa["stop"]), "handoff": real(pa["handoff"]),
                  "stems": (deck_a, deck_b)}
 
 
