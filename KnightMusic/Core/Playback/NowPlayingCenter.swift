@@ -7,8 +7,28 @@ final class NowPlayingCenter {
     var artwork: ArtworkProviding?
 
     private var info: [String: Any] = [:]
+    private var currentSong: Song?
     private var currentSongId: String?
     private var artworkTask: Task<Void, Never>?
+    private var readyObserver: (any NSObjectProtocol)?
+
+    init() {
+        readyObserver = nil
+        readyObserver = NotificationCenter.default.addObserver(
+            forName: .animatedArtworkDidBecomeReady,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let albumId = note.userInfo?["albumId"] as? String else { return }
+            self?.handleAnimatedArtworkReady(albumId: albumId)
+        }
+    }
+
+    deinit {
+        if let readyObserver {
+            NotificationCenter.default.removeObserver(readyObserver)
+        }
+    }
 
     func setSong(_ song: Song?, isLive: Bool, duration: TimeInterval, elapsed: TimeInterval, rate: Double,
                  queueIndex: Int, queueCount: Int) {
@@ -17,6 +37,7 @@ final class NowPlayingCenter {
             clear()
             return
         }
+        currentSong = song
         currentSongId = song.id
         var next: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
@@ -72,10 +93,22 @@ final class NowPlayingCenter {
 
     func clear() {
         artworkTask?.cancel()
+        currentSong = nil
         currentSongId = nil
         info = [:]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
+    }
+
+    private func handleAnimatedArtworkReady(albumId: String) {
+        guard let song = currentSong, song.albumId == albumId, song.id == currentSongId else { return }
+        guard let provider = artwork else { return }
+        let id = song.id
+        Task { [weak self] in
+            let entries = await provider.nowPlayingEntries(for: song)
+            guard !Task.isCancelled, self?.currentSongId == id, !entries.isEmpty else { return }
+            self?.merge(entries, songId: id)
+        }
     }
 
     private func merge(_ entries: [String: Any], songId: String) {
@@ -86,5 +119,7 @@ final class NowPlayingCenter {
 
     private func publish() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        let keyList = info.keys.sorted().joined(separator: ", ")
+        Log.artwork.info("published keys: \(keyList)")
     }
 }

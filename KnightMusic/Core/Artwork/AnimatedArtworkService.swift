@@ -1,9 +1,18 @@
 import Foundation
 import Network
 
-struct AnimatedArtwork: Hashable {
+struct AnimatedArtwork: Hashable, Sendable {
     var squareVideoURL: URL
     var tallVideoURL: URL?
+    var lockSquareVideoURL: URL?
+    var lockTallVideoURL: URL?
+
+    init(squareVideoURL: URL, tallVideoURL: URL? = nil, lockSquareVideoURL: URL? = nil, lockTallVideoURL: URL? = nil) {
+        self.squareVideoURL = squareVideoURL
+        self.tallVideoURL = tallVideoURL
+        self.lockSquareVideoURL = lockSquareVideoURL
+        self.lockTallVideoURL = lockTallVideoURL
+    }
 }
 
 /// Main-actor facade over the animated artwork pipeline (lookup, download, fallback conversion, lock screen).
@@ -38,8 +47,20 @@ final class AnimatedArtworkService {
 
     /// MPNowPlayingInfo entries for iOS 26 lock-screen animated artwork. Empty when disabled or unavailable.
     func nowPlayingEntries(for song: Song) async -> [String: Any] {
-        guard isLockScreenEnabled, let art = await animatedArtwork(for: song), let albumId = song.albumId else { return [:] }
+        guard isLockScreenEnabled, let albumId = song.albumId, !albumId.isEmpty else { return [:] }
+        _ = await animatedArtwork(for: song)
+        let (squareLock, tallLock) = await store.ensureLockFiles(albumId: albumId)
+        let hasSquare = squareLock != nil
+        let hasTall = tallLock != nil
+        Log.artwork.info("lockscreen art: lookup album=\(albumId) found square=\(hasSquare) tall=\(hasTall)")
+        guard let squareURL = squareLock else { return [:] }
         let cover = await ArtworkLoader.shared.image(coverArt: song.coverArt, size: 600)
+        let art = AnimatedArtwork(
+            squareVideoURL: squareURL,
+            tallVideoURL: tallLock,
+            lockSquareVideoURL: squareURL,
+            lockTallVideoURL: tallLock
+        )
         return await NowPlayingAnimatedArtwork.entries(albumId: albumId, artwork: art, fallbackPreview: cover)
     }
 

@@ -26,6 +26,7 @@ enum AnimatedImageConverter {
 
         try? FileManager.default.removeItem(at: destination)
         let writer = try AVAssetWriter(outputURL: destination, fileType: .mp4)
+        writer.shouldOptimizeForNetworkUse = true
         let settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
