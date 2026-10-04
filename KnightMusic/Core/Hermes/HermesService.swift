@@ -189,7 +189,7 @@ final class HermesService {
         }
     }
 
-    private func runArrivalWatcher(
+    func runArrivalWatcher(
         conversationId: String,
         messageId: String,
         tracks: [AddedTrack],
@@ -199,62 +199,19 @@ final class HermesService {
         ui: UIState
     ) {
         importStatus[messageId] = "Importing to library…"
-
-        arrivalTasks[messageId]?.cancel()
-        arrivalTasks[messageId] = Task {
-            var remainingTracks = tracks
-            var foundSongs: [Song] = []
-
-            // Check every 5s for up to 90s (18 cycles)
-            for _ in 0..<18 {
-                if Task.isCancelled { return }
-
-                await app.refresh(force: false)
-
-                if let database = library.database {
-                    for track in remainingTracks {
-                        let songs = (try? await database.pool.read { db in
-                            try LibraryQueries.search(db, text: track.title).songs
-                        }) ?? []
-
-                        if let match = songs.first(where: { song in
-                            guard let artist = song.artist else { return false }
-                            return artist.localizedCaseInsensitiveCompare(track.artist) == .orderedSame
-                                || artist.localizedStandardContains(track.artist)
-                                || track.artist.localizedStandardContains(artist)
-                        }) {
-                            foundSongs.append(match)
-                            remainingTracks.removeAll(where: { $0.id == track.id })
-
-                            // Update message in conversation
-                            self.appendMatchedSong(conversationId: conversationId, messageId: messageId, song: match)
-
-                            // Show toast
-                            ui.showToast("Added \(match.title) to your library")
-
-                            // Prefetch animated artwork
-                            artwork.prefetch(for: [match])
-                        }
-                    }
-                }
-
-                if remainingTracks.isEmpty {
-                    // All tracks found!
-                    self.importStatus[messageId] = nil
-                    return
-                }
-
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-            }
-
-            // If not found after 90s
-            if !remainingTracks.isEmpty {
-                self.importStatus[messageId] = "Still importing — pull to refresh later"
-            }
-        }
+        ArrivalWatcher.shared.watch(
+            conversationId: conversationId,
+            messageId: messageId,
+            tracks: tracks,
+            app: app,
+            library: library,
+            artwork: artwork,
+            ui: ui,
+            hermes: self
+        )
     }
 
-    private func appendMatchedSong(conversationId: String, messageId: String, song: Song) {
+    func appendMatchedSong(conversationId: String, messageId: String, song: Song) {
         if var list = matchedSongs[messageId] {
             if !list.contains(where: { $0.id == song.id }) {
                 list.append(song)

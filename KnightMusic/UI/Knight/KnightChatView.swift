@@ -196,7 +196,7 @@ struct KnightChatView: View {
 
     private func addedTracksSection(for message: KnightMessage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let status = hermes.importStatus[message.id] {
+            if let status = hermes.importStatus[message.id], status != "Not found yet" {
                 HStack(spacing: 6) {
                     if status.contains("Still") {
                         Image(systemName: "clock.arrow.circlepath")
@@ -216,19 +216,18 @@ struct KnightChatView: View {
             }
 
             let songs = hermes.matchedSongs[message.id] ?? []
-            if !songs.isEmpty {
+            let remainingTracks = message.addedTracks.filter { track in
+                !songs.contains { song in ArrivalWatcher.matches(track: track, song: song) }
+            }
+
+            if !songs.isEmpty || !remainingTracks.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(songs) { song in
                             trackCard(song: song)
                         }
-                    }
-                }
-            } else if !message.addedTracks.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(message.addedTracks) { track in
-                            addedTrackPlaceholderCard(track: track)
+                        ForEach(remainingTracks) { track in
+                            addedTrackPlaceholderCard(track: track, message: message)
                         }
                     }
                 }
@@ -286,7 +285,7 @@ struct KnightChatView: View {
         .background(Color(uiColor: .systemGray6).opacity(0.4), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private func addedTrackPlaceholderCard(track: AddedTrack) -> some View {
+    private func addedTrackPlaceholderCard(track: AddedTrack, message: KnightMessage) -> some View {
         HStack(spacing: 12) {
             ArtworkView(coverArt: nil, pointSize: 64)
 
@@ -301,12 +300,43 @@ struct KnightChatView: View {
                     .foregroundStyle(Theme.secondaryLabel)
                     .lineLimit(1)
 
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.mini)
-                    Text("Importing…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.secondaryLabel)
+                if hermes.importStatus[message.id] == "Not found yet" {
+                    HStack(spacing: 8) {
+                        Text("Not found yet")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.secondaryLabel)
+
+                        Button {
+                            Haptics.impact(.light)
+                            hermes.runArrivalWatcher(
+                                conversationId: conversationId,
+                                messageId: message.id,
+                                tracks: message.addedTracks,
+                                app: app,
+                                library: library,
+                                artwork: artwork,
+                                ui: ui
+                            )
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text("Check again")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.glass)
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Text("Importing…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.secondaryLabel)
+                    }
                 }
             }
         }
