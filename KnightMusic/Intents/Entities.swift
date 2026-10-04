@@ -30,7 +30,7 @@ public struct AlbumQuery: EntityStringQuery {
     public init() {}
 
     public func entities(for identifiers: [String]) async throws -> [AlbumEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let marks = Array(repeating: "?", count: identifiers.count).joined(separator: ",")
             let albums = try Album.fetchAll(
@@ -43,7 +43,7 @@ public struct AlbumQuery: EntityStringQuery {
     }
 
     public func entities(matching string: String) async throws -> [AlbumEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let albums = try LibraryQueries.albums(db, sort: .name, search: string, limit: 20)
             return albums.map { AlbumEntity(id: $0.id, name: $0.name, artist: $0.artist) }
@@ -51,7 +51,7 @@ public struct AlbumQuery: EntityStringQuery {
     }
 
     public func suggestedEntities() async throws -> [AlbumEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let albums = try LibraryQueries.albums(db, sort: .recentlyPlayed, search: "", limit: 10)
             return albums.map { AlbumEntity(id: $0.id, name: $0.name, artist: $0.artist) }
@@ -82,7 +82,7 @@ public struct ArtistQuery: EntityStringQuery {
     public init() {}
 
     public func entities(for identifiers: [String]) async throws -> [ArtistEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let marks = Array(repeating: "?", count: identifiers.count).joined(separator: ",")
             let artists = try Artist.fetchAll(
@@ -95,7 +95,7 @@ public struct ArtistQuery: EntityStringQuery {
     }
 
     public func entities(matching string: String) async throws -> [ArtistEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let artists = try LibraryQueries.artists(db, search: string)
             return artists.prefix(20).map { ArtistEntity(id: $0.id, name: $0.name) }
@@ -103,7 +103,7 @@ public struct ArtistQuery: EntityStringQuery {
     }
 
     public func suggestedEntities() async throws -> [ArtistEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let artists = try LibraryQueries.favoriteArtists(db)
             return artists.prefix(10).map { ArtistEntity(id: $0.id, name: $0.name) }
@@ -134,7 +134,7 @@ public struct PlaylistQuery: EntityStringQuery {
     public init() {}
 
     public func entities(for identifiers: [String]) async throws -> [PlaylistEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let marks = Array(repeating: "?", count: identifiers.count).joined(separator: ",")
             let playlists = try Playlist.fetchAll(
@@ -147,7 +147,7 @@ public struct PlaylistQuery: EntityStringQuery {
     }
 
     public func entities(matching string: String) async throws -> [PlaylistEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let all = try LibraryQueries.playlists(db)
             let filtered = string.isEmpty ? all : all.filter { $0.name.localizedCaseInsensitiveContains(string) }
@@ -156,7 +156,7 @@ public struct PlaylistQuery: EntityStringQuery {
     }
 
     public func suggestedEntities() async throws -> [PlaylistEntity] {
-        guard let database = AppModel.shared?.database else { return [] }
+        guard let database = await AppModel.shared?.database else { return [] }
         return try await database.pool.read { db in
             let all = try LibraryQueries.playlists(db)
             return all.prefix(10).map { PlaylistEntity(id: $0.id, name: $0.name) }
