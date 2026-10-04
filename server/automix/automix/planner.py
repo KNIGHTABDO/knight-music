@@ -172,13 +172,26 @@ def beatmatch(a: dict, b: dict) -> dict | None:
         db_a, db_b = a["downbeats"], b["downbeats"]
         bar_a = (db_a[i + t] - db_a[i]) / t
         snapped_a = _snap(a["beats"], [db_a[i], db_a[i + t // 2], db_a[i + t]], bar_a)
-        bars_b = max(1, int(round(t * per)))
-        bar_b = (db_b[j + bars_b] - db_b[j]) / bars_b
-        snapped_b = _snap(b["beats"], [db_b[j], db_b[j + bars_b]], bar_b)
-        if not snapped_a or not snapped_b:
-            continue                       # the grid wobbles right where we would mix
+        if not snapped_a:
+            continue                       # A's grid wobbles right where we would mix
         p, h, e = snapped_a
+        # Lock beat for beat, not bar for bar: detected bars don't always hold four clean beats, and two
+        # grids matched by bars drift apart inside them. Take exactly as many of B's beats as A plays
+        # (twice / half as many in double / half time) from B's anchor downbeat.
+        ibi_a = 60.0 / bpm_a
+        n_a = int(round((e - p) / ibi_a))
+        beats_b = b["beats"]
+        jd = min(range(len(beats_b)), key=lambda k: abs(beats_b[k] - db_b[j]))
+        need = int(round(n_a * per))
+        if abs(beats_b[jd] - db_b[j]) > 0.3 * 60.0 / bpm_b or jd + need >= len(beats_b) or need < 8:
+            continue
+        snapped_b = _snap(beats_b, [beats_b[jd], beats_b[jd + need]], 4 * 60.0 / bpm_b)
+        if not snapped_b:
+            continue
         d, d_end = snapped_b
+        implied = per * bpm_a / bpm_b     # B media seconds per A media second if both grids are what they say
+        if abs((d_end - d) / (e - p) / implied - 1) > 0.02:
+            continue                       # beat counts and tempos disagree: a grid isn't what it seems
         ratio_ab = (d_end - d) / (e - p)   # B media seconds per A media second: locks both grids end to end
         if abs(ratio_ab - 1) <= SAME_TEMPO:
             rate_a, rate = 1.0, 1.0        # same tempo: both decks untouched (grids differ by < 1 ms per bar)

@@ -145,16 +145,14 @@ def verify(marks: dict) -> dict:
     beats_b, _ = tracker(deck_b[s0:s1].mean(axis=1), SR)
     if len(beats_a) < 4 or len(beats_b) < 4:
         return {"locked": None, "note": "too few beats to measure"}
-    ibi = float(np.median(np.diff(beats_a)))
-    offsets = []
-    for t in beats_b:
-        nearest = beats_a[np.argmin(np.abs(beats_a - t))]
-        offsets.append(t - nearest)
-    offsets = np.array(offsets)
+    # Compare the sparser grid against the denser one, so double-time pairs (every A beat has a B beat) count.
+    ref, other = (beats_a, beats_b) if len(beats_a) <= len(beats_b) else (beats_b, beats_a)
+    ibi = float(np.median(np.diff(other)))
+    offsets = np.array([t - other[np.argmin(np.abs(other - t))] for t in ref])
     good = np.abs(offsets) < ibi * 0.25
     phase = float(np.median(np.abs(offsets[good]))) * 1000 if good.any() else None
     lag = _onset_lag_ms(deck_a[s0:s1].mean(axis=1), deck_b[s0:s1].mean(axis=1))
     return {"beatsA": len(beats_a), "beatsB": len(beats_b), "matched": round(float(good.mean()), 2),
             "onsetLagMs": lag,
             "phaseErrorMs": round(phase, 1) if phase is not None else None,
-            "locked": bool(good.mean() > 0.8 and phase is not None and phase < 25)}
+            "locked": bool(good.mean() > 0.8 and phase is not None and phase < 25 and abs(lag or 0) < 30)}
