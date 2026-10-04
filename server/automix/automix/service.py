@@ -209,6 +209,17 @@ class Auth:
         return good
 
 
+def batch_token() -> str | None:
+    """Secret for an external analysis worker (e.g. a Colab GPU), from ~/automix/data/batch_token. None = off."""
+    path = os.path.join(DATA_DIR, "batch_token")
+    try:
+        with open(path) as f:
+            token = f.read().strip()
+        return token if len(token) >= 32 else None
+    except OSError:
+        return None
+
+
 def make_handler(store: Store, worker: Worker, auth: Auth):
     class Handler(BaseHTTPRequestHandler):
         server_version = "KnightAutoMix/1"
@@ -235,10 +246,44 @@ def make_handler(store: Store, worker: Worker, auth: Auth):
             result.update({"from": a_id, "to": b_id, "final": not missing})
             return result
 
+        def _batch(self, path: str) -> tuple[str, str] | None:
+            """('manifest'|'file'|'result', id) for /automix/v1/batch/<token>/..., when the token matches."""
+            parts = path.split("/")
+            token = batch_token()
+            if len(parts) < 6 or parts[3] != "batch" or not token or parts[4] != token:
+                return None
+            return parts[5], (parts[6] if len(parts) > 6 else "")
+
         def do_GET(self):
             url = urllib.parse.urlparse(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
             path = url.path.rstrip("/")
+            if path.startswith("/automix/v1/batch/"):
+                job = self._batch(path)
+                if not job:
+                    return self._send(404, {"error": "not found"})
+                kind, track_id = job
+                if kind == "manifest":
+                    with worker.lock:
+                        pending = [i for i in worker.pending if i != worker.current]
+                    items = [{"id": i, "suffix": os.path.splitext(worker.meta[i]["path"])[1],
+                              "size": worker.meta[i]["size"]} for i in pending if i in worker.meta]
+                    return self._send(200, {"version": ANALYSIS_VERSION, "tracks": items})
+                if kind == "file" and track_id in worker.meta:
+                    file_path = worker.meta[track_id]["path"]
+                    try:
+                        size = os.path.getsize(file_path)
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/octet-stream")
+                        self.send_header("Content-Length", str(size))
+                        self.end_headers()
+                        with open(file_path, "rb") as f:
+                            while chunk := f.read(1 << 20):
+                                self.wfile.write(chunk)
+                    except OSError as exc:
+                        return self._send(500, {"error": str(exc)})
+                    return
+                return self._send(404, {"error": "not found"})
             if path == "/automix/v1/health":
                 return self._send(200, {"ok": True})
             if not path.startswith("/automix/v1/"):
@@ -283,6 +328,25 @@ def make_handler(store: Store, worker: Worker, auth: Auth):
         def do_POST(self):
             url = urllib.parse.urlparse(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
+            if url.path.startswith("/automix/v1/batch/"):
+                job = self._batch(url.path.rstrip("/"))
+                if not job or job[0] != "result" or job[1] not in worker.meta:
+                    return self._send(404, {"error": "not found"})
+                try:
+                    length = min(int(self.headers.get("Content-Length", "0")), 16 << 20)
+                    data = json.loads(self.rfile.read(length))
+                except (ValueError, TypeError):
+                    return self._send(400, {"error": "bad body"})
+                if data.get("version") != ANALYSIS_VERSION or not isinstance(data.get("beats"), list):
+                    return self._send(409, {"error": f"analysis version must be {ANALYSIS_VERSION}"})
+                t = worker.meta[job[1]]
+                store.put(job[1], t["path"], t["size"], t["updated"], data, None)
+                with worker.lock:
+                    if job[1] in worker.pending:
+                        worker.pending.remove(job[1])
+                log.info("imported external analysis %s (%.1f BPM): %s", job[1], data.get("bpm") or 0,
+                         os.path.basename(t["path"]))
+                return self._send(200, {"ok": True})
             if url.path.rstrip("/") != "/automix/v1/plans":
                 return self._send(404, {"error": "not found"})
             if not auth.check(query):
