@@ -9,6 +9,7 @@ struct PlayerBackgroundView: View {
 
     @Environment(AnimatedArtworkService.self) private var artworkService: AnimatedArtworkService?
     @State private var animatedArtwork: AnimatedArtwork?
+    @State private var animatedAlbumId: String?
     @State private var palette: ArtworkPalette = .fallback
 
     var body: some View {
@@ -50,13 +51,17 @@ struct PlayerBackgroundView: View {
                 palette = .fallback
                 return
             }
-            async let artTask = artworkService?.animatedArtwork(for: song)
-            async let palTask = ArtworkPalette.palette(for: song.coverArt)
-            let (art, pal) = await (artTask, palTask)
-            withAnimation(.easeInOut(duration: 0.8)) {
-                animatedArtwork = art
-                palette = pal
+            if song.albumId != animatedAlbumId {
+                withAnimation(.easeInOut(duration: 0.5)) { animatedArtwork = nil }
+                animatedAlbumId = song.albumId
             }
+            // The palette is quick and the clip may still be downloading: show the palette first.
+            let pal = await ArtworkPalette.palette(for: song.coverArt)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.8)) { palette = pal }
+            let art = await artworkService?.animatedArtwork(for: song)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.8)) { animatedArtwork = art }
         }
     }
 }

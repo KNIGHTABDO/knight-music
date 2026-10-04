@@ -10,24 +10,9 @@ extension Notification.Name {
 /// Builds iOS 26 `MPMediaItemAnimatedArtwork` values for the lock screen / Control Center.
 /// Deliberately a nonisolated enum: MediaPlayer invokes the handlers on its own queues.
 enum NowPlayingAnimatedArtwork {
-    static func entries(albumId: String, artwork: AnimatedArtwork, fallbackPreview: UIImage?) async -> [String: Any] {
-        let squareURL = artwork.lockSquareVideoURL ?? artwork.squareVideoURL
-        let tallURL = artwork.lockTallVideoURL ?? artwork.tallVideoURL
-        return await entries(albumId: albumId, lockSquareURL: squareURL, lockTallURL: tallURL, fallbackPreview: fallbackPreview)
-    }
-
-    /// Each slot only gets a video of its own shape: a 3:4 clip handed over as 1:1 is rejected by the system.
-    static func entries(albumId: String, lockSquareURL: URL?, lockTallURL: URL?, fallbackPreview: UIImage?) async -> [String: Any] {
-        var out: [String: Any] = [:]
-        if let lockSquareURL,
-           let art = await make(albumId: albumId, variant: "1x1", videoURL: lockSquareURL, fallbackPreview: fallbackPreview) {
-            out[MPNowPlayingInfoProperty1x1AnimatedArtwork] = art
-        }
-        if let lockTallURL,
-           let art = await make(albumId: albumId, variant: "3x4", videoURL: lockTallURL, fallbackPreview: fallbackPreview) {
-            out[MPNowPlayingInfoProperty3x4AnimatedArtwork] = art
-        }
-        return out
+    /// The animated-artwork key for one slot, or nil when the slot can't be filled.
+    static func entry(albumId: String, tall: Bool, videoURL: URL, fallbackPreview: UIImage?) async -> MPMediaItemAnimatedArtwork? {
+        await make(albumId: albumId, variant: tall ? "3x4" : "1x1", videoURL: videoURL, fallbackPreview: fallbackPreview)
     }
 
     /// The preview is rendered up front so the system's request never comes back empty.
@@ -70,8 +55,10 @@ enum NowPlayingAnimatedArtwork {
         guard targetSize.width > 0, targetSize.height > 0, image.size.width > 0, image.size.height > 0 else {
             return image
         }
-        let format = UIGraphicsImageRendererFormat.default()
+        let format = UIGraphicsImageRendererFormat.preferred()
         format.scale = 1.0
+        format.opaque = true
+        let targetSize = CGSize(width: targetSize.width.rounded(), height: targetSize.height.rounded())
         let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
         return renderer.image { _ in
             let aspectWidth = targetSize.width / image.size.width

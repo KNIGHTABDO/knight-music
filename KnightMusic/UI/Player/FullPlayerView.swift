@@ -21,6 +21,7 @@ struct FullPlayerView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var currentRating: Int = 0
     @State private var animatedArtwork: AnimatedArtwork?
+    @State private var animatedAlbumId: String?
     @State private var isShowingSettings = false
 
     private var hasAnimatedArtwork: Bool {
@@ -79,7 +80,13 @@ struct FullPlayerView: View {
             .task(id: player.currentSong?.id) {
                 if let song = player.currentSong {
                     currentRating = song.userRating ?? 0
+                    // A different album must not keep showing the previous clip while its own one loads.
+                    if song.albumId != animatedAlbumId {
+                        withAnimation(.easeInOut(duration: 0.35)) { animatedArtwork = nil }
+                        animatedAlbumId = song.albumId
+                    }
                     let art = await artworkService?.animatedArtwork(for: song)
+                    guard !Task.isCancelled else { return }
                     withAnimation(.easeInOut(duration: 0.35)) {
                         animatedArtwork = art
                     }

@@ -1,17 +1,14 @@
 import Foundation
+import MediaPlayer
 import Network
 
 struct AnimatedArtwork: Hashable, Sendable {
     var squareVideoURL: URL
     var tallVideoURL: URL?
-    var lockSquareVideoURL: URL?
-    var lockTallVideoURL: URL?
 
-    init(squareVideoURL: URL, tallVideoURL: URL? = nil, lockSquareVideoURL: URL? = nil, lockTallVideoURL: URL? = nil) {
+    init(squareVideoURL: URL, tallVideoURL: URL? = nil) {
         self.squareVideoURL = squareVideoURL
         self.tallVideoURL = tallVideoURL
-        self.lockSquareVideoURL = lockSquareVideoURL
-        self.lockTallVideoURL = lockTallVideoURL
     }
 }
 
@@ -48,15 +45,23 @@ final class AnimatedArtworkService {
     /// MPNowPlayingInfo entries for iOS 26 lock-screen animated artwork. Empty when disabled or unavailable.
     func nowPlayingEntries(for song: Song) async -> [String: Any] {
         guard isLockScreenEnabled, let albumId = song.albumId, !albumId.isEmpty else { return [:] }
-        _ = await animatedArtwork(for: song)
-        let (squareLock, tallLock) = await store.ensureLockFiles(albumId: albumId)
-        let hasSquare = squareLock != nil
-        let hasTall = tallLock != nil
-        Log.artwork.info("lockscreen art: lookup album=\(albumId) found square=\(hasSquare) tall=\(hasTall)")
-        guard squareLock != nil || tallLock != nil else { return [:] }
-        let cover = await ArtworkLoader.shared.image(coverArt: song.coverArt, size: 600)
-        return await NowPlayingAnimatedArtwork.entries(albumId: albumId, lockSquareURL: squareLock, lockTallURL: tallLock,
-                                                       fallbackPreview: cover)
+        guard await animatedArtwork(for: song) != nil else { return [:] }
+        // iPhone's lock screen only shows the 3:4 slot and iPad's only the 1:1 one; anything else is ignored.
+        let supported = Set(MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys)
+        Log.artwork.info("lockscreen art: supported keys \(supported.sorted().joined(separator: ", "))")
+        let cover = await ArtworkLoader.shared.image(coverArt: song.coverArt, size: 1200)
+        var out: [String: Any] = [:]
+        for (key, tall) in [(MPNowPlayingInfoProperty3x4AnimatedArtwork, true), (MPNowPlayingInfoProperty1x1AnimatedArtwork, false)]
+        where supported.contains(key) {
+            guard let clip = await store.lockClip(albumId: albumId, tall: tall) else {
+                Log.artwork.error("lockscreen art: no \(tall ? "3:4" : "1:1") clip for album \(albumId)")
+                continue
+            }
+            if let artwork = await NowPlayingAnimatedArtwork.entry(albumId: albumId, tall: tall, videoURL: clip, fallbackPreview: cover) {
+                out[key] = artwork
+            }
+        }
+        return out
     }
 
     private static func request(for song: Song) -> AnimatedArtworkRequest? {

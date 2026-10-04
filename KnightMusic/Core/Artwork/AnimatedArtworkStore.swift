@@ -32,6 +32,11 @@ actor AnimatedArtworkStore {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         directory = caches.appendingPathComponent("AnimatedArtwork", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Earlier builds re-muxed every clip into *.lock.mp4; those files are no longer used.
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in files where name.hasSuffix(".lock.mp4") {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
     }
 
     // MARK: Public
@@ -46,52 +51,21 @@ actor AnimatedArtworkStore {
         return nil
     }
 
-    /// Produces or returns the sibling .lock.mp4 files for lock-screen playback.
-    /// Remuxes without re-encoding (passthrough, fallback to highest quality).
-    func ensureLockFiles(albumId: String) async -> (square: URL?, tall: URL?) {
-        let squareSrc = fileURL(albumId, "square")
-        let tallSrc = fileURL(albumId, "tall")
-        let squareLock = lockFileURL(albumId, "square")
-        let tallLock = lockFileURL(albumId, "tall")
+    /// The clip for one lock-screen slot (`tall` = 3:4, else 1:1): the downloaded file when it already has that
+    /// shape, otherwise a centre-cropped copy made once and kept next to it.
+    func lockClip(albumId: String, tall: Bool) async -> URL? {
+        let square = fileURL(albumId, "square"), tallFile = fileURL(albumId, "tall")
+        let candidates = tall ? [tallFile, square] : [square, tallFile]
+        guard let source = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return nil }
+        return await LockScreenClip.clip(from: source, aspect: tall ? 3.0 / 4.0 : 1.0,
+                                         cropURL: lockFileURL(albumId, tall ? "tall" : "square"))
+    }
 
-        var resultSquare: URL?
-        var resultTall: URL?
-
-        // Clean up orphaned lock files if source does not exist
-        if !FileManager.default.fileExists(atPath: squareSrc.path) {
-            try? FileManager.default.removeItem(at: squareLock)
+    /// Crops are derived from the downloaded clips, so any new download invalidates both.
+    private func removeCrops(_ albumId: String) {
+        for variant in ["square", "tall"] {
+            try? FileManager.default.removeItem(at: lockFileURL(albumId, variant))
         }
-        if !FileManager.default.fileExists(atPath: tallSrc.path) {
-            try? FileManager.default.removeItem(at: tallLock)
-        }
-
-        if FileManager.default.fileExists(atPath: squareSrc.path) {
-            if FileManager.default.fileExists(atPath: squareLock.path) {
-                resultSquare = squareLock
-            } else {
-                do {
-                    try await HLSArtwork.remuxForLockScreen(source: squareSrc, destination: squareLock)
-                    resultSquare = squareLock
-                } catch {
-                    // Remux error is logged inside remuxForLockScreen
-                }
-            }
-        }
-
-        if FileManager.default.fileExists(atPath: tallSrc.path) {
-            if FileManager.default.fileExists(atPath: tallLock.path) {
-                resultTall = tallLock
-            } else {
-                do {
-                    try await HLSArtwork.remuxForLockScreen(source: tallSrc, destination: tallLock)
-                    resultTall = tallLock
-                } catch {
-                    // Remux error is logged inside remuxForLockScreen
-                }
-            }
-        }
-
-        return (resultSquare, resultTall)
     }
 
     func delete(albumId: String) {
@@ -152,7 +126,7 @@ actor AnimatedArtworkStore {
                 try? FileManager.default.removeItem(at: lockFileURL(r.albumId, "tall"))
             }
             if gotSquare || gotTall {
-                _ = await ensureLockFiles(albumId: r.albumId)
+                removeCrops(r.albumId)
                 record(r.albumId, Entry(found: true, square: gotSquare, tall: gotTall, source: "m8tec", checkedAt: Date(), retryAfter: nil))
                 NotificationCenter.default.post(
                     name: .animatedArtworkDidBecomeReady,
@@ -170,7 +144,7 @@ actor AnimatedArtworkStore {
         case .converted:
             try? FileManager.default.removeItem(at: fileURL(r.albumId, "tall"))
             try? FileManager.default.removeItem(at: lockFileURL(r.albumId, "tall"))
-            _ = await ensureLockFiles(albumId: r.albumId)
+            removeCrops(r.albumId)
             record(r.albumId, Entry(found: true, square: true, tall: false, source: "cover", checkedAt: Date(), retryAfter: nil))
             NotificationCenter.default.post(
                 name: .animatedArtworkDidBecomeReady,
@@ -231,7 +205,7 @@ actor AnimatedArtworkStore {
 
     private func lockFileURL(_ albumId: String, _ variant: String) -> URL {
         let safe = safeAlbumId(albumId)
-        return directory.appendingPathComponent("\(safe)-\(variant).lock.mp4")
+        return directory.appendingPathComponent("\(safe)-\(variant).crop.mp4")
     }
 
     private func safeAlbumId(_ albumId: String) -> String {
