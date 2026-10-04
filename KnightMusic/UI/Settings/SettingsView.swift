@@ -144,8 +144,12 @@ struct SettingsView: View {
             Section {
                 NavigationLink("Playback", destination: PlaybackSettingsView())
                 NavigationLink("Storage", destination: StorageView())
+                NavigationLink(destination: HermesSettingsView()) {
+                    Label("Knight AI (Hermes)", systemImage: "sparkles")
+                }
                 NavigationLink("Customize", destination: CustomizeView())
             }
+
 
             // 5. Log Out row
             Section {

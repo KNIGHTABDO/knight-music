@@ -6,7 +6,8 @@
 set -uo pipefail
 APP="$1"; OUT="$2"; mkdir -p "$OUT"
 BUNDLE=com.knightabdo.knightmusic
-SCREENS=(home search artists albums songs playlists album artist player lyrics queue settings server downloads onboarding)
+SCREENS=(home search artists albums songs playlists album artist player lyrics queue settings server downloads onboarding knight)
+
 
 pick() { xcrun simctl list devices available -j | python3 -c "
 import json,sys,re

@@ -72,7 +72,10 @@ targets:
           NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: Knight Music connects to your Navidrome server on your local network.
+        NSMicrophoneUsageDescription: Knight Music uses the microphone for dictating requests to Knight AI.
+        NSSpeechRecognitionUsageDescription: Knight Music uses speech recognition to convert your voice into text for Knight AI.
         BGTaskSchedulerPermittedIdentifiers: [com.knightabdo.knightmusic.sync]
+
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

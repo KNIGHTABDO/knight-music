@@ -21,8 +21,10 @@ final class AppModel {
     let downloads = DownloadManager()
     let artwork = AnimatedArtworkService()
     let player: PlayerEngine
+    let hermes = HermesService()
 
     private(set) var session: SessionState = .loggedOut
+
     /// Client for the active account/address; nil when logged out.
     private(set) var client: SubsonicClient?
     /// Library mirror of the active account; nil when logged out.
@@ -55,8 +57,10 @@ final class AppModel {
         }
         restoreSession()
         installServiceWiring()
+        hermes.configure(app: self, library: library, artwork: artwork)
         WidgetBridge.shared.start(app: self)
     }
+
 
     // MARK: - Offline
 

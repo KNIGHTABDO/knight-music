@@ -11,6 +11,9 @@ struct MainTabsView: View {
     @Environment(TabNavigationModel.self) private var nav
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
+    @State private var knightPath = NavigationPath()
+
+
     private struct LibraryTabItem: Identifiable {
         let id: Route
         let title: String
@@ -50,7 +53,18 @@ struct MainTabsView: View {
         .onAppear {
             keepSelectedTabValid(for: horizontalSizeClass)
         }
+        .task {
+            if app.debugScreen == "knight" {
+                ui.selectedTab = .knight
+            }
+        }
+        .onChange(of: app.debugScreen) { _, newScreen in
+            if newScreen == "knight" {
+                ui.selectedTab = .knight
+            }
+        }
     }
+
 
     private var regularTabs: some View {
         @Bindable var ui = ui
@@ -73,6 +87,15 @@ struct MainTabsView: View {
                 }
             }
             .customizationID("tab.search")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
+
+            Tab("Knight", systemImage: "sparkles", value: UIState.Tab.knight) {
+                NavigationStack(path: $knightPath) {
+                    KnightView(path: $knightPath)
+                        .withAppRoutes()
+                }
+            }
+            .customizationID("tab.knight")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab("Settings", systemImage: "gearshape", value: UIState.Tab.settings) {
@@ -134,6 +157,15 @@ struct MainTabsView: View {
                 }
             }
             .customizationID("compact.tab.library")
+            .customizationBehavior(.disabled, for: .sidebar, .tabBar)
+
+            Tab("Knight", systemImage: "sparkles", value: UIState.Tab.knight) {
+                NavigationStack(path: $knightPath) {
+                    KnightView(path: $knightPath)
+                        .withAppRoutes()
+                }
+            }
+            .customizationID("compact.tab.knight")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab("Settings", systemImage: "gearshape", value: UIState.Tab.settings) {

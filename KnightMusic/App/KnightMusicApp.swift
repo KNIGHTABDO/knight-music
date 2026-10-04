@@ -39,7 +39,9 @@ struct KnightMusicApp: App {
                 .environment(app.settings)
                 .environment(app.network)
                 .environment(app.syncStatus)
+                .environment(app.hermes)
                 .preferredColorScheme(.dark)
+
                 .task { await app.start() }
                 .onOpenURL { url in
                     guard url.scheme?.lowercased() == "knightmusic" else { return }

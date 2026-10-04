@@ -16,7 +16,9 @@ enum Route: Hashable {
     case playlists
     case genres
     case radioStations
+    case knightChat(id: String, draft: String? = nil)
 }
+
 
 /// Album grids reachable from the sidebar / home shelves ("Recently Played ›").
 enum AlbumListKind: String, Hashable, CaseIterable {
@@ -62,7 +64,9 @@ extension View {
             case .playlists: PlaylistsView()
             case .genres: GenresView()
             case .radioStations: RadioStationsView()
+            case .knightChat(let id, let draft): KnightChatView(conversationId: id, initialDraft: draft)
             }
+
         }
     }
 }
