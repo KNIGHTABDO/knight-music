@@ -232,7 +232,9 @@ actor HermesClient {
                         let eventType = (json["event"] as? String) ?? (json["type"] as? String) ?? ""
 
                         // Check failure
-                        if eventType == "run.failed" || eventType == "error" || json["error"] != nil {
+                        // Only real run failures: tool.completed events carry an "error" field (false/null or a
+                        // failed command's stderr) while the run itself keeps going.
+                        if eventType == "run.failed" || eventType == "error" {
                             let msg = (json["error"] as? [String: Any])?["message"] as? String
                                 ?? json["error"] as? String
                                 ?? json["message"] as? String

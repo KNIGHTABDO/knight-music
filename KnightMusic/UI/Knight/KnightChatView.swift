@@ -17,6 +17,7 @@ struct KnightChatView: View {
     @State private var inputText: String = ""
     @State private var dictation = SpeechDictationManager()
     @State private var resumeAfterDictation = false
+    @State private var didApplyDraft = false
     @State private var showingRenameAlert = false
     @State private var showingDeleteConfirmation = false
     @State private var renameText: String = ""
@@ -69,9 +70,12 @@ struct KnightChatView: View {
                 }
             }
             .onAppear {
-                if let draft = initialDraft, !draft.isEmpty {
+                // Apply an "Ask Knight" draft once, and only to a fresh chat — onAppear fires again on every
+                // return to this screen.
+                if !didApplyDraft, let draft = initialDraft, !draft.isEmpty, (conversation?.messages.isEmpty ?? true) {
                     inputText = draft
                 }
+                didApplyDraft = true
                 proxy.scrollTo("bottomID", anchor: .bottom)
             }
         }
