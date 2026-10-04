@@ -31,7 +31,10 @@ targets:
     platform: iOS
     sources:
       - path: KnightMusic
+      - path: KnightMusicWidgets/Shared
     dependencies:
+      - target: KnightMusicWidgets
+        embed: true
       - package: GRDB
       - package: Nuke
         product: Nuke
@@ -45,12 +48,17 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: KnightMusic/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: KnightMusic/Resources/KnightMusic.entitlements
     info:
       path: KnightMusic/Resources/Info.plist
       properties:
         CFBundleDisplayName: Knight Music
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleURLTypes:
+          - CFBundleURLName: com.knightabdo.knightmusic
+            CFBundleURLSchemes:
+              - knightmusic
         ITSAppUsesNonExemptEncryption: false
         LSRequiresIPhoneOS: true
         UILaunchScreen:
@@ -74,3 +82,25 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+
+  KnightMusicWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: KnightMusicWidgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.knightabdo.knightmusic.widgets
+        PRODUCT_NAME: KnightMusicWidgets
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: KnightMusicWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: KnightMusicWidgets/KnightMusicWidgets.entitlements
+    info:
+      path: KnightMusicWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Knight Music
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
