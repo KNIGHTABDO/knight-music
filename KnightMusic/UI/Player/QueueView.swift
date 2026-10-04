@@ -12,6 +12,7 @@ struct QueueView: View {
 
     @State private var isHistoryExpanded = false
     @State private var isReordering = false
+    @State private var isShowingAutoMix = false
 
     private var historySongs: [Song] {
         Array(player.history.suffix(20))
@@ -140,7 +141,14 @@ struct QueueView: View {
                     .accessibilityHint("Blends songs into each other with beat-matched transitions")
                 }
             }
+
+            if settings.autoMixEnabled, player.currentSong != nil {
+                AutoMixQueueCard { isShowingAutoMix = true }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
+        .animation(.smooth, value: settings.autoMixEnabled)
+        .sheet(isPresented: $isShowingAutoMix) { AutoMixPreviewSheet() }
         .padding(.horizontal, Theme.margin + 4)
         .padding(.vertical, 10)
     }

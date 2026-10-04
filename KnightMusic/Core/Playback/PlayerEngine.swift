@@ -70,6 +70,11 @@ final class PlayerEngine {
     var isScrubbing = false
     var serverQueueAvailable = false
     var serverQueuePreview: ServerPlayQueue?
+    /// The next AutoMix transition (for the preview), and why there is none when AutoMix is on but idle.
+    var plannedMix: PlannedMix?
+    var autoMixNote: String?
+    /// True from the moment the next song comes in until the previous one has faded out.
+    var autoMixActive = false
     var _volume: Float = 1
 
     var volume: Float {
@@ -135,6 +140,7 @@ final class PlayerEngine {
     @ObservationIgnored var mixSession: MixSession?
     @ObservationIgnored var mixTail: MixTail?
     @ObservationIgnored var autoMixPlanTask: Task<Void, Never>?
+    @ObservationIgnored var lastPrefetchSignature = ""
 
     var settings: PlaybackSettings { services.settings }
 

@@ -31,6 +31,8 @@ KnightMusic/
   Core/API      Models, SubsonicClient (actor), ServerAccount, AccountStore, Keychain, AddressResolver
   Core/Library  LibraryDatabase (GRDB pool + migrations + FTS5), SyncEngine, LibraryRepository (live queries)
   Core/Playback PlayerEngine, PlayQueue, NowPlayingCenter, RemoteCommands, Scrobbler, StreamCache, SleepTimer
+                PlayerEngine+AutoMix: second deck, host-time-synced start, handoff, tail
+  Core/AutoMix  AutoMixPlan, AutoMixClient (plans from server/automix), MixTap (MTAudioProcessingTap gain/filters)
   Core/Downloads DownloadManager (background URLSession), StorageManager
   Core/Artwork  ArtworkLoader (Nuke), AnimatedArtworkService (m8tec + animated WebP), ArtworkPalette
   Core/Support  Log (os.Logger subsystem com.knightabdo.knightmusic), NetworkMonitor, Haptics, AppSettings
@@ -61,6 +63,11 @@ KnightMusic/
   - `PlayerEngine.play(_ songs: [Song], startAt: Int, shuffle: Bool)`, `togglePlayPause()`, `next()`,
     `previous()`, `seek(to:)`, `enqueue(_:next:)`, `currentSong`, `isPlaying`, `currentTime`, `duration`,
     `queue`, `repeatMode`, `shuffleEnabled`, `source: AudioSource`.
+
+## AutoMix (server/automix)
+Beat-matched transitions are planned on the Navidrome host by `server/automix` (Python service `knight-automix`,
+see its README) and executed by the app. Tune mixing in `planner.py` (deploy with `deploy/install.sh`, no app
+release needed); bump `PLAN_VERSION` and `AutoMixPlan.supportedVersion` together only when the plan format changes.
 
 ## Liquid Glass — use Apple's real APIs only (iOS 26 SDK)
 Never fake glass with `.ultraThinMaterial` + borders + blur stacks. Never draw custom frosted panels.

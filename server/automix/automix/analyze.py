@@ -160,8 +160,12 @@ def analyze(path: str) -> dict:
     S = np.abs(librosa.stft(y, n_fft=2048, hop_length=HOP))
     freqs = librosa.fft_frequencies(sr=SR, n_fft=2048)
     low = S[freqs < 150].sum(axis=0)
-    H, P = librosa.decompose.hpss(S)
-    perc = P.sum(axis=0) / (H.sum(axis=0) + P.sum(axis=0) + 1e-9)
+    # Percussive share per bar: a coarse (93 ms) spectrogram is plenty and four times cheaper to separate.
+    coarse = np.abs(librosa.stft(y, n_fft=2048, hop_length=HOP * 4))
+    H, P = librosa.decompose.hpss(coarse, kernel_size=(17, 31))
+    perc = np.repeat(P.sum(axis=0) / (H.sum(axis=0) + P.sum(axis=0) + 1e-9), 4)[:S.shape[1]]
+    if len(perc) < S.shape[1]:
+        perc = np.pad(perc, (0, S.shape[1] - len(perc)), mode="edge")
     chroma = librosa.feature.chroma_stft(S=S ** 2, sr=SR, hop_length=HOP)
     mfcc = librosa.feature.mfcc(S=librosa.power_to_db(librosa.feature.melspectrogram(S=S ** 2, sr=SR)), n_mfcc=13)
     onset = librosa.onset.onset_strength(S=librosa.amplitude_to_db(S), sr=SR)

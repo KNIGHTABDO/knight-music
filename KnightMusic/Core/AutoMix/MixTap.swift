@@ -95,10 +95,8 @@ private final class MixTapContext {
             let count = min(block, frames - offset)
             let t = startTime + Double(offset + count / 2) / sampleRate
             let targetGain = program.gain?.value(at: t) ?? 1
-            let hpCut = program.hpf?.value(at: t, logarithmic: true) ?? 0
-            let lpCut = program.lpf?.value(at: t, logarithmic: true) ?? 0
-            hp.configure(highPass: true, cutoff: hpCut, sampleRate: sampleRate)
-            lp.configure(highPass: false, cutoff: lpCut, sampleRate: sampleRate)
+            hp.configure(highPass: true, cutoff: program.hpf?.value(at: t, logarithmic: true), sampleRate: sampleRate)
+            lp.configure(highPass: false, cutoff: program.lpf?.value(at: t, logarithmic: true), sampleRate: sampleRate)
             let g0 = gain, step = (targetGain - gain) / Float(count)
             if interleaved, let data = buffers.first?.mData?.assumingMemoryBound(to: Float.self) {
                 for f in 0..<count {
@@ -123,8 +121,9 @@ private final class MixTapContext {
     }
 }
 
-/// One RBJ biquad (Butterworth Q) per channel. Cutoff 0 = bypass; coefficients are recomputed only when the
-/// cutoff moves, filter state is kept across blocks so sweeps are click-free.
+/// One RBJ biquad (Butterworth Q) per channel. A deck with a filter curve runs its filter the whole time the curve
+/// is installed — fully open at the curve's ends (10 Hz high-pass, ~20 kHz low-pass), so sweeps never switch a filter
+/// in or out while it is audible; without a curve it is bypassed.
 private struct FilterBank {
     private var b0: Float = 1, b1: Float = 0, b2: Float = 0, a1: Float = 0, a2: Float = 0
     private var x1: [Float], x2: [Float], y1: [Float], y2: [Float]
@@ -135,19 +134,18 @@ private struct FilterBank {
         x1 = Array(repeating: 0, count: channels); x2 = x1; y1 = x1; y2 = x1
     }
 
-    mutating func configure(highPass: Bool, cutoff newCutoff: Float, sampleRate: Double) {
-        // High-pass at/below 25 Hz and low-pass at/above 19 kHz are inaudible: bypass.
-        let active = highPass ? newCutoff > 25 : (newCutoff > 0 && newCutoff < 19_000)
-        if !active {
+    mutating func configure(highPass: Bool, cutoff requested: Float?, sampleRate: Double) {
+        guard let requested else {
             if !idle { reset() }
             idle = true
-            cutoff = 0
             return
         }
-        if !idle, abs(newCutoff - cutoff) < cutoff * 0.003 { return }
+        let fc = min(max(requested, 10), Float(sampleRate) * 0.45)
+        if !idle, abs(fc - cutoff) < cutoff * 0.003 { return }
+        if idle { reset() }
         idle = false
-        cutoff = newCutoff
-        let w = 2 * Float.pi * min(newCutoff, Float(sampleRate) * 0.45) / Float(sampleRate)
+        cutoff = fc
+        let w = 2 * Float.pi * fc / Float(sampleRate)
         let alpha = sin(w) / (2 * 0.7071)
         let cosw = cos(w)
         let a0 = 1 + alpha

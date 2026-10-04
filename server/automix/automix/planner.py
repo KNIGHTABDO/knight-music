@@ -21,7 +21,7 @@ from .analyze import fit_grid
 
 PLAN_VERSION = 3
 MAX_STRETCH = 0.06          # per deck: beyond ±6 % stretching becomes audible
-SPLIT_ABOVE = 0.03          # tempo gaps larger than this are met halfway by both decks
+SAME_TEMPO = 0.0004         # closer than this the grids stay locked without any stretching
 MIN_STEADINESS = 0.25       # songs without a usable grid anywhere (live, rubato, ambient) are not beat-matched
 CROSSFADE_SECONDS = 6.0
 HPF_OFF, LPF_OFF = 20.0, 20000.0
@@ -176,10 +176,12 @@ def beatmatch(a: dict, b: dict) -> dict | None:
         p, h, e = snapped_a
         d, d_end = snapped_b
         ratio_ab = (d_end - d) / (e - p)   # B media seconds per A media second: locks both grids end to end
-        if abs(ratio_ab - 1) <= SPLIT_ABOVE:
-            rate_a, rate = 1.0, ratio_ab   # small gap: only B moves
+        if abs(ratio_ab - 1) <= SAME_TEMPO:
+            rate_a, rate = 1.0, 1.0        # same tempo: both decks untouched (grids differ by < 1 ms per bar)
         else:
-            rate_a, rate = ratio_ab ** -0.5, ratio_ab ** 0.5   # meet halfway: each deck moves by the same factor
+            # Meet halfway: each deck moves by the same factor, so both pass through the same time-stretch
+            # processing on the phone (equal latency) and neither is stretched more than half the gap.
+            rate_a, rate = ratio_ab ** -0.5, ratio_ab ** 0.5
         if abs(rate - 1) > MAX_STRETCH + 0.005 or abs(rate_a - 1) > MAX_STRETCH + 0.005:
             continue
         a_start = p - (d - s_b) * rate_a / rate

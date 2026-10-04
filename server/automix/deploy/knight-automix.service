@@ -6,7 +6,7 @@ Wants=navidrome.service
 [Service]
 User=knight
 WorkingDirectory=/home/knight/automix/app
-Environment=AUTOMIX_THREADS=3
+Environment=AUTOMIX_THREADS=4
 Environment=AUTOMIX_DATA=/home/knight/automix/data
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/knight/automix/.venv/bin/python -m automix.service

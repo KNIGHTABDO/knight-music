@@ -62,6 +62,10 @@ protocol PlaybackServerActions: Sendable {
 
 protocol AutoMixPlanProvider: Sendable {
     func plan(from: String, to: String) async -> AutoMixPlan?
+    /// Fetches and stores plans for upcoming pairs in one request, so they also mix offline.
+    func prefetch(pairs: [(from: String, to: String)]) async
+    /// Tempo, key and bar loudness of one song (nil until the server has analysed it).
+    func summary(songId: String) async -> AutoMixTrackSummary?
 }
 
 protocol ArtworkProviding {

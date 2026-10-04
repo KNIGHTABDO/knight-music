@@ -62,10 +62,7 @@ extension PlayerEngine {
     /// How long before the transition the incoming deck starts loading and pre-rolling.
     private var prepareLead: Double { 16 }
 
-    var isAutoMixing: Bool {
-        if let phase = mixSession?.phase, phase == .scheduled || phase == .mixing { return true }
-        return mixTail != nil
-    }
+    var isAutoMixing: Bool { autoMixActive }
 
     // MARK: Planning
 
@@ -74,9 +71,23 @@ extension PlayerEngine {
         if let session = mixSession, session.phase != .planned { return }
         mixSession = nil
         autoMixPlanTask?.cancel()
-        guard settings.autoMix, let tracked, !tracked.isRadio, currentRadio == nil, repeatMode != .one,
-              !endOfSongArmed, !player.isExternalPlaybackActive, let provider = services.autoMix,
-              let index = naturalNextIndex(), order.indices.contains(index), order[index].id != tracked.entry.id else {
+        plannedMix = nil
+        autoMixNote = nil
+        guard settings.autoMix, let tracked, !tracked.isRadio, currentRadio == nil else { return }
+        guard repeatMode != .one, !endOfSongArmed else {
+            autoMixNote = repeatMode == .one ? "Repeat One is on" : "Sleep timer ends after this song"
+            return
+        }
+        guard !player.isExternalPlaybackActive else {
+            autoMixNote = "AutoMix pauses while playing to AirPlay"
+            return
+        }
+        guard let provider = services.autoMix else {
+            autoMixNote = "Connect to your server to use AutoMix"
+            return
+        }
+        guard let index = naturalNextIndex(), order.indices.contains(index), order[index].id != tracked.entry.id else {
+            autoMixNote = "Nothing up next"
             return
         }
         let target = order[index]
@@ -87,16 +98,40 @@ extension PlayerEngine {
             guard !Task.isCancelled, let self else { return }
             self.installPlan(plan, trackedEntry: trackedEntry, target: target)
         }
+        prefetchUpcomingPlans(provider)
+    }
+
+    /// The next ~20 transitions of the queue, fetched once in the background (they then mix offline too).
+    private func prefetchUpcomingPlans(_ provider: AutoMixPlanProvider) {
+        let upcoming = Array(order.dropFirst(currentIndex).prefix(21)).map(\.song.id)
+        guard upcoming.count > 2 else { return }
+        let pairs = zip(upcoming, upcoming.dropFirst()).filter { $0 != $1 }.map { (from: $0, to: $1) }
+        let signature = pairs.map { "\($0.from)>\($0.to)" }.joined(separator: ",")
+        guard signature != lastPrefetchSignature else { return }
+        lastPrefetchSignature = signature
+        Task.detached(priority: .utility) { await provider.prefetch(pairs: pairs) }
     }
 
     private func installPlan(_ plan: AutoMixPlan?, trackedEntry: UUID, target: QueueEntry) {
-        guard let plan, plan.isMix, let a = plan.a, let b = plan.b,
-              let tracked, tracked.entry.id == trackedEntry,
+        guard let tracked, tracked.entry.id == trackedEntry,
               let index = naturalNextIndex(), order.indices.contains(index), order[index].id == target.id else { return }
         if let session = mixSession, session.phase != .planned { return }
+        guard let plan else {
+            autoMixNote = "Couldn\u{2019}t reach AutoMix on your server"
+            return
+        }
+        guard plan.isMix, let a = plan.a, let b = plan.b else {
+            autoMixNote = plan.mode == .gapless ? "Gapless: these songs run into each other" : "No transition for this pair"
+            return
+        }
         // Not enough of A left to pre-roll B: keep the gapless handover for this pair.
-        guard elapsedNow() < a.start - 1.5 else { return }
+        guard elapsedNow() < a.start - 1.5 else {
+            autoMixNote = "Too close to the end to blend this time"
+            return
+        }
         mixSession = MixSession(plan: plan, a: a, b: b, outgoing: tracked, target: target)
+        plannedMix = PlannedMix(plan: plan, from: tracked.entry.song, to: target.song)
+        autoMixNote = plan.final == true ? nil : "Still analysing one of these songs: a smooth crossfade for now"
         Log.playback.info("AutoMix planned: \(plan.mode.rawValue) at \(String(format: "%.2f", a.start))s (\(plan.reason ?? ""))")
     }
 
@@ -131,7 +166,10 @@ extension PlayerEngine {
             if isPlaying, player.rate > 0 { schedule(session) }
             else if t > session.a.start - 0.4 { cancelMix(reprepare: true) }
         case .scheduled:
-            if t >= session.a.start { session.phase = .mixing }
+            if t >= session.a.start {
+                session.phase = .mixing
+                autoMixActive = true
+            }
         case .mixing:
             if t >= (session.a.handoff ?? session.a.start) { handOff(session) }
         }
@@ -328,6 +366,7 @@ extension PlayerEngine {
         tail.player.volume = 1
         spareDeck = tail.player
         mixTail = nil
+        autoMixActive = false
     }
 
     // MARK: Interruptions (user actions mid-transition)
@@ -337,6 +376,8 @@ extension PlayerEngine {
         autoMixPlanTask?.cancel()
         guard let session = mixSession else { return }
         mixSession = nil
+        plannedMix = nil
+        if mixTail == nil { autoMixActive = false }
         session.statusObservation = nil
         if let deck = session.deck {
             deck.pause()
@@ -407,6 +448,24 @@ extension PlayerEngine {
         player.setRate(mainRate, time: player.currentTime(), atHostTime: start)
         other.setRate(otherRate, time: other.currentTime(), atHostTime: start)
         return true
+    }
+
+    // MARK: Preview
+
+    /// Jumps to a few seconds before the planned transition so it can be heard right away.
+    func previewAutoMix() {
+        guard let session = mixSession, session.phase == .planned, tracked === session.outgoing else { return }
+        if !isPlaying { resume() }
+        seek(to: max(0, session.a.start - 12))
+    }
+
+    var canPreviewAutoMix: Bool {
+        guard let session = mixSession else { return false }
+        return session.phase == .planned && tracked === session.outgoing
+    }
+
+    func autoMixSummary(songId: String) async -> AutoMixTrackSummary? {
+        await services.autoMix?.summary(songId: songId)
     }
 
     // MARK: Helpers
