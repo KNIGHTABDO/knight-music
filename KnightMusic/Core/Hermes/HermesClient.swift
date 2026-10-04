@@ -141,7 +141,7 @@ actor HermesClient {
                             return
                         }
 
-                        if event == "error" || event == "response.failed" {
+                        if event == "error" || event == "response.failed" || (json["type"] as? String) == "response.failed" {
                             let msg = (json["error"] as? [String: Any])?["message"] as? String
                                 ?? json["error"] as? String
                                 ?? json["message"] as? String
@@ -150,7 +150,8 @@ actor HermesClient {
                             return
                         }
 
-                        switch event {
+                        let type = event.isEmpty ? (json["type"] as? String ?? "") : event
+                        switch type {
                         case "response.output_item.added":
                             if let item = json["item"] as? [String: Any] {
                                 let type = item["type"] as? String
@@ -197,23 +198,23 @@ actor HermesClient {
                         }
                     }
 
+                    // `AsyncLineSequence` drops empty lines, so the blank line that terminates an SSE event never
+                    // arrives. Hermes sends each event's JSON on a single `data:` line, so dispatch on every
+                    // `data:` line (and flush anything pending when a new `event:` starts).
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
                         if line.hasPrefix("event:") {
+                            if !currentData.isEmpty {
+                                dispatchEvent(event: currentEvent, dataStr: currentData)
+                                currentData = ""
+                            }
                             currentEvent = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
                         } else if line.hasPrefix("data:") {
                             let chunk = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                            if currentData.isEmpty {
-                                currentData = chunk
-                            } else {
-                                currentData += "\n" + chunk
-                            }
-                        } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                            if !currentEvent.isEmpty || !currentData.isEmpty {
-                                dispatchEvent(event: currentEvent, dataStr: currentData)
-                                currentEvent = ""
-                                currentData = ""
-                            }
+                            if chunk == "[DONE]" { break }
+                            dispatchEvent(event: currentEvent, dataStr: chunk)
+                            currentEvent = ""
+                            currentData = ""
                         }
                     }
 

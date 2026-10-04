@@ -15,7 +15,12 @@ final class SpeechDictationManager: NSObject {
 
     override init() {
         super.init()
-        self.speechRecognizer = SFSpeechRecognizer(locale: Locale.current) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        // Locale.current may be a region the recognizer doesn't support (e.g. en_MA); fall back to US English.
+        if let local = SFSpeechRecognizer(locale: Locale.current), local.isAvailable {
+            speechRecognizer = local
+        } else {
+            speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        }
     }
 
     func toggle(onText: @escaping (String) -> Void) {
@@ -71,14 +76,16 @@ final class SpeechDictationManager: NSObject {
 
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            // playAndRecord keeps the app's playback session usable; stop() switches back to .playback.
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker, .allowBluetooth])
+            try audioSession.setActive(true)
 
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
-            if recognizer.supportsOnDeviceRecognition {
-                request.requiresOnDeviceRecognition = true
-            }
+            // Prefer on-device, but don't *require* it: requiring fails instantly when the language model
+            // isn't downloaded, which made the mic look dead.
+            request.requiresOnDeviceRecognition = false
+            if #available(iOS 13.0, *) { request.addsPunctuation = true }
             self.recognitionRequest = request
 
             let inputNode = audioEngine.inputNode
@@ -99,6 +106,9 @@ final class SpeechDictationManager: NSObject {
                     if let result {
                         let text = result.bestTranscription.formattedString
                         onText(text)
+                    }
+                    if let error, self?.isRecording == true, result == nil {
+                        self?.errorMessage = "Dictation failed: \(error.localizedDescription)"
                     }
                     if error != nil || (result?.isFinal ?? false) {
                         self?.stop()
@@ -122,6 +132,11 @@ final class SpeechDictationManager: NSObject {
         recognitionTask = nil
         isRecording = false
 
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Hand the session back to music playback instead of deactivating it (which would stop the player).
+        let session = AVAudioSession.sharedInstance()
+        if session.category != .playback {
+            try? session.setCategory(.playback, mode: .default)
+            try? session.setActive(true)
+        }
     }
 }

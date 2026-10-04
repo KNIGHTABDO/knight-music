@@ -14,6 +14,7 @@ struct KnightChatView: View {
 
     @State private var inputText: String = ""
     @State private var dictation = SpeechDictationManager()
+    @State private var resumeAfterDictation = false
 
     private var conversation: KnightConversation? {
         hermes.store.conversation(for: conversationId)
@@ -76,6 +77,13 @@ struct KnightChatView: View {
         }
         .onDisappear {
             dictation.stop()
+            if resumeAfterDictation { player.resume(); resumeAfterDictation = false }
+        }
+        .onChange(of: dictation.errorMessage) { _, message in
+            if let message { ui.showToast(message) }
+        }
+        .onChange(of: dictation.isRecording) { _, recording in
+            if !recording, resumeAfterDictation { player.resume(); resumeAfterDictation = false }
         }
     }
 
@@ -311,8 +319,16 @@ struct KnightChatView: View {
     private var composerBar: some View {
         HStack(spacing: 8) {
             Button {
-                dictation.toggle { recognized in
-                    inputText = recognized
+                if dictation.isRecording {
+                    dictation.stop()
+                    if resumeAfterDictation { player.resume(); resumeAfterDictation = false }
+                } else {
+                    // Pause music while dictating so the recognizer hears the user, resume afterwards.
+                    if player.isPlaying { player.pause(); resumeAfterDictation = true }
+                    Haptics.impact(.light)
+                    dictation.start { recognized in
+                        inputText = recognized
+                    }
                 }
             } label: {
                 Image(systemName: dictation.isRecording ? "mic.fill" : "mic")
