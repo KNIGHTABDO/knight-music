@@ -464,6 +464,10 @@ extension PlayerEngine {
         return session.phase == .planned && tracked === session.outgoing
     }
 
+    func autoMixMatches(after songId: String) async -> [String] {
+        await services.autoMix?.matches(after: songId) ?? []
+    }
+
     func autoMixSummary(songId: String) async -> AutoMixTrackSummary? {
         await services.autoMix?.summary(songId: songId)
     }

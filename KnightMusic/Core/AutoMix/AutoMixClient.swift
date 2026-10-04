@@ -17,30 +17,31 @@ actor AutoMixClient: AutoMixPlanProvider {
         excludeFromBackup(directory)
     }
 
+    /// Network first (the server's planner keeps improving and new analyses land), the stored plan when offline.
     func plan(from: String, to: String) async -> AutoMixPlan? {
         let key = Self.key(from, to)
+        if let running = inflight[key] { return await running.value }
+        let task = Task { await self.fetch(from: from, to: to) }
+        inflight[key] = task
+        let fetched = await task.value
+        inflight[key] = nil
+        if let fetched {
+            if fetched.final == true {
+                memory[key] = fetched
+                store(fetched, key: key)
+            }
+            return fetched
+        }
         if let hit = memory[key] { return hit }
         if let stored = loadStored(key) {
             memory[key] = stored
             return stored
         }
-        if let running = inflight[key] { return await running.value }
-        let task = Task { await self.fetch(from: from, to: to) }
-        inflight[key] = task
-        let result = await task.value
-        inflight[key] = nil
-        if let result, result.final == true {
-            memory[key] = result
-            store(result, key: key)
-        }
-        return result
+        return nil
     }
 
     func prefetch(pairs: [(from: String, to: String)]) async {
-        let missing = pairs.filter { pair in
-            let key = Self.key(pair.from, pair.to)
-            return memory[key] == nil && loadStored(key) == nil
-        }
+        let missing = pairs
         guard !missing.isEmpty, let url = urls("plans", []) else { return }
         do {
             var request = URLRequest(url: url, timeoutInterval: 20)
@@ -80,6 +81,23 @@ actor AutoMixClient: AutoMixPlanProvider {
         }
     }
 
+    func matches(after songId: String) async -> [String] {
+        guard let url = urls("matches", [URLQueryItem(name: "from", value: songId), URLQueryItem(name: "limit", value: "12")])
+        else { return [] }
+        struct Reply: Decodable {
+            struct Match: Decodable { var id: String }
+            var matches: [Match]
+        }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 20))
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
+            return try JSONDecoder().decode(Reply.self, from: data).matches.map(\.id)
+        } catch {
+            Log.playback.warning("AutoMix matches unavailable: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     private static func key(_ from: String, _ to: String) -> String {
         "\(safeFileComponent(from))__\(safeFileComponent(to))"
     }
@@ -89,7 +107,7 @@ actor AutoMixClient: AutoMixPlanProvider {
             return nil
         }
         do {
-            var request = URLRequest(url: url, timeoutInterval: 12)
+            var request = URLRequest(url: url, timeoutInterval: 6)
             request.cachePolicy = .reloadIgnoringLocalCacheData
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {

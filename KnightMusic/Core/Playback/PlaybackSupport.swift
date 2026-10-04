@@ -66,6 +66,8 @@ protocol AutoMixPlanProvider: Sendable {
     func prefetch(pairs: [(from: String, to: String)]) async
     /// Tempo, key and bar loudness of one song (nil until the server has analysed it).
     func summary(songId: String) async -> AutoMixTrackSummary?
+    /// Songs of the library that would blend beat-matched after `songId`, closest tempos first.
+    func matches(after songId: String) async -> [String]
 }
 
 protocol ArtworkProviding {

@@ -20,7 +20,7 @@ import math
 from .analyze import fit_grid
 
 PLAN_VERSION = 3
-MAX_STRETCH = 0.06          # per deck: beyond ±6 % stretching becomes audible
+MAX_STRETCH = 0.08          # per deck (a DJ pitch fader range); both decks meet halfway, so ±16 % between songs
 SAME_TEMPO = 0.0004         # closer than this the grids stay locked without any stretching
 MIN_STEADINESS = 0.25       # songs without a usable grid anywhere (live, rubato, ambient) are not beat-matched
 CROSSFADE_SECONDS = 6.0
@@ -94,16 +94,23 @@ def _index_at_or_after(values: list[float], t: float) -> int | None:
     return None
 
 
-def _anchor_b(b: dict, bars: int) -> tuple[int, float] | None:
-    """B's first downbeat with a steady grid after it, and where B starts playing (some intro before it)."""
+def _anchor_candidates(b: dict, bars: int) -> list[tuple[int, float]]:
+    """Downbeats in B's first 32 bars it could come in on (earliest first, phrase starts preferred), each with the
+    media time B starts playing from: its very beginning when the intro before the anchor is short, otherwise
+    8 bars before the anchor (a long beatless intro is partly skipped, like a DJ would)."""
     db = b["downbeats"]
-    j = _index_at_or_after(db, b["firstAudible"])
-    if j is None or j + bars >= len(db):
-        return None
-    bar_b = (db[j + bars] - db[j]) / bars
-    lead = db[j] - b["firstAudible"]
-    start = b["firstAudible"] - 0.02 if lead <= 8 * bar_b else db[j] - 8 * bar_b
-    return j, max(start, 0.0)
+    j0 = _index_at_or_after(db, b["firstAudible"])
+    if j0 is None:
+        return []
+    off = b.get("phraseOffset", 0)
+    out = []
+    for j in range(j0, min(j0 + 32, len(db) - bars)):
+        bar_b = (db[j + bars] - db[j]) / bars
+        lead = db[j] - b["firstAudible"]
+        start = b["firstAudible"] - 0.02 if lead <= 8 * bar_b else db[j] - 8 * bar_b
+        out.append((0 if (j - off) % 4 == 0 else 1, j, max(start, 0.0)))
+    out.sort(key=lambda c: (c[0], c[1]))
+    return [(j, start) for _, j, start in out]
 
 
 def _mix_out_candidates(a: dict, bars: int) -> list[int]:
@@ -135,7 +142,7 @@ def _snap(beats: list[float], times: list[float], margin: float) -> list[float] 
     instead of the tracker's 20 ms frames). None when the local grid isn't steady enough to beat-match on."""
     window = [x for x in beats if times[0] - margin <= x <= times[-1] + margin]
     fit = fit_grid(window)
-    if not fit or fit[2] > 0.018:
+    if not fit or fit[2] > 0.025:
         return None
     t0, ibi, _ = fit
     return [t0 + round((t - t0) / ibi) * ibi for t in times]
@@ -158,13 +165,10 @@ def beatmatch(a: dict, b: dict) -> dict | None:
     if _camelot_distance(a["key"].get("camelot"), b["key"].get("camelot")) > 2:
         bars = max(4, bars // 2)           # clashing keys: keep the overlap short
 
-    tried = set()
-    for t, i in ((t, i) for t in dict.fromkeys((bars, max(4, bars // 2))) for i in _mix_out_candidates(a, t)[:8]):
-        anchor = _anchor_b(b, max(1, int(round(t * per))))
-        if anchor is None or (t, i) in tried:
-            continue
-        tried.add((t, i))
-        j, s_b = anchor
+    combos = ((t, i, anchor) for t in dict.fromkeys((bars, max(4, bars // 2)))
+              for i in _mix_out_candidates(a, t)[:8]
+              for anchor in _anchor_candidates(b, max(1, int(round(t * per))))[:10])
+    for t, i, (j, s_b) in combos:
         db_a, db_b = a["downbeats"], b["downbeats"]
         bar_a = (db_a[i + t] - db_a[i]) / t
         snapped_a = _snap(a["beats"], [db_a[i], db_a[i + t // 2], db_a[i + t]], bar_a)

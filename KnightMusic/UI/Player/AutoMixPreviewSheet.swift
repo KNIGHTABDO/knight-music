@@ -7,11 +7,14 @@ struct AutoMixPreviewSheet: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(AppSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
+    @Environment(LibraryRepository.self) private var library
 
     @State private var shown: PlannedMix?
     @State private var summaryA: AutoMixTrackSummary?
     @State private var summaryB: AutoMixTrackSummary?
     @State private var isPreviewing = false
+    @State private var matches: [Song] = []
+    @State private var matchesFor: String?
 
     var body: some View {
         NavigationStack {
@@ -24,6 +27,7 @@ struct AutoMixPreviewSheet: View {
                         timelineCard(mix)
                         statsGrid(mix)
                         explanation(mix)
+                        matchesSection
                     } else {
                         emptyState
                     }
@@ -63,6 +67,64 @@ struct AutoMixPreviewSheet: View {
                 summaryA = sa
                 summaryB = sb
             }
+        }
+        .task(id: player.currentSong?.id) {
+            if let id = player.currentSong?.id { await loadMatches(for: id) }
+        }
+    }
+
+    // MARK: Beat-matched suggestions
+
+    @ViewBuilder
+    private var matchesSection: some View {
+        if !matches.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Blends beat-matched from here")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.label)
+                Text("Tap one to play it next, then play the transition.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.secondaryLabel)
+                ForEach(matches) { song in
+                    Button {
+                        Haptics.impact(.light)
+                        isPreviewing = false
+                        player.enqueue([song], next: true)
+                    } label: {
+                        HStack(spacing: 12) {
+                            ArtworkView(coverArt: song.coverArt, pointSize: 44, cornerRadius: 6)
+                                .frame(width: 44, height: 44)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(song.title)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(Theme.label)
+                                    .lineLimit(1)
+                                Text(song.artist ?? "")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Theme.secondaryLabel)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: shown?.to.id == song.id ? "checkmark.circle.fill" : "text.line.first.and.arrowtriangle.forward")
+                                .font(.system(size: 17))
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func loadMatches(for songId: String) async {
+        guard matchesFor != songId else { return }
+        matchesFor = songId
+        let ids = await player.autoMixMatches(after: songId)
+        let songs = await library.songs(ids: ids)
+        let order = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
+        withAnimation(.smooth) {
+            matches = songs.sorted { (order[$0.id] ?? 0) < (order[$1.id] ?? 0) }
         }
     }
 

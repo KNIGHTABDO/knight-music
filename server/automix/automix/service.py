@@ -256,6 +256,25 @@ def make_handler(store: Store, worker: Worker, auth: Auth):
                 if not a_id or not b_id:
                     return self._send(400, {"error": "from and to are required"})
                 return self._send(200, self._plan(a_id, b_id))
+            if path == "/automix/v1/matches":
+                a_id = query.get("from")
+                a = store.get(a_id) if a_id else None
+                if not a:
+                    return self._send(200, {"matches": []})
+                limit = min(int(query.get("limit", "12") or 12), 30)
+                found = []
+                for b_id, meta_b in list(worker.meta.items()):
+                    if b_id == a_id:
+                        continue
+                    b = store.get(b_id)
+                    if not b:
+                        continue
+                    result = planner.plan(a, b, worker.meta.get(a_id, {}), meta_b)
+                    if result["mode"] == "beatmatch":
+                        stretch = abs(result["a"].get("rate", 1) - 1) + abs(result["b"].get("rate", 1) - 1)
+                        found.append((stretch, b_id, result["reason"]))
+                found.sort()
+                return self._send(200, {"matches": [{"id": i, "reason": r} for _, i, r in found[:limit]]})
             if path.startswith("/automix/v1/analysis/"):
                 data = store.get(path.rsplit("/", 1)[-1])
                 return self._send(200, data) if data else self._send(404, {"error": "not analysed"})
