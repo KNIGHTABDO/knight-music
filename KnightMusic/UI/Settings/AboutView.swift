@@ -22,6 +22,8 @@ struct AboutView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
             }
 
+            UpdatesSection()
+
             Section("Project") {
                 Link("GitHub", destination: URL(string: "https://github.com/KNIGHTABDO/knight-music")!)
                     .tint(.accentColor)

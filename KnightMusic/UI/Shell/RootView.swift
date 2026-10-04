@@ -10,6 +10,7 @@ struct RootView: View {
     @Environment(LibraryRepository.self) private var library
     @Environment(PlayerEngine.self) private var player
     @Environment(AppSettings.self) private var settings
+    @Environment(UpdateChecker.self) private var updates
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var shouldShowLogin: Bool {
@@ -37,6 +38,15 @@ struct RootView: View {
                 MainTabsView(playerZoomNamespace: playerZoomNamespace)
             }
         }
+        .overlay(alignment: .top) {
+            if !shouldShowLogin, updates.showsBanner, let release = updates.available {
+                UpdateBanner(release: release)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.smooth, value: updates.showsBanner)
         .overlay(alignment: .top) {
             if let toast = ui.toast {
                 HStack(spacing: 8) {

@@ -81,11 +81,14 @@ jobs:
           cp -R build/KnightMusic.xcarchive/Products/Applications/KnightMusic.app Payload/
           zip -qry KnightMusic.ipa Payload
           ls -lh KnightMusic.ipa
+          git log -1 --pretty=%B | grep -viE '^(co-authored-by|\[shots\])' | sed -e 's/ \[shots\]//' > release-notes.txt || true
+          python3 scripts/make-source.py Payload/KnightMusic.app KnightMusic.ipa "$GITHUB_REF_NAME" release-notes.txt apps.json
 
       - name: Publish release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" KnightMusic.ipa --title "Knight Music $GITHUB_REF_NAME" \
-            --notes "Unsigned iPhone/iPad build. Install with SideStore (iOS/iPadOS 26+)."
+          printf '\n\n---\nUnsigned iPhone/iPad build. Install with SideStore (iOS/iPadOS 26+), or add the SideStore source:\nhttps://github.com/%s/releases/latest/download/apps.json\n' "$GITHUB_REPOSITORY" >> release-notes.txt
+          gh release create "$GITHUB_REF_NAME" KnightMusic.ipa apps.json --title "Knight Music $GITHUB_REF_NAME" \
+            --notes-file release-notes.txt

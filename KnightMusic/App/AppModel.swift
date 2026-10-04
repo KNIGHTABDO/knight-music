@@ -22,6 +22,7 @@ final class AppModel {
     let artwork = AnimatedArtworkService()
     let player: PlayerEngine
     let hermes = HermesService()
+    let updates = UpdateChecker()
 
     private(set) var session: SessionState = .loggedOut
 
@@ -90,11 +91,13 @@ final class AppModel {
 
     func start() async {
         started = true
+        updates.checkIfDue()
         let handled = await DebugLaunch.applyIfNeeded(self)
         if !handled { await refresh() }
     }
 
     func handleForeground() {
+        if started { updates.checkIfDue() }
         guard started, session == .ready else { return }
         Task { await refresh() }
     }
