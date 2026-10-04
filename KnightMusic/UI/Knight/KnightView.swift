@@ -8,6 +8,12 @@ struct KnightView: View {
     @Environment(UIState.self) private var ui
 
     @State private var showingSettings = false
+    @State private var showingClearAllConfirmation = false
+    @State private var showingRenameAlert = false
+    @State private var conversationToRename: KnightConversation?
+    @State private var renameTitle = ""
+    @State private var editMode: EditMode = .inactive
+    @State private var selectedConversationIds = Set<String>()
 
     private static let suggestions: [String] = [
         "Add the latest Travis Scott album",
@@ -32,15 +38,51 @@ struct KnightView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationTitle("Knight")
+        .environment(\.editMode, $editMode)
         .toolbar {
             if hermes.settings.isConfigured {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        startNewChat()
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if editMode.isEditing {
+                        Button(role: .destructive) {
+                            withAnimation(.smooth) {
+                                hermes.store.delete(conversationIds: selectedConversationIds)
+                                selectedConversationIds.removeAll()
+                                if hermes.store.conversations.isEmpty {
+                                    editMode = .inactive
+                                }
+                            }
+                        } label: {
+                            let count = selectedConversationIds.count
+                            Text(count > 0 ? "Delete (\(count))" : "Delete")
+                                .foregroundStyle(count > 0 ? Theme.accent : Theme.secondaryLabel)
+                        }
+                        .disabled(selectedConversationIds.isEmpty)
+
+                        EditButton()
+                    } else {
+                        if !hermes.store.conversations.isEmpty {
+                            EditButton()
+
+                            Menu {
+                                Button(role: .destructive) {
+                                    showingClearAllConfirmation = true
+                                } label: {
+                                    Label("Clear All Chats", systemImage: "trash")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(Theme.accent)
+                            }
+                        }
+
+                        Button {
+                            startNewChat()
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(Theme.accent)
+                        }
                     }
                 }
             }
@@ -48,6 +90,44 @@ struct KnightView: View {
         .sheet(isPresented: $showingSettings) {
             NavigationStack {
                 HermesSettingsView()
+            }
+        }
+        .alert("Rename Chat", isPresented: $showingRenameAlert) {
+            TextField("Title", text: $renameTitle)
+            Button("Cancel", role: .cancel) {
+                conversationToRename = nil
+                renameTitle = ""
+            }
+            Button("Save") {
+                let trimmed = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let id = conversationToRename?.id, !trimmed.isEmpty {
+                    withAnimation(.smooth) {
+                        hermes.store.rename(conversationId: id, title: trimmed)
+                    }
+                }
+                conversationToRename = nil
+                renameTitle = ""
+            }
+        }
+        .confirmationDialog(
+            "Clear All Chats",
+            isPresented: $showingClearAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear All Chats", role: .destructive) {
+                withAnimation(.smooth) {
+                    hermes.store.deleteAll()
+                    selectedConversationIds.removeAll()
+                    editMode = .inactive
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete all chats? This action cannot be undone.")
+        }
+        .onChange(of: editMode) { _, newMode in
+            if !newMode.isEditing {
+                selectedConversationIds.removeAll()
             }
         }
         .task {
@@ -128,7 +208,7 @@ struct KnightView: View {
     // MARK: - Conversations List
 
     private var conversationsList: some View {
-        List {
+        List(selection: $selectedConversationIds) {
             ForEach(hermes.store.conversations) { conv in
                 NavigationLink(value: Route.knightChat(id: conv.id)) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -154,19 +234,64 @@ struct KnightView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .tag(conv.id)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        withAnimation(.smooth) {
+                            hermes.store.delete(conversationId: conv.id)
+                            selectedConversationIds.remove(conv.id)
+                        }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button {
+                        beginRename(conv)
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    .tint(.blue)
+                }
+                .contextMenu {
+                    Button {
+                        beginRename(conv)
+                    } label: {
+                        Label("Rename…", systemImage: "pencil")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        withAnimation(.smooth) {
+                            hermes.store.delete(conversationId: conv.id)
+                            selectedConversationIds.remove(conv.id)
+                        }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
             }
             .onDelete { indexSet in
-                for index in indexSet {
-                    let conv = hermes.store.conversations[index]
-                    hermes.store.delete(id: conv.id)
+                withAnimation(.smooth) {
+                    let ids = indexSet.map { hermes.store.conversations[$0].id }
+                    hermes.store.delete(conversationIds: ids)
+                    selectedConversationIds.subtract(ids)
                 }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .animation(.smooth, value: hermes.store.conversations)
     }
 
     // MARK: - Actions
+
+    private func beginRename(_ conversation: KnightConversation) {
+        conversationToRename = conversation
+        renameTitle = conversation.title
+        showingRenameAlert = true
+    }
 
     private func handleDraftIfNeeded() {
         guard let draft = ui.knightDraft, !draft.isEmpty else { return }

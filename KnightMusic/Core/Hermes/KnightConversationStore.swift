@@ -80,9 +80,56 @@ final class KnightConversationStore {
     }
 
     func delete(id: String) {
-        conversations.removeAll(where: { $0.id == id })
-        let file = directoryURL.appendingPathComponent("\(id).json")
+        delete(conversationId: id)
+    }
+
+    func delete(conversationId: String) {
+        conversations.removeAll(where: { $0.id == conversationId })
+        let file = directoryURL.appendingPathComponent("\(conversationId).json")
         try? FileManager.default.removeItem(at: file)
+    }
+
+    func delete(conversationIds: Set<String>) {
+        guard !conversationIds.isEmpty else { return }
+        conversations.removeAll(where: { conversationIds.contains($0.id) })
+        for id in conversationIds {
+            let file = directoryURL.appendingPathComponent("\(id).json")
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
+
+    func delete(conversationIds: [String]) {
+        delete(conversationIds: Set(conversationIds))
+    }
+
+    func rename(conversationId: String, title: String) {
+        guard let idx = conversations.firstIndex(where: { $0.id == conversationId }) else { return }
+        conversations[idx].title = title
+        persist(conversations[idx])
+    }
+
+    func rename(_ conversationId: String, title: String) {
+        rename(conversationId: conversationId, title: title)
+    }
+
+    func deleteMessage(conversationId: String, messageId: String) {
+        guard let idx = conversations.firstIndex(where: { $0.id == conversationId }) else { return }
+        conversations[idx].messages.removeAll(where: { $0.id == messageId })
+        persist(conversations[idx])
+    }
+
+    func deleteMessage(_ conversationId: String, messageId: String) {
+        deleteMessage(conversationId: conversationId, messageId: messageId)
+    }
+
+    func deleteAll() {
+        conversations.removeAll()
+        let url = directoryURL
+        if let files = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            for file in files where file.pathExtension == "json" {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
     }
 
     private func persist(_ conversation: KnightConversation) {
