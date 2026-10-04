@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Transcript and interactive chat interface for a Knight conversation.
 struct KnightChatView: View {
@@ -11,10 +12,15 @@ struct KnightChatView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(AnimatedArtworkService.self) private var artwork
     @Environment(UIState.self) private var ui
+    @Environment(\.dismiss) private var dismiss
 
     @State private var inputText: String = ""
     @State private var dictation = SpeechDictationManager()
     @State private var resumeAfterDictation = false
+    @State private var showingRenameAlert = false
+    @State private var showingDeleteConfirmation = false
+    @State private var renameText: String = ""
+    @State private var newChatId = "km-\(UUID().uuidString.lowercased())"
 
     private var conversation: KnightConversation? {
         hermes.store.conversation(for: conversationId)
@@ -72,12 +78,74 @@ struct KnightChatView: View {
         .background(Color.black.ignoresSafeArea())
         .navigationTitle(conversation?.title ?? "Knight")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        renameText = conversation?.title ?? ""
+                        showingRenameAlert = true
+                    } label: {
+                        Label("Rename Chat…", systemImage: "pencil")
+                    }
+
+                    NavigationLink(value: Route.knightChat(id: newChatId)) {
+                        Label("New Chat", systemImage: "square.and.pencil")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Chat", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+            }
+        }
+        .alert("Rename Chat", isPresented: $showingRenameAlert) {
+            TextField("Title", text: $renameText)
+            Button("Cancel", role: .cancel) {
+                renameText = ""
+            }
+            Button("Save") {
+                let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    withAnimation(.smooth) {
+                        hermes.store.rename(conversationId: conversationId, title: trimmed)
+                    }
+                }
+                renameText = ""
+            }
+        }
+        .confirmationDialog(
+            "Delete Chat",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Chat", role: .destructive) {
+                if hermes.activeConversationId == conversationId {
+                    hermes.stopStreaming()
+                }
+                withAnimation(.smooth) {
+                    hermes.store.delete(conversationId: conversationId)
+                }
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete this chat? This action cannot be undone.")
+        }
         .safeAreaInset(edge: .bottom) {
             composerBar
         }
         .onDisappear {
             dictation.stop()
             if resumeAfterDictation { player.resume(); resumeAfterDictation = false }
+            newChatId = "km-\(UUID().uuidString.lowercased())"
         }
         .onChange(of: dictation.errorMessage) { _, message in
             if let message { ui.showToast(message) }
@@ -101,12 +169,52 @@ struct KnightChatView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(Theme.accent, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = message.text
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+
+                        Button {
+                            inputText = message.text
+                        } label: {
+                            Label("Edit & Resend", systemImage: "pencil")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            withAnimation(.smooth) {
+                                hermes.store.deleteMessage(conversationId: conversationId, messageId: message.id)
+                            }
+                        } label: {
+                            Label("Delete Message", systemImage: "trash")
+                        }
+                    }
             }
             .id(message.id)
 
         case .assistant:
             VStack(alignment: .leading, spacing: 12) {
                 markdownText(message.text)
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = message.text
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            withAnimation(.smooth) {
+                                hermes.store.deleteMessage(conversationId: conversationId, messageId: message.id)
+                            }
+                        } label: {
+                            Label("Delete Message", systemImage: "trash")
+                        }
+                    }
 
                 if !message.toolSteps.isEmpty {
                     toolStepsList(message.toolSteps)
