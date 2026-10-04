@@ -7,6 +7,7 @@ struct HomeView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(DownloadManager.self) private var downloads
     @Environment(UIState.self) private var ui: UIState?
+    @Environment(HermesService.self) private var hermes: HermesService?
 
     var body: some View {
         let recent = library.homeList(.recent)
@@ -228,6 +229,16 @@ struct HomeView: View {
 
     private var toolbarMenu: some View {
         Menu {
+            if hermes?.settings.isConfigured == true {
+                Button {
+                    ui?.askKnight("")
+                } label: {
+                    Label("Ask Knight", systemImage: "sparkles")
+                }
+
+                Divider()
+            }
+
             Button {
                 Task {
                     await shuffleAll()

@@ -9,6 +9,7 @@ struct AlbumDetailView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(DownloadManager.self) private var downloads
     @Environment(UIState.self) private var ui
+    @Environment(HermesService.self) private var hermes: HermesService?
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -354,6 +355,17 @@ struct AlbumDetailView: View {
                 }
 
                 Divider()
+
+                if hermes?.settings.isConfigured == true {
+                    Button {
+                        let artist = album.artist ?? ""
+                        ui.askKnight("Add the full album \(album.name) by \(artist) — only the tracks I'm missing")
+                    } label: {
+                        Label("Complete this album", systemImage: "sparkles")
+                    }
+
+                    Divider()
+                }
 
                 Menu {
                     if playlists.value.isEmpty {

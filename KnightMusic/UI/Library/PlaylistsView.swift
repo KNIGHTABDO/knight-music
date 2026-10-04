@@ -3,6 +3,8 @@ import SwiftUI
 struct PlaylistsView: View {
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
+    @Environment(UIState.self) private var ui
+    @Environment(HermesService.self) private var hermes: HermesService?
     @State private var searchText = ""
     @State private var showCreateSheet = false
     @State private var newPlaylistName = ""
@@ -58,7 +60,19 @@ struct PlaylistsView: View {
         .searchable(text: $searchText, prompt: "Search in Playlists")
         .refreshable { await app.pullToRefresh() }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if hermes?.settings.isConfigured == true {
+                    Button {
+                        ui.askKnight("Make me a playlist of ")
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .accessibilityLabel("Ask Knight for a playlist")
+                    .help("Ask Knight for a playlist")
+                }
+
                 Button {
                     newPlaylistName = ""
                     showCreateSheet = true

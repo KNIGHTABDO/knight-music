@@ -6,6 +6,7 @@ struct SearchView: View {
     @Environment(LibraryRepository.self) private var library
     @Environment(DownloadManager.self) private var downloads
     @Environment(UIState.self) private var ui: UIState?
+    @Environment(HermesService.self) private var hermes: HermesService?
 
     @State private var query = ""
     @State private var debouncedQuery = ""
@@ -21,11 +22,17 @@ struct SearchView: View {
                 emptyQueryView
             } else if let results = searchResults {
                 if results.isEmpty && !isSearching {
-                    EmptyStateView(
-                        title: "No Results",
-                        systemImage: "magnifyingglass",
-                        message: "No results found for \u{201C}\(debouncedQuery)\u{201D}"
-                    )
+                    VStack(spacing: 24) {
+                        EmptyStateView(
+                            title: "No Results",
+                            systemImage: "magnifyingglass",
+                            message: "No results found for \u{201C}\(debouncedQuery)\u{201D}"
+                        )
+
+                        if hermes?.settings.isConfigured == true {
+                            askKnightButton(query: debouncedQuery.isEmpty ? trimmed : debouncedQuery)
+                        }
+                    }
                     .padding(.top, 80)
                 } else {
                     resultsView(results: results)
@@ -163,6 +170,11 @@ struct SearchView: View {
 
             if !results.songs.isEmpty {
                 songsSection(results.songs)
+            }
+
+            if hermes?.settings.isConfigured == true {
+                let currentQuery = debouncedQuery.isEmpty ? query.trimmingCharacters(in: .whitespacesAndNewlines) : debouncedQuery
+                askKnightButton(query: currentQuery)
             }
         }
         .padding(.vertical, 16)
@@ -412,5 +424,33 @@ struct SearchView: View {
     private func clearRecentSearches() {
         recentSearches = []
         UserDefaults.standard.removeObject(forKey: "recent_searches")
+    }
+
+    // MARK: - Ask Knight
+
+    @ViewBuilder
+    private func askKnightButton(query: String) -> some View {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            Button {
+                Haptics.impact(.medium)
+                addRecentSearch(trimmed)
+                ui?.askKnight("Add \(trimmed) to my library")
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Ask Knight to add \u{201C}\(trimmed)\u{201D}")
+                        .font(.system(size: 16, weight: .semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(Theme.accent)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+            }
+            .buttonStyle(.glass)
+            .tint(Theme.accent)
+            .padding(.horizontal, Theme.margin)
+        }
     }
 }

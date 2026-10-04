@@ -10,6 +10,7 @@ struct ArtistDetailView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(DownloadManager.self) private var downloads
     @Environment(UIState.self) private var ui
+    @Environment(HermesService.self) private var hermes: HermesService?
 
     @State private var artistInfo: ArtistInfo?
     @State private var isBioExpanded = false
@@ -337,6 +338,16 @@ struct ArtistDetailView: View {
                     ui.showToast("Downloading All Songs")
                 } label: {
                     Label("Download All", systemImage: "arrow.down.circle")
+                }
+
+                if hermes?.settings.isConfigured == true {
+                    Divider()
+
+                    Button {
+                        ui.askKnight("Add more popular songs by \(artist.name) that I don't have yet")
+                    } label: {
+                        Label("Get more from \(artist.name)", systemImage: "sparkles")
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis")
