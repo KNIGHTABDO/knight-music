@@ -16,6 +16,7 @@ final class StreamCache: @unchecked Sendable {
         let url: URL
         let quality: StreamQuality
         let ext: String
+        var urgent = false
     }
 
     let directory: URL
@@ -132,6 +133,21 @@ final class StreamCache: @unchecked Sendable {
         pump()
     }
 
+    /// Like `cache`, but first in line and at normal network priority: AutoMix needs this song as a local file
+    /// before its transition starts.
+    func prioritize(songId: String, url: URL, quality: StreamQuality, fileExtension: String, limitMB: Int) {
+        lock.lock()
+        limitBytes = max(limitMB, 0) * 1_048_576
+        if index[songId] == nil, active[songId] == nil {
+            queued.removeAll { $0.songId == songId }
+            var job = Job(songId: songId, url: url, quality: quality, ext: fileExtension)
+            job.urgent = true
+            queued.insert(job, at: 0)
+        }
+        lock.unlock()
+        pump()
+    }
+
     /// Keep only these songs in flight/queued, and protect them from eviction.
     func retainOnly(_ songIds: Set<String>) {
         lock.lock()
@@ -168,7 +184,7 @@ final class StreamCache: @unchecked Sendable {
 
     private func pump() {
         lock.lock()
-        while active.count < maxConcurrent, !queued.isEmpty {
+        while !queued.isEmpty, active.count < maxConcurrent || (queued[0].urgent && active.count < maxConcurrent + 1) {
             let job = queued.removeFirst()
             let task = Task.detached(priority: .utility) { [weak self] in
                 await self?.run(job)
@@ -181,7 +197,7 @@ final class StreamCache: @unchecked Sendable {
 
     private func run(_ job: Job) async {
         var request = URLRequest(url: job.url)
-        request.networkServiceType = .background
+        request.networkServiceType = job.urgent ? .responsiveData : .background
         do {
             let (tmp, response) = try await session.download(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {

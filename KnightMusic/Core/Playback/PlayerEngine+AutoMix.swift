@@ -131,6 +131,7 @@ extension PlayerEngine {
         }
         mixSession = MixSession(plan: plan, a: a, b: b, outgoing: tracked, target: target)
         plannedMix = PlannedMix(plan: plan, from: tracked.entry.song, to: target.song)
+        ensureLocal(target.song)
         autoMixNote = plan.final == true ? nil : "Still analysing one of these songs: a smooth crossfade for now"
         Log.playback.info("AutoMix planned: \(plan.mode.rawValue) at \(String(format: "%.2f", a.start))s (\(plan.reason ?? ""))")
     }
@@ -155,7 +156,17 @@ extension PlayerEngine {
                 refreshProvisionalPlan(session)
             }
             if t >= session.a.start - prepareLead, isPlaying {
-                if t > session.a.start - 1.0 { cancelMix(reprepare: false) } else { beginPreparing(session) }
+                if isLocal(session.target.song) {
+                    if t > session.a.start - 1.0 { cancelMix(reprepare: false) } else { beginPreparing(session) }
+                } else if t > session.a.start - 3.0 {
+                    // A deck started on the host clock can't wait for network data: it would play silence.
+                    Log.playback.warning("AutoMix: \(session.target.song.title) not downloaded in time, playing gapless")
+                    cancelMix(reprepare: false)
+                    autoMixNote = "Next song was still downloading, so it played gapless"
+                } else {
+                    ensureLocal(session.target.song)
+                    autoMixNote = "Downloading the next song for the blend\u{2026}"
+                }
             }
         case .preparing:
             if t > session.a.start - 0.4 {
@@ -202,10 +213,11 @@ extension PlayerEngine {
     // MARK: Preparing the incoming deck
 
     private func beginPreparing(_ session: MixSession) {
-        guard let resolved = resolve(session.target.song) else {
+        guard let resolved = resolve(session.target.song), resolved.kind == .downloaded || resolved.kind == .cached else {
             cancelMix(reprepare: true)
             return
         }
+        autoMixNote = nil
         session.phase = .preparing
         // A must not advance to its queued gapless successor any more: the incoming deck takes over.
         for item in player.items() where item !== session.outgoing.item { player.remove(item) }
@@ -214,6 +226,9 @@ extension PlayerEngine {
 
         attachTap(session.outgoing)
         session.outgoing.automation.set(deck: session.a)
+        if session.outgoing.resolved.kind == .streaming || session.outgoing.resolved.kind == .radio {
+            startVolumeAutomation(for: session.outgoing, gain: session.a.gain)
+        }
 
         let incoming = makePrepared(entry: session.target, resolved: resolved)
         incoming.automation.set(deck: session.b)
@@ -242,8 +257,9 @@ extension PlayerEngine {
         }
     }
 
+    /// Taps only go on local files: on network streams iOS audio taps are unreliable and can mute playback.
     func attachTap(_ prepared: PreparedItem) {
-        guard !prepared.tapRequested else { return }
+        guard !prepared.tapRequested, prepared.resolved.kind == .downloaded || prepared.resolved.kind == .cached else { return }
         prepared.tapRequested = true
         Task { [weak prepared] in
             guard let prepared else { return }
@@ -348,6 +364,7 @@ extension PlayerEngine {
     }
 
     private func stopOutgoing(_ tail: MixTail) {
+        stopVolumeAutomation()
         tail.finished = true
         tail.player.pause()
         tail.player.removeAllItems()
@@ -375,6 +392,7 @@ extension PlayerEngine {
     func cancelMix(reprepare: Bool) {
         autoMixPlanTask?.cancel()
         guard let session = mixSession else { return }
+        stopVolumeAutomation()
         mixSession = nil
         plannedMix = nil
         if mixTail == nil { autoMixActive = false }
@@ -392,6 +410,7 @@ extension PlayerEngine {
             player.defaultRate = 1
             if player.rate > 0 { player.rate = 1 }
         }
+        applyVolume()                       // undo any volume automation on a streamed outgoing song
         if reprepare, tracked === session.outgoing { prepareNextWithoutAutoMix() }
     }
 
@@ -448,6 +467,48 @@ extension PlayerEngine {
         player.setRate(mainRate, time: player.currentTime(), atHostTime: start)
         other.setRate(otherRate, time: other.currentTime(), atHostTime: start)
         return true
+    }
+
+    // MARK: Volume automation for an outgoing stream (no tap)
+
+    /// Fades a streamed outgoing song by its planned gain curve through the deck volume, 30 times a second.
+    private func startVolumeAutomation(for prepared: PreparedItem, gain frames: [[Double]]) {
+        stopVolumeAutomation()
+        guard let curve = MixAutomation.Curve(frames) else { return }
+        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self, weak prepared] _ in
+            MainActor.assumeIsolated {
+                guard let self, let prepared else { return }
+                let deck: AVQueuePlayer? = self.tracked === prepared ? self.player
+                    : (self.mixTail?.prepared === prepared ? self.mixTail?.player : nil)
+                guard let deck else { return }
+                let t = deck.currentTime().seconds
+                guard t.isFinite else { return }
+                deck.volume = self.deckVolume(for: prepared.entry.song) * max(0, min(1, curve.value(at: t)))
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        volumeAutomation = timer
+    }
+
+    func stopVolumeAutomation() {
+        volumeAutomation?.invalidate()
+        volumeAutomation = nil
+    }
+
+    // MARK: Local copy of the incoming song
+
+    func isLocal(_ song: Song) -> Bool {
+        streamCache.contains(song.id) || downloads?.localFileURL(for: song.id) != nil
+    }
+
+    /// Starts (or moves to the front) the download of the incoming song, minutes before its transition.
+    func ensureLocal(_ song: Song) {
+        guard !isLocal(song), !services.isOffline else { return }
+        let quality = currentQuality()
+        guard let url = streamURL(for: song, quality: quality) else { return }
+        streamCache.prioritize(songId: song.id, url: url, quality: quality,
+                               fileExtension: cacheExtension(for: song, quality: quality),
+                               limitMB: settings.streamCacheLimitMB)
     }
 
     // MARK: Preview

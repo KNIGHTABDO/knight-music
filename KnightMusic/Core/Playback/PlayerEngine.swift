@@ -141,6 +141,7 @@ final class PlayerEngine {
     @ObservationIgnored var mixTail: MixTail?
     @ObservationIgnored var autoMixPlanTask: Task<Void, Never>?
     @ObservationIgnored var lastPrefetchSignature = ""
+    @ObservationIgnored var volumeAutomation: Timer?
 
     var settings: PlaybackSettings { services.settings }
 
