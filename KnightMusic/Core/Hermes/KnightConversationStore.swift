@@ -22,6 +22,8 @@ struct KnightMessage: Codable, Hashable, Identifiable, Sendable {
     var addedTracks: [AddedTrack] = []
     var matchedSongIds: [String] = []
     var date: Date = Date()
+    var runId: String? = nil
+    var status: String? = nil
 }
 
 struct KnightConversation: Codable, Hashable, Identifiable, Sendable {

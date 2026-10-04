@@ -9,11 +9,31 @@ enum HermesEvent: Sendable, Equatable {
     case failed(String)
 }
 
+struct RunStartResponse: Codable, Sendable {
+    let run_id: String
+    let status: String?
+
+    var runId: String { run_id }
+}
+
+typealias StartRunResponse = RunStartResponse
+
+struct RunStatusResponse: Codable, Sendable {
+    let status: String?
+    let completed: Bool?
+    let output: String?
+
+    var isCompleted: Bool {
+        completed == true || status == "completed"
+    }
+}
+
 /// Actor responsible for communicating with the Hermes AI agent server.
 actor HermesClient {
     private var baseURL: URL?
     private var apiKey: String
     private let session: URLSession
+    private var loggedUnknownEvents: Set<String> = []
 
     init(baseURL: URL? = nil, apiKey: String = "") {
         self.baseURL = baseURL
@@ -78,8 +98,7 @@ actor HermesClient {
         request.timeoutInterval = 15
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-
-        let (data, response) = try await session.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             if code == 401 || code == 403 {
@@ -90,7 +109,84 @@ actor HermesClient {
         return true
     }
 
-    func stream(conversation: String, input: String) -> AsyncThrowingStream<HermesEvent, Error> {
+    // MARK: - Durable Runs API
+
+    func startRun(conversationId: String, input: String) async throws -> RunStartResponse {
+        guard let baseURL = baseURL else {
+            throw URLError(.badURL)
+        }
+        let url = baseURL.appendingPathComponent("v1").appendingPathComponent("runs")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        // ALWAYS prefix the input with [Knight Music]
+        let prefixedInput = input.hasPrefix("[Knight Music] ") ? input : "[Knight Music] \(input)"
+
+        let payload: [String: Any] = [
+            "model": "hermes-knight",
+            "input": prefixedInput,
+            "session_id": conversationId
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let code = httpResponse.statusCode
+            let errStr = String(data: data, encoding: .utf8) ?? "Server returned status \(code)"
+            throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: "Start run failed (\(code)): \(errStr)"])
+        }
+        return try JSONDecoder().decode(RunStartResponse.self, from: data)
+    }
+
+    func runStatus(runId: String) async throws -> RunStatusResponse {
+        guard let baseURL = baseURL else {
+            throw URLError(.badURL)
+        }
+        let url = baseURL.appendingPathComponent("v1").appendingPathComponent("runs").appendingPathComponent(runId)
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            let code = httpResponse.statusCode
+            let errStr = String(data: data, encoding: .utf8) ?? "Server returned status \(code)"
+            throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: "Run status failed (\(code)): \(errStr)"])
+        }
+        return try JSONDecoder().decode(RunStatusResponse.self, from: data)
+    }
+
+    func stopRun(runId: String) async throws {
+        guard let baseURL = baseURL else {
+            throw URLError(.badURL)
+        }
+        let url = baseURL.appendingPathComponent("v1").appendingPathComponent("runs").appendingPathComponent(runId).appendingPathComponent("stop")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: "Stop run failed with status \(code)"])
+        }
+    }
+
+    func logUnknownEventOnce(_ event: String) {
+        guard !loggedUnknownEvents.contains(event) else { return }
+        loggedUnknownEvents.insert(event)
+        Log.api.warning("Hermes unknown event: \(event)")
+    }
+
+    func events(runId: String) -> AsyncThrowingStream<HermesEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -98,25 +194,14 @@ actor HermesClient {
                         continuation.finish(throwing: URLError(.badURL))
                         return
                     }
-                    let url = baseURL.appendingPathComponent("v1").appendingPathComponent("responses")
+                    let url = baseURL.appendingPathComponent("v1")
+                        .appendingPathComponent("runs")
+                        .appendingPathComponent(runId)
+                        .appendingPathComponent("events")
                     var request = URLRequest(url: url)
-                    request.httpMethod = "POST"
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.httpMethod = "GET"
                     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-
-
-                    // ALWAYS prefix the input with [Knight Music]
-                    let prefixedInput = input.hasPrefix("[Knight Music] ") ? input : "[Knight Music] \(input)"
-
-                    let payload: [String: Any] = [
-                        "model": "hermes-knight",
-                        "stream": true,
-                        "store": true,
-                        "conversation": conversation,
-                        "input": prefixedInput
-                    ]
-                    request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
                     let (bytes, response) = try await session.bytes(for: request)
                     guard let httpResponse = response as? HTTPURLResponse else {
@@ -129,98 +214,113 @@ actor HermesClient {
                         return
                     }
 
-                    var currentEvent = ""
-                    var currentData = ""
                     var accumulatedText = ""
                     var hasEmittedCompleted = false
+                    var lastToolId: String? = nil
 
-                    func dispatchEvent(event: String, dataStr: String) {
-                        guard !dataStr.isEmpty else { return }
-                        guard let data = dataStr.data(using: .utf8),
+                    eventLoop: for try await line in bytes.lines {
+                        try Task.checkCancellation()
+                        guard line.hasPrefix("data:") else { continue }
+                        let chunk = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        if chunk == "[DONE]" { break eventLoop }
+                        guard !chunk.isEmpty,
+                              let data = chunk.data(using: .utf8),
                               let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                            return
+                            continue
                         }
 
-                        if event == "error" || event == "response.failed" || (json["type"] as? String) == "response.failed" {
+                        let eventType = (json["event"] as? String) ?? (json["type"] as? String) ?? ""
+
+                        // Check failure
+                        if eventType == "run.failed" || eventType == "error" || json["error"] != nil {
                             let msg = (json["error"] as? [String: Any])?["message"] as? String
                                 ?? json["error"] as? String
                                 ?? json["message"] as? String
-                                ?? "Streaming failed"
+                                ?? "Run failed"
                             continuation.yield(.failed(msg))
-                            return
+                            continue
                         }
 
-                        let type = event.isEmpty ? (json["type"] as? String ?? "") : event
-                        switch type {
-                        case "response.output_item.added":
-                            if let item = json["item"] as? [String: Any] {
-                                let type = item["type"] as? String
-                                if type == "function_call" {
-                                    let name = (item["name"] as? String) ?? "tool"
-                                    let callId = (item["call_id"] as? String) ?? (item["id"] as? String) ?? UUID().uuidString
-                                    let args: String
-                                    if let strArgs = item["arguments"] as? String {
-                                        args = strArgs
-                                    } else if let dictArgs = item["arguments"] as? [String: Any],
-                                              let d = try? JSONSerialization.data(withJSONObject: dictArgs),
-                                              let s = String(data: d, encoding: .utf8) {
-                                        args = s
-                                    } else {
-                                        args = "{}"
-                                    }
-                                    continuation.yield(.toolStarted(id: callId, name: name, argumentsJSON: args))
-                                }
-                            }
-
-                        case "response.output_item.done":
-                            if let item = json["item"] as? [String: Any] {
-                                let type = item["type"] as? String
-                                if type == "function_call" || type == "function_call_output" {
-                                    let callId = (item["call_id"] as? String) ?? (item["id"] as? String) ?? ""
-                                    if !callId.isEmpty {
-                                        continuation.yield(.toolFinished(id: callId))
-                                    }
-                                }
-                            }
-
-                        case "response.output_text.delta":
-                            if let delta = json["delta"] as? String, !delta.isEmpty {
+                        switch eventType {
+                        case "message.delta":
+                            if let delta = (json["delta"] as? String) ?? (json["text"] as? String), !delta.isEmpty {
                                 accumulatedText += delta
                                 continuation.yield(.textDelta(delta))
                             }
 
-                        case "response.completed":
+                        case "reasoning.available":
+                            // Ignore as specified
+                            break
+
+                        case "run.completed":
                             hasEmittedCompleted = true
-                            continuation.yield(.completed(fullText: accumulatedText))
+                            let output = (json["output"] as? String) ?? accumulatedText
+                            continuation.yield(.completed(fullText: output))
+                            break eventLoop
 
                         default:
-                            break
-                        }
-                    }
+                            let lower = eventType.lowercased()
+                            let hasToolInType = lower.contains("tool")
+                            let hasToolFields = json["tool_name"] != nil || json["tool"] != nil
 
-                    // `AsyncLineSequence` drops empty lines, so the blank line that terminates an SSE event never
-                    // arrives. Hermes sends each event's JSON on a single `data:` line, so dispatch on every
-                    // `data:` line (and flush anything pending when a new `event:` starts).
-                    for try await line in bytes.lines {
-                        try Task.checkCancellation()
-                        if line.hasPrefix("event:") {
-                            if !currentData.isEmpty {
-                                dispatchEvent(event: currentEvent, dataStr: currentData)
-                                currentData = ""
+                            if hasToolInType || hasToolFields {
+                                let status = (json["status"] as? String)?.lowercased() ?? ""
+                                let isFinished = lower.contains("finish")
+                                    || lower.contains("complete")
+                                    || lower.contains("done")
+                                    || lower.contains("end")
+                                    || status == "completed"
+                                    || status == "finished"
+                                    || status == "done"
+
+                                if isFinished {
+                                    let callId = (json["id"] as? String)
+                                        ?? (json["tool_call_id"] as? String)
+                                        ?? (json["call_id"] as? String)
+                                        ?? lastToolId
+                                        ?? ""
+                                    continuation.yield(.toolFinished(id: callId))
+                                } else {
+                                    let callId = (json["id"] as? String)
+                                        ?? (json["tool_call_id"] as? String)
+                                        ?? (json["call_id"] as? String)
+                                        ?? UUID().uuidString
+                                    lastToolId = callId
+                                    let toolName = (json["tool_name"] as? String)
+                                        ?? (json["name"] as? String)
+                                        ?? "tool"
+
+                                    var argsDict: [String: Any] = (json["args"] as? [String: Any])
+                                        ?? (json["arguments"] as? [String: Any])
+                                        ?? [:]
+                                    if let preview = json["preview"] as? String {
+                                        argsDict["preview"] = preview
+                                        if argsDict["command"] == nil {
+                                            argsDict["command"] = preview
+                                        }
+                                    }
+
+                                    let argsStr: String
+                                    if !argsDict.isEmpty,
+                                       let d = try? JSONSerialization.data(withJSONObject: argsDict),
+                                       let s = String(data: d, encoding: .utf8) {
+                                        argsStr = s
+                                    } else if let strArgs = (json["args"] as? String) ?? (json["arguments"] as? String) {
+                                        argsStr = strArgs
+                                    } else if let preview = json["preview"] as? String {
+                                        argsStr = preview
+                                    } else {
+                                        argsStr = "{}"
+                                    }
+
+                                    continuation.yield(.toolStarted(id: callId, name: toolName, argumentsJSON: argsStr))
+                                }
+                            } else {
+                                if !eventType.isEmpty {
+                                    await self.logUnknownEventOnce(eventType)
+                                }
                             }
-                            currentEvent = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
-                        } else if line.hasPrefix("data:") {
-                            let chunk = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                            if chunk == "[DONE]" { break }
-                            dispatchEvent(event: currentEvent, dataStr: chunk)
-                            currentEvent = ""
-                            currentData = ""
                         }
-                    }
-
-                    // Any trailing event
-                    if !currentEvent.isEmpty || !currentData.isEmpty {
-                        dispatchEvent(event: currentEvent, dataStr: currentData)
                     }
 
                     if !hasEmittedCompleted {
