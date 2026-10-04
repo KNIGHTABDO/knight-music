@@ -89,7 +89,7 @@ struct SongsView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Songs")
         .searchable(text: $searchText, prompt: "Search in Songs")
         .refreshable { await app.pullToRefresh() }

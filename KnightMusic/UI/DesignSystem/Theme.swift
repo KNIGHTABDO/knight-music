@@ -1,15 +1,19 @@
 import SwiftUI
 import UIKit
 
-/// Design tokens. Dark-only; pure black canvas, Arpeggi-red accent (asset `AccentColor`, or a stored hex).
+/// Design tokens. Adaptive: pure black canvas + white text in dark mode (default, Arpeggi look), white canvas +
+/// black text in light mode (Settings → Customize → Appearance). Arpeggi-red accent (asset `AccentColor`, or a stored hex).
+/// The full-screen player is always forced dark (it sits on artwork / palette backgrounds).
 enum Theme {
-    static let background = Color.black
+    static let background = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? .black : .systemBackground })
+    /// Grouped-list canvas (light: #F2F2F7, dark: pure black).
+    static let groupedBackground = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? .black : .systemGroupedBackground })
     static let secondaryBackground = Color(uiColor: .systemGray6)
-    static let label = Color.white
+    static let label = Color(uiColor: .label)
     static let secondaryLabel = Color(uiColor: .secondaryLabel)
     static let tertiaryLabel = Color(uiColor: .tertiaryLabel)
     static let separator = Color(uiColor: .separator)
-    static let hairline = Color.white.opacity(0.08)
+    static let hairline = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.08) : UIColor.black.withAlphaComponent(0.08) })
 
     /// User-changeable later (Settings → Customize) via UserDefaults "accentHex"; defaults to the asset color.
     static var accent: Color {

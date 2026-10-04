@@ -40,7 +40,7 @@ struct KnightMusicApp: App {
                 .environment(app.network)
                 .environment(app.syncStatus)
                 .environment(app.hermes)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(app.settings.appearance.colorScheme)
 
                 .task { await app.start() }
                 .onOpenURL { url in

@@ -82,7 +82,7 @@ struct LibraryHubView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Library")
         .refreshable { await app.pullToRefresh() }
         .observing(newestQuery)

@@ -59,6 +59,8 @@ struct RootView: View {
         }
         .fullScreenCover(isPresented: $ui.isPlayerPresented) {
             FullPlayerView()
+                .preferredColorScheme(.dark)
+                .environment(\.colorScheme, .dark)
                 .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
         }
         .tint(settings.accentColor)

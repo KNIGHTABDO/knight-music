@@ -36,7 +36,7 @@ struct AboutView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.groupedBackground.ignoresSafeArea())
         .navigationTitle("About")
     }
 }

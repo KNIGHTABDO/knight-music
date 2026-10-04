@@ -54,7 +54,7 @@ struct AlbumsView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .background(Theme.background.ignoresSafeArea())
             .overlay(alignment: .trailing) {
                 if isScrubberVisible {
                     AlphabetIndexScrubber(
@@ -104,7 +104,7 @@ struct AlbumsView: View {
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(Theme.accent)
             .frame(width: 32, height: 32)
-            .background(Color.white.opacity(0.12), in: Circle())
+            .background(Theme.label.opacity(0.12), in: Circle())
     }
 
     private func letterSections(from albums: [Album]) -> [LetterSection<Album>] {

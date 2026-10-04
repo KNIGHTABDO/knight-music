@@ -36,7 +36,7 @@ struct KnightView: View {
                 conversationsList
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Knight")
         .environment(\.editMode, $editMode)
         .toolbar {

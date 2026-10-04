@@ -32,7 +32,7 @@ struct AlbumDetailView: View {
                 )
             }
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(Theme.background.ignoresSafeArea())
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -321,7 +321,7 @@ struct AlbumDetailView: View {
                 } label: {
                     ZStack {
                         Circle()
-                            .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                            .stroke(Theme.label.opacity(0.2), lineWidth: 2)
                             .frame(width: 18, height: 18)
                         Circle()
                             .trim(from: 0, to: max(0.08, progress))

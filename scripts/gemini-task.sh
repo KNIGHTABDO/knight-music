@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Run one task with Gemini 3.8 Flash (Antigravity CLI) in its own git worktree, then loop on CI until green.
+# Run one coding task with Gemini 3.8 Flash (Antigravity CLI `agy`) in its own git worktree.
+# Optional: commit + push + watch GitHub Actions and feed compiler errors back until green.
 #
-#   scripts/gemini-task.sh new    <branch> <brief.md> [base-ref=main]   # start a task
-#   scripts/gemini-task.sh feedback <branch> <feedback.md>               # send review notes, loop again
+#   gemini-task.sh write    <branch> <brief.md> [base=main]   # code only, local commit (parallel agents, integrate later)
+#   gemini-task.sh new      <branch> <brief.md> [base=main]   # code, then push + CI fix loop
+#   gemini-task.sh feedback <branch> <notes.md>              # send review notes to the same conversation, CI loop again
+#   gemini-task.sh ci       <branch> <brief.md>              # resume only the CI loop
+# Run from inside the target git repo. Env: GEMINI_MODEL (default gemini-3.8-flash-high), MAX_FIX (default 6).
 #
 # State lives in .gemini-tasks/<branch>/ (conversation id, log, last CI errors, screenshots).
 # Gemini never pushes; this script commits, pushes, watches CI and feeds compile errors back (max $MAX_FIX rounds).
 set -uo pipefail
-ROOT=$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)
+ROOT=$(git rev-parse --show-toplevel)
 MODEL=${GEMINI_MODEL:-gemini-3.8-flash-high}
 MAX_FIX=${MAX_FIX:-6}
 MODE=$1; BRANCH=$2; FILE=$(realpath "$3")
@@ -16,8 +20,8 @@ STATE="$ROOT/.gemini-tasks/$SAFE"; WT="$ROOT/.claude/worktrees/gem-$SAFE"
 mkdir -p "$STATE"; LOG="$STATE/log.md"
 say() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
 
-RULES="Rules: You are working inside a git worktree of the Knight Music iOS app. Read CLAUDE.md fully before coding and obey it.
-There is NO Mac and NO Swift compiler here — do not try to build or run swift/xcodebuild; write code that compiles first time:
+RULES="Rules: You are working inside a git worktree of this project. Read CLAUDE.md fully before coding and obey it.
+If the project cannot be built locally (e.g. iOS on Linux), do not try to; write code that compiles first time:
 correct imports, exact type/method names copied from the existing code (open and read the files you call into), no invented APIs.
 Do NOT run git commands, do NOT push, do NOT edit files outside the paths the brief allows. Do not create placeholder or fake data.
 When finished, reply with a short list of files you created/changed."
@@ -43,15 +47,19 @@ ci_round() { # commit, push, wait; returns 0 when green
     [ -n "$id" ] && break; sleep 6
   done
   [ -z "$id" ] && { say "CI run not found"; return 1; }
-  say "CI run https://github.com/KNIGHTABDO/knight-music/actions/runs/$id"
-  gh run watch "$id" --exit-status >/dev/null 2>&1
-  local concl; concl=$(gh run view "$id" --json conclusion -q .conclusion)
+  say "CI run $(gh repo view --json url -q .url 2>/dev/null)/actions/runs/$id"
+  # poll instead of `gh run watch` (it can hang forever)
+  local concl=""
+  for _ in $(seq 1 240); do
+    concl=$(gh run view "$id" --json status,conclusion -q 'select(.status=="completed") | .conclusion' 2>/dev/null)
+    [ -n "$concl" ] && break; sleep 15
+  done
   echo "$id" > "$STATE/last_run"
   if [ "$concl" = success ]; then
     rm -rf "$STATE/screens"; gh run download "$id" -n screens -D "$STATE/screens" >/dev/null 2>&1 && say "screenshots → $STATE/screens"
     say "CI GREEN"; return 0
   fi
-  gh run view "$id" --log-failed 2>/dev/null | grep -E "error:|fatal error" | sed -E 's/^.*Z //; s#.*/KnightMusic/#KnightMusic/#' | sort -u | head -80 > "$STATE/errors.txt"
+  gh run view "$id" --log-failed 2>/dev/null | grep -E "error:|fatal error" | sed -E 's/^.*Z //' | sort -u | head -80 > "$STATE/errors.txt"
   say "CI FAILED ($(wc -l < "$STATE/errors.txt") error lines)"; return 1
 }
 
