@@ -76,6 +76,7 @@ struct MainTabsView: View {
                     HomeView()
                         .withAppRoutes()
                 }
+                .transfersIndicator()
             }
             .customizationID("tab.home")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
@@ -85,6 +86,7 @@ struct MainTabsView: View {
                     SearchView()
                         .withAppRoutes()
                 }
+                .transfersIndicator()
             }
             .customizationID("tab.search")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
@@ -103,6 +105,7 @@ struct MainTabsView: View {
                     SettingsView()
                         .withAppRoutes()
                 }
+                .transfersIndicator()
             }
             .customizationID("tab.settings")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
@@ -114,6 +117,7 @@ struct MainTabsView: View {
                             RouteRootView(route: item.route)
                                 .withAppRoutes()
                         }
+                        .transfersIndicator()
                     }
                     .customizationID(item.customizationId)
                 }
@@ -146,6 +150,7 @@ struct MainTabsView: View {
                     HomeView()
                         .withAppRoutes()
                 }
+                .transfersIndicator()
             }
             .customizationID("compact.tab.home")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
@@ -155,6 +160,7 @@ struct MainTabsView: View {
                     LibraryHubView()
                         .withAppRoutes()
                 }
+                .transfersIndicator()
             }
             .customizationID("compact.tab.library")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
@@ -173,6 +179,7 @@ struct MainTabsView: View {
                     SettingsView()
                         .withAppRoutes()
                 }
+                .transfersIndicator()
             }
             .customizationID("compact.tab.settings")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
@@ -182,6 +189,7 @@ struct MainTabsView: View {
                     SearchView()
                         .withAppRoutes()
                 }
+                .transfersIndicator()
             }
             .customizationID("compact.tab.search")
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)

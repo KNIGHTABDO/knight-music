@@ -1,6 +1,16 @@
 import Foundation
 import GRDB
 
+/// A song being saved for playback, for the transfers indicator.
+struct CacheTransfer: Equatable, Sendable, Identifiable {
+    var songId: String
+    /// 0…1, nil while queued or before the size is known.
+    var fraction: Double?
+    /// Needed by AutoMix for the next transition.
+    var urgent: Bool
+    var id: String { songId }
+}
+
 /// Disk cache of streamed songs (Caches/StreamCache/). Songs are fetched in parallel with playback at low
 /// priority, using the SAME URL/quality the player streams, then LRU-evicted under the size limit.
 final class StreamCache: @unchecked Sendable {
@@ -29,6 +39,10 @@ final class StreamCache: @unchecked Sendable {
     private var limitBytes: Int = 2048 * 1_048_576
     private var database: DatabaseWriter?
     private let maxConcurrent = 3
+    private var fractions: [String: Double] = [:]
+    private var lastReport: TimeInterval = 0
+    /// Called (on any thread) whenever what is queued/downloading or its progress changes.
+    var onActivity: (@Sendable ([CacheTransfer]) -> Void)?
 
     init() {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -157,6 +171,7 @@ final class StreamCache: @unchecked Sendable {
         for id in cancelled.keys { active[id] = nil }
         lock.unlock()
         for task in cancelled.values { task.cancel() }
+        report(force: true)
     }
 
     func remove(songId: String) {
@@ -182,6 +197,37 @@ final class StreamCache: @unchecked Sendable {
 
     // MARK: Internals
 
+    /// Current transfers, in-flight first.
+    func transfers() -> [CacheTransfer] {
+        lock.lock()
+        defer { lock.unlock() }
+        let running = active.keys.map { id in
+            CacheTransfer(songId: id, fraction: fractions[id], urgent: urgentIds.contains(id))
+        }.sorted { ($0.urgent ? 0 : 1, $0.songId) < ($1.urgent ? 0 : 1, $1.songId) }
+        let waiting = queued.map { CacheTransfer(songId: $0.songId, fraction: nil, urgent: $0.urgent) }
+        return running + waiting
+    }
+
+    private var urgentIds: Set<String> = []
+
+    private func report(force: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        lock.lock()
+        let due = force || now - lastReport > 0.25
+        if due { lastReport = now }
+        let handler = onActivity
+        lock.unlock()
+        guard due, let handler else { return }
+        handler(transfers())
+    }
+
+    fileprivate func progress(_ songId: String, fraction: Double) {
+        lock.lock()
+        fractions[songId] = fraction
+        lock.unlock()
+        report()
+    }
+
     private func pump() {
         lock.lock()
         while !queued.isEmpty, active.count < maxConcurrent || (queued[0].urgent && active.count < maxConcurrent + 1) {
@@ -191,15 +237,18 @@ final class StreamCache: @unchecked Sendable {
                 return
             }
             active[job.songId] = task
+            if job.urgent { urgentIds.insert(job.songId) }
         }
         lock.unlock()
+        report(force: true)
     }
 
     private func run(_ job: Job) async {
         var request = URLRequest(url: job.url)
         request.networkServiceType = job.urgent ? .responsiveData : .background
         do {
-            let (tmp, response) = try await session.download(for: request)
+            let (tmp, response) = try await session.download(for: request,
+                                                              delegate: TransferProgress(cache: self, songId: job.songId))
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 throw URLError(.badServerResponse)
             }
@@ -217,8 +266,11 @@ final class StreamCache: @unchecked Sendable {
         }
         lock.lock()
         active[job.songId] = nil
+        fractions[job.songId] = nil
+        urgentIds.remove(job.songId)
         lock.unlock()
         pump()
+        report(force: true)
     }
 
     private func store(tmp: URL, job: Job) {
@@ -280,6 +332,25 @@ final class StreamCache: @unchecked Sendable {
             } catch {
                 PlaybackLog.logger.error("StreamCache db write failed: \(error.localizedDescription)")
             }
+        }
+    }
+}
+
+/// Forwards a cache download's progress (the async download API exposes the task here).
+private final class TransferProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private weak var cache: StreamCache?
+    private let songId: String
+    private var observation: NSKeyValueObservation?
+
+    init(cache: StreamCache, songId: String) {
+        self.cache = cache
+        self.songId = songId
+    }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        observation = task.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
+            guard let self, progress.totalUnitCount > 0 else { return }
+            self.cache?.progress(self.songId, fraction: progress.fractionCompleted)
         }
     }
 }

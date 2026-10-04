@@ -75,6 +75,8 @@ final class PlayerEngine {
     var autoMixNote: String?
     /// True from the moment the next song comes in until the previous one has faded out.
     var autoMixActive = false
+    /// Songs being saved for playback right now (stream cache), for the transfers indicator.
+    var cacheTransfers: [CacheTransfer] = []
     var _volume: Float = 1
 
     var volume: Float {
@@ -151,6 +153,12 @@ final class PlayerEngine {
         installItemNotifications()
         wireAudioSession()
         remote = RemoteCommands(engine: self)
+        streamCache.onActivity = { [weak self] transfers in
+            Task { @MainActor in
+                guard let self, self.cacheTransfers != transfers else { return }
+                self.cacheTransfers = transfers
+            }
+        }
         notificationTokens.append(NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appDidEnterBackground() }
