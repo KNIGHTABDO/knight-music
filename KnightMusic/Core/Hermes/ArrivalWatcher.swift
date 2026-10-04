@@ -40,7 +40,7 @@ final class ArrivalWatcher {
 
     /// Normalizes a string for matching: lowercase, strip diacritics, remove "(feat. …)", "[…]", "(…)",
     /// punctuation, quotes, and extra whitespace.
-    static func normalize(_ string: String) -> String {
+    nonisolated static func normalize(_ string: String) -> String {
         var text = string.lowercased()
         text = text.folding(options: .diacriticInsensitive, locale: .current)
 
@@ -83,7 +83,7 @@ final class ArrivalWatcher {
 
     /// Extracts artist tokens from an artist string.
     /// Handles multiple artists separated by "/", ",", ";", "&", "+", or feature credits.
-    static func extractArtistTokens(_ artist: String) -> [String] {
+    nonisolated static func extractArtistTokens(_ artist: String) -> [String] {
         let raw = artist.lowercased().folding(options: .diacriticInsensitive, locale: .current)
         let separatorPattern = "[,;/&+]|\\b(?:feat\\.?|ft\\.?|featuring|vs\\.?|with|and)\\b"
 
@@ -111,7 +111,7 @@ final class ArrivalWatcher {
     }
 
     /// Checks if any artist token matches between track artist and song artist.
-    static func artistOverlaps(trackArtist: String, songArtist: String) -> Bool {
+    nonisolated static func artistOverlaps(trackArtist: String, songArtist: String) -> Bool {
         let trackTokens = extractArtistTokens(trackArtist)
         let songTokens = extractArtistTokens(songArtist)
         guard !trackTokens.isEmpty, !songTokens.isEmpty else { return false }
@@ -132,7 +132,7 @@ final class ArrivalWatcher {
     /// Matches an AddedTrack against a Song from the local database or server.
     /// Title must match (equal after normalization, or one contains the other)
     /// AND artist overlaps (any artist token match).
-    static func matches(track: AddedTrack, song: Song) -> Bool {
+    nonisolated static func matches(track: AddedTrack, song: Song) -> Bool {
         let tTitle = normalize(track.title)
         let sTitle = normalize(song.title)
         guard !tTitle.isEmpty, !sTitle.isEmpty else { return false }
