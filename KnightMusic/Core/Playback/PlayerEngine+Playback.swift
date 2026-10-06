@@ -291,11 +291,12 @@ extension PlayerEngine {
     // MARK: Cache feeding
 
     func syncCache() {
-        guard settings.streamCacheEnabled, !services.isOffline, currentRadio == nil,
+        guard settings.autoMix, settings.streamCacheEnabled, !services.isOffline, currentRadio == nil,
               services.urls != nil, currentIndex < order.count else {
             // AutoMix still needs its incoming song as a local file when the stream cache is off.
+            // With AutoMix off nothing is saved ahead: pending background downloads are cancelled.
             let keep = plannedMix.map { Set([$0.to.id]) } ?? []
-            if !settings.streamCacheEnabled || currentRadio != nil { streamCache.retainOnly(keep) }
+            if !settings.autoMix || !settings.streamCacheEnabled || currentRadio != nil { streamCache.retainOnly(keep) }
             return
         }
         let depth = services.network == .cellular ? 2 : 3

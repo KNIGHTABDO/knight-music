@@ -187,6 +187,7 @@ final class PlayerEngine {
     func settingsDidChange() {
         applyVolume()
         if tracked != nil { prepareNext() }
+        syncCache()
     }
 
     /// Call when connectivity changed: re-prepares the next item and flushes pending scrobbles.
