@@ -296,3 +296,7 @@ final class LibraryDatabase: @unchecked Sendable {
         return migrator
     }
 }
+
+extension SyncKey {
+    static let lastFullLibrarySync = "lastFullLibrarySync"
+}

@@ -73,24 +73,40 @@ extension Array {
 extension LibraryDatabase {
     func storePlaylist(_ playlist: Playlist, songs: [Song]) async throws {
         try await pool.write { db in
-            try playlist.upsert(db)
-            for song in songs { try song.upsert(db) }
-            try db.execute(sql: "DELETE FROM playlistEntry WHERE playlistId = ?", arguments: [playlist.id])
-            for (index, song) in songs.enumerated() {
-                try PlaylistEntry(playlistId: playlist.id, position: index, songId: song.id).insert(db)
+            _ = try writeChanged([playlist], in: db, same: samePlaylist)
+            _ = try writeChanged(songs, in: db, same: sameSong)
+            let existingSongIds = try String.fetchAll(
+                db,
+                sql: "SELECT songId FROM playlistEntry WHERE playlistId = ? ORDER BY position",
+                arguments: [playlist.id]
+            )
+            let newSongIds = songs.map(\.id)
+            if existingSongIds != newSongIds {
+                try db.execute(sql: "DELETE FROM playlistEntry WHERE playlistId = ?", arguments: [playlist.id])
+                for (index, song) in songs.enumerated() {
+                    try PlaylistEntry(playlistId: playlist.id, position: index, songId: song.id).insert(db)
+                }
             }
         }
     }
 
     func storeHomeList(_ kind: HomeKind, albums: [Album]) async throws {
         try await pool.write { db in
-            for album in albums { try album.upsert(db) }
-            try db.execute(sql: "DELETE FROM homeList WHERE kind = ?", arguments: [kind.rawValue])
-            for (index, album) in albums.enumerated() {
-                try db.execute(
-                    sql: "INSERT INTO homeList(kind, position, albumId) VALUES (?, ?, ?)",
-                    arguments: [kind.rawValue, index, album.id]
-                )
+            _ = try writeChanged(albums, in: db, same: sameAlbum)
+            let existingAlbumIds = try String.fetchAll(
+                db,
+                sql: "SELECT albumId FROM homeList WHERE kind = ? ORDER BY position",
+                arguments: [kind.rawValue]
+            )
+            let newAlbumIds = albums.map(\.id)
+            if existingAlbumIds != newAlbumIds {
+                try db.execute(sql: "DELETE FROM homeList WHERE kind = ?", arguments: [kind.rawValue])
+                for (index, album) in albums.enumerated() {
+                    try db.execute(
+                        sql: "INSERT INTO homeList(kind, position, albumId) VALUES (?, ?, ?)",
+                        arguments: [kind.rawValue, index, album.id]
+                    )
+                }
             }
         }
     }

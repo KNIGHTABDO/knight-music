@@ -105,6 +105,9 @@ final class AppModel {
             autoMixShowcase?.refreshIfDue()
         }
         guard started, session == .ready else { return }
+        if let lastSync = syncStatus.lastSyncAt, Date().timeIntervalSince(lastSync) < 180 {
+            return
+        }
         Task { await refresh() }
     }
 
