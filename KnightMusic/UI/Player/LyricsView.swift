@@ -19,6 +19,9 @@ struct LyricsView: View {
 
     @State private var offsetStore = LyricsOffsetStore.shared
     @State private var lyricsList: [StructuredLyrics] = []
+    @State private var identifiedLines: [IdentifiedLyricLine] = []
+    @State private var startTimes: [Int] = []
+    @State private var activeIndex: Int?
     @State private var isLoading = true
     @State private var isUserScrolling = false
     @State private var userScrollTask: Task<Void, Never>?
@@ -36,22 +39,30 @@ struct LyricsView: View {
             ?? lyricsList.first(where: { !$0.line.isEmpty })
     }
 
-    private var activeIndex: Int? {
-        guard let selected = selectedLyrics, selected.synced, !selected.line.isEmpty else { return nil }
-        let effectiveOffsetMs = offsetStore.effectiveOffset(serverOffset: selected.offset, songId: song.id)
-        let currentMs = Int(player.currentTime * 1000) + effectiveOffsetMs
-
-        var foundIndex: Int? = nil
-        for (index, line) in selected.line.enumerated() {
-            if let start = line.start {
-                if start <= currentMs {
-                    foundIndex = index
-                } else {
-                    break
-                }
-            }
+    private func rebuildLyricsState() {
+        guard let selected = selectedLyrics, !selected.line.isEmpty else {
+            identifiedLines = []
+            startTimes = []
+            activeIndex = nil
+            return
         }
-        return foundIndex
+        identifiedLines = LyricsTimeline.identifiedLines(for: selected)
+        recomputeTimeline()
+    }
+
+    private func recomputeTimeline() {
+        guard let selected = selectedLyrics, selected.synced, !selected.line.isEmpty else {
+            startTimes = []
+            activeIndex = nil
+            return
+        }
+        let effectiveOffsetMs = offsetStore.effectiveOffset(serverOffset: selected.offset, songId: song.id)
+        startTimes = LyricsTimeline.lineStartTimes(for: selected, effectiveOffsetMs: effectiveOffsetMs)
+        let currentPlaybackMs = Int(player.currentTime * 1000)
+        let newIndex = LyricsTimeline.activeLineIndex(for: currentPlaybackMs, in: startTimes)
+        if activeIndex != newIndex {
+            activeIndex = newIndex
+        }
     }
 
     var body: some View {
@@ -78,8 +89,13 @@ struct LyricsView: View {
             isSyncMode = false
             showSyncedToast = false
             syncedLineIndex = nil
+            activeIndex = nil
             lyricsList = await library.lyrics(songId: song.id)
+            rebuildLyricsState()
             isLoading = false
+        }
+        .onChange(of: offsetStore.userOffset(for: song.id)) { _, _ in
+            recomputeTimeline()
         }
     }
 
@@ -90,12 +106,16 @@ struct LyricsView: View {
 
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
+                LyricsTimeTracker(startTimes: startTimes, activeIndex: $activeIndex)
+
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: isIPad ? 22 : 16) {
                         // Top breathing room so the first line can rest at ~1/3 height
                         Color.clear.frame(height: 100)
 
-                        ForEach(Array(lyrics.line.enumerated()), id: \.offset) { index, line in
+                        ForEach(identifiedLines) { item in
+                            let index = item.id
+                            let line = item.line
                             let isActive = (index == activeIndex)
                             let distance = abs(index - (activeIndex ?? 0))
                             let blurRadius: CGFloat = distance > 2 ? min(CGFloat(distance - 2) * 1.0, 2.0) : 0
@@ -145,6 +165,11 @@ struct LyricsView: View {
                             pauseAutoScroll(proxy: proxy)
                         }
                 )
+                .onAppear {
+                    if let activeIndex {
+                        proxy.scrollTo(activeIndex, anchor: UnitPoint(x: 0.5, y: 0.33))
+                    }
+                }
                 .onChange(of: activeIndex) { _, newIndex in
                     guard let newIndex, !isUserScrolling else { return }
                     withAnimation(.smooth(duration: 0.5)) {
@@ -202,6 +227,7 @@ struct LyricsView: View {
             let serverOffset = lyrics.offset ?? 0
             let newOffset = start - currentPlaybackMs - serverOffset
             offsetStore.setOffset(newOffset, for: song.id)
+            recomputeTimeline()
             Haptics.success()
 
             syncedLineIndex = index
@@ -332,6 +358,7 @@ struct LyricsView: View {
 
                     Button("Reset") {
                         offsetStore.resetOffset(for: song.id)
+                        recomputeTimeline()
                         Haptics.impact(.light)
                     }
                     .font(.system(size: 12, weight: .semibold))
@@ -367,6 +394,7 @@ struct LyricsView: View {
     private func syncAdjustButton(title: String, deltaMs: Int) -> some View {
         Button {
             offsetStore.adjustOffset(by: deltaMs, for: song.id)
+            recomputeTimeline()
             Haptics.impact(.light)
         } label: {
             Text(title)
@@ -383,8 +411,8 @@ struct LyricsView: View {
     private func unsyncedLyricsView(_ lyrics: StructuredLyrics) -> some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(lyrics.line.enumerated()), id: \.offset) { _, line in
-                    Text(line.value.isEmpty ? " " : line.value)
+                ForEach(identifiedLines) { item in
+                    Text(item.line.value.isEmpty ? " " : item.line.value)
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.85))
                         .multilineTextAlignment(.leading)
@@ -420,6 +448,44 @@ struct LyricsView: View {
                     proxy.scrollTo(index, anchor: UnitPoint(x: 0.5, y: 0.33))
                 }
             }
+        }
+    }
+}
+
+/// Tiny invisible observation point that is the ONLY view observing `player.currentTime`.
+/// It updates `activeIndex` only when the active line actually changes.
+private struct LyricsTimeTracker: View {
+    @Environment(PlayerEngine.self) private var player
+    let startTimes: [Int]
+    @Binding var activeIndex: Int?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: player.currentTime) { _, newTime in
+                updateIndex(currentTime: newTime)
+            }
+            .onAppear {
+                updateIndex(currentTime: player.currentTime)
+            }
+            .onChange(of: startTimes) { _, _ in
+                updateIndex(currentTime: player.currentTime)
+            }
+    }
+
+    private func updateIndex(currentTime: TimeInterval) {
+        guard !startTimes.isEmpty else {
+            if activeIndex != nil {
+                activeIndex = nil
+            }
+            return
+        }
+        let currentPlaybackMs = Int(currentTime * 1000)
+        let newIndex = LyricsTimeline.activeLineIndex(for: currentPlaybackMs, in: startTimes)
+        if activeIndex != newIndex {
+            activeIndex = newIndex
         }
     }
 }
