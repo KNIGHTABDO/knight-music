@@ -6,14 +6,18 @@ struct SongsView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(DownloadManager.self) private var downloads
     @State private var searchText = ""
+    @State private var debouncedSearchText = ""
     @State private var sort: SongSort = .title
+    @State private var hasLoadedInitial = false
+    @State private var previousSongs: [Song] = []
 
     var body: some View {
-        let query = library.songs(sort: sort, search: searchText)
-        let songs = query.value
+        let query = library.songs(sort: sort, search: debouncedSearchText)
+        let songs = query.isLoaded ? query.value : (hasLoadedInitial ? previousSongs : query.value)
+        let showSkeleton = !query.isLoaded && !hasLoadedInitial
 
         Group {
-            if !query.isLoaded {
+            if showSkeleton {
                 List {
                     SkeletonRowList(count: 10)
                         .listRowInsets(EdgeInsets(top: 8, leading: Theme.margin, bottom: 8, trailing: Theme.margin))
@@ -92,6 +96,34 @@ struct SongsView: View {
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Songs")
         .searchable(text: $searchText, prompt: "Search in Songs")
+        .task(id: searchText) {
+            let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                debouncedSearchText = ""
+                return
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            debouncedSearchText = trimmed
+        }
+        .onChange(of: query.isLoaded) { _, isLoaded in
+            if isLoaded {
+                previousSongs = query.value
+                hasLoadedInitial = true
+            }
+        }
+        .onChange(of: query.value) { _, newSongs in
+            if query.isLoaded {
+                previousSongs = newSongs
+                hasLoadedInitial = true
+            }
+        }
+        .onAppear {
+            if query.isLoaded {
+                previousSongs = query.value
+                hasLoadedInitial = true
+            }
+        }
         .refreshable { await app.pullToRefresh() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

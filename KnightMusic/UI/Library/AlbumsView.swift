@@ -4,22 +4,26 @@ struct AlbumsView: View {
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
     @State private var searchText = ""
+    @State private var debouncedSearchText = ""
     @State private var sortOrder: AlbumSort = .name
+    @State private var hasLoadedInitial = false
+    @State private var previousAlbums: [Album] = []
 
     private var hasLetterSections: Bool {
         sortOrder == .name || sortOrder == .artist
     }
 
     var body: some View {
-        let query = library.albums(sort: sortOrder, search: searchText)
-        let albums = query.value
+        let query = library.albums(sort: sortOrder, search: debouncedSearchText)
+        let albums = query.isLoaded ? query.value : (hasLoadedInitial ? previousAlbums : query.value)
         let sections = letterSections(from: albums)
+        let showSkeleton = !query.isLoaded && !hasLoadedInitial
 
-        let isScrubberVisible = hasLetterSections && sections.count > 1 && query.isLoaded
+        let isScrubberVisible = hasLetterSections && sections.count > 1 && (query.isLoaded || hasLoadedInitial)
 
         ScrollViewReader { proxy in
             ScrollView {
-                if !query.isLoaded {
+                if showSkeleton {
                     SkeletonTileGrid()
                         .padding(.vertical, Theme.margin)
                 } else if albums.isEmpty {
@@ -68,6 +72,34 @@ struct AlbumsView: View {
         }
         .navigationTitle("Albums")
         .searchable(text: $searchText, prompt: "Search in Albums...")
+        .task(id: searchText) {
+            let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                debouncedSearchText = ""
+                return
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            debouncedSearchText = trimmed
+        }
+        .onChange(of: query.isLoaded) { _, isLoaded in
+            if isLoaded {
+                previousAlbums = query.value
+                hasLoadedInitial = true
+            }
+        }
+        .onChange(of: query.value) { _, newAlbums in
+            if query.isLoaded {
+                previousAlbums = newAlbums
+                hasLoadedInitial = true
+            }
+        }
+        .onAppear {
+            if query.isLoaded {
+                previousAlbums = query.value
+                hasLoadedInitial = true
+            }
+        }
         .refreshable { await app.pullToRefresh() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

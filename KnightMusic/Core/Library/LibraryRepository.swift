@@ -19,8 +19,11 @@ final class LibraryRepository {
 
     @ObservationIgnored private var cache: [String: AnyObject] = [:]
     @ObservationIgnored private var cacheOrder: [String] = []
+    @ObservationIgnored private var searchCache: [String: AnyObject] = [:]
+    @ObservationIgnored private var searchCacheOrder: [String] = []
     @ObservationIgnored private var requestedTopSongs = Set<String>()
     private static let cacheLimit = 48
+    private static let searchCacheLimit = 2
 
     init() {}
 
@@ -29,6 +32,8 @@ final class LibraryRepository {
         if self.database !== database {
             cache.removeAll()
             cacheOrder.removeAll()
+            searchCache.removeAll()
+            searchCacheOrder.removeAll()
             requestedTopSongs.removeAll()
         }
         self.database = database
@@ -39,30 +44,51 @@ final class LibraryRepository {
     func dropCaches() {
         cache.removeAll()
         cacheOrder.removeAll()
+        searchCache.removeAll()
+        searchCacheOrder.removeAll()
     }
 
     // MARK: - Query cache
 
-    private func query<V: Sendable>(
+    private func query<V: Sendable & Equatable>(
         _ key: String,
         initial: V,
+        isSearch: Bool = false,
         _ fetch: @escaping @Sendable (Database) throws -> V
     ) -> LiveQuery<V> {
-        if let hit = cache[key] as? LiveQuery<V> {
-            if let index = cacheOrder.firstIndex(of: key), index != cacheOrder.count - 1 {
-                cacheOrder.remove(at: index)
-                cacheOrder.append(key)
+        if isSearch {
+            if let hit = searchCache[key] as? LiveQuery<V> {
+                if let index = searchCacheOrder.firstIndex(of: key), index != searchCacheOrder.count - 1 {
+                    searchCacheOrder.remove(at: index)
+                    searchCacheOrder.append(key)
+                }
+                return hit
             }
-            return hit
+            let made = LiveQuery(initial: initial, database: database, fetch: fetch)
+            searchCache[key] = made
+            searchCacheOrder.append(key)
+            if searchCacheOrder.count > Self.searchCacheLimit {
+                let evicted = searchCacheOrder.removeFirst()
+                searchCache[evicted] = nil
+            }
+            return made
+        } else {
+            if let hit = cache[key] as? LiveQuery<V> {
+                if let index = cacheOrder.firstIndex(of: key), index != cacheOrder.count - 1 {
+                    cacheOrder.remove(at: index)
+                    cacheOrder.append(key)
+                }
+                return hit
+            }
+            let made = LiveQuery(initial: initial, database: database, fetch: fetch)
+            cache[key] = made
+            cacheOrder.append(key)
+            if cacheOrder.count > Self.cacheLimit {
+                let evicted = cacheOrder.removeFirst()
+                cache[evicted] = nil
+            }
+            return made
         }
-        let made = LiveQuery(initial: initial, database: database, fetch: fetch)
-        cache[key] = made
-        cacheOrder.append(key)
-        if cacheOrder.count > Self.cacheLimit {
-            let evicted = cacheOrder.removeFirst()
-            cache[evicted] = nil
-        }
-        return made
     }
 
     // MARK: - Artists
@@ -82,7 +108,8 @@ final class LibraryRepository {
     // MARK: - Albums
 
     func albums(sort: AlbumSort = .name, search: String = "", limit: Int? = nil) -> LiveQuery<[Album]> {
-        query("albums:\(sort.rawValue):\(search):\(limit ?? 0)", initial: [Album]()) { db in
+        let isSearch = !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return query("albums:\(sort.rawValue):\(search):\(limit ?? 0)", initial: [Album](), isSearch: isSearch) { db in
             try LibraryQueries.albums(db, sort: sort, search: search, limit: limit)
         }
     }
@@ -111,7 +138,8 @@ final class LibraryRepository {
     // MARK: - Songs
 
     func songs(sort: SongSort = .title, search: String = "", limit: Int? = nil) -> LiveQuery<[Song]> {
-        query("songs:\(sort.rawValue):\(search):\(limit ?? 0)", initial: [Song]()) { db in
+        let isSearch = !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return query("songs:\(sort.rawValue):\(search):\(limit ?? 0)", initial: [Song](), isSearch: isSearch) { db in
             try LibraryQueries.songs(db, sort: sort, search: search, limit: limit)
         }
     }
