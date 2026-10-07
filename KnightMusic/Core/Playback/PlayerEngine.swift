@@ -144,6 +144,7 @@ final class PlayerEngine {
     @ObservationIgnored var autoMixPlanTask: Task<Void, Never>?
     @ObservationIgnored var lastPrefetchSignature = ""
     @ObservationIgnored var volumeAutomation: Timer?
+    @ObservationIgnored var lastSavedQueueSignature: QueueSignature?
 
     var settings: PlaybackSettings { services.settings }
 
@@ -157,6 +158,7 @@ final class PlayerEngine {
             Task { @MainActor in
                 guard let self, self.cacheTransfers != transfers else { return }
                 self.cacheTransfers = transfers
+                self.refreshGaplessNextIfCached()
             }
         }
         notificationTokens.append(NotificationCenter.default.addObserver(

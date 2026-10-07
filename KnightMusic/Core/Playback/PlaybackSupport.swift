@@ -18,6 +18,10 @@ enum ReplayGainMode: String, Codable, CaseIterable, Sendable {
     case off, track, album
 }
 
+enum SaveAheadMode: String, Codable, CaseIterable, Sendable {
+    case off, wifiOnly, always
+}
+
 /// Snapshot of every user setting playback/downloads care about. 0 bitrate means "original quality".
 struct PlaybackSettings: Equatable, Sendable {
     var wifiMaxBitRate: Int = 0
@@ -37,6 +41,7 @@ struct PlaybackSettings: Equatable, Sendable {
     var streamCacheEnabled: Bool = true
     var streamCacheLimitMB: Int = 2048
     var serverQueueSyncEnabled: Bool = true
+    var saveAheadMode: SaveAheadMode = .off
 }
 
 protocol PlaybackURLProvider: Sendable {

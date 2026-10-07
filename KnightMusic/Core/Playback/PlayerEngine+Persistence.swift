@@ -13,32 +13,64 @@ extension PlayerEngine {
         scheduleServerSave()
     }
 
-    func saveQueueNow() {
-        guard currentRadio == nil else { return }
-        guard !order.isEmpty else {
-            queueStore.save(nil as SavedQueue?)
-            return
+    func computeQueueSignature() -> QueueSignature {
+        guard !order.isEmpty else { return .empty }
+        var orderHasher = Hasher()
+        for entry in order {
+            orderHasher.combine(entry.id)
         }
-        var originalPositions: [Int]?
-        if shuffleEnabled {
-            let positions = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1.id, $0) })
-            originalPositions = originalOrder.compactMap { positions[$0.id] }
+        var origHasher = Hasher()
+        for entry in originalOrder {
+            origHasher.combine(entry.id)
         }
-        queueStore.save(SavedQueue(songs: order.map(\.song), originalOrder: originalPositions,
-                                   repeatMode: repeatMode, shuffle: shuffleEnabled))
-        savePositionNow()
+        return QueueSignature(
+            count: order.count,
+            orderHash: orderHasher.finalize(),
+            originalOrderHash: origHasher.finalize(),
+            repeatMode: repeatMode,
+            shuffle: shuffleEnabled
+        )
     }
 
-    func savePositionNow() {
+    func saveQueueNow(synchronous: Bool = false) {
+        guard currentRadio == nil else { return }
+        guard !order.isEmpty else {
+            let signature = QueueSignature.empty
+            if lastSavedQueueSignature != signature {
+                lastSavedQueueSignature = signature
+                queueStore.save(nil as SavedQueue?, synchronous: true)
+            }
+            return
+        }
+        let signature = computeQueueSignature()
+        if lastSavedQueueSignature != signature {
+            lastSavedQueueSignature = signature
+            var originalPositions: [Int]?
+            if shuffleEnabled {
+                let positions = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1.id, $0) })
+                originalPositions = originalOrder.compactMap { positions[$0.id] }
+            }
+            queueStore.save(SavedQueue(songs: order.map(\.song), originalOrder: originalPositions,
+                                       repeatMode: repeatMode, shuffle: shuffleEnabled),
+                            synchronous: synchronous)
+        }
+        savePositionNow(synchronous: synchronous)
+    }
+
+    func savePositionNow(synchronous: Bool = false) {
         guard currentRadio == nil, !order.isEmpty else { return }
         let now = Date()
         localSavedAt = now
-        queueStore.save(SavedPosition(currentIndex: currentIndex, position: currentTime, savedAt: now))
+        queueStore.save(SavedPosition(currentIndex: currentIndex, position: currentTime, savedAt: now),
+                        synchronous: synchronous)
         lastPositionSave = ProcessInfo.processInfo.systemUptime
     }
 
     func restoreSavedQueue() {
-        guard order.isEmpty, let saved = queueStore.loadQueue(), !saved.songs.isEmpty else { return }
+        guard order.isEmpty, let saved = queueStore.loadQueue(), !saved.songs.isEmpty else {
+            lastSavedQueueSignature = .empty
+            return
+        }
         let entries = saved.songs.map(QueueEntry.init)
         order = entries
         originalOrder = saved.originalOrder.map { positions in
@@ -46,6 +78,7 @@ extension PlayerEngine {
         } ?? entries
         repeatMode = saved.repeatMode
         shuffleEnabled = saved.shuffle
+        lastSavedQueueSignature = computeQueueSignature()
         let position = queueStore.loadPosition()
         localSavedAt = position?.savedAt
         let index = min(max(position?.currentIndex ?? 0, 0), entries.count - 1)
@@ -123,7 +156,7 @@ extension PlayerEngine {
     }
 
     func appDidEnterBackground() {
-        saveQueueNow()
+        saveQueueNow(synchronous: true)
         guard settings.serverQueueSyncEnabled, services.server != nil else { return }
         serverSaveTask?.cancel()
         var background = UIBackgroundTaskIdentifier.invalid
