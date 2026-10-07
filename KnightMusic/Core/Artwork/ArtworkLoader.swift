@@ -32,9 +32,12 @@ final class ArtworkLoader: @unchecked Sendable {
 
         var config = ImagePipeline.Configuration()
         config.imageCache = memory
-        if let disk = try? DataCache(name: "com.knightabdo.knightmusic.artwork") {
+        do {
+            let disk = try DataCache(name: "com.knightabdo.knightmusic.artwork")
             disk.sizeLimit = 600 * 1024 * 1024
             config.dataCache = disk
+        } catch {
+            Log.artwork.error("Failed to initialize artwork disk cache: \(error)")
         }
         config.dataCachePolicy = .automatic
         config.isDecompressionEnabled = true

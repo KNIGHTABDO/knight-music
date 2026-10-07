@@ -71,9 +71,14 @@ enum Keychain {
     }
 
     private static func fallbackLoad() -> [String: String] {
-        guard let data = try? Data(contentsOf: fallbackURL),
-              let dict = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
-        return dict
+        guard FileManager.default.fileExists(atPath: fallbackURL.path) else { return [:] }
+        do {
+            let data = try Data(contentsOf: fallbackURL)
+            return try JSONDecoder().decode([String: String].self, from: data)
+        } catch {
+            Log.app.error("Failed to read credentials fallback: \(error)")
+            return [:]
+        }
     }
 
     private static func fallbackSave(_ dict: [String: String]) throws {
@@ -96,6 +101,10 @@ enum Keychain {
     private static func fallbackRemove(_ account: String) {
         var dict = fallbackLoad()
         guard dict.removeValue(forKey: account) != nil else { return }
-        try? fallbackSave(dict)
+        do {
+            try fallbackSave(dict)
+        } catch {
+            Log.app.error("Failed to remove credential from fallback: \(error)")
+        }
     }
 }

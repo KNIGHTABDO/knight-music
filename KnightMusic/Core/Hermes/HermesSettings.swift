@@ -24,7 +24,11 @@ final class HermesSettings {
             if apiKey.isEmpty {
                 Keychain.delete(account: Self.keychainAccount)
             } else {
-                try? Keychain.set(apiKey, account: Self.keychainAccount)
+                do {
+                    try Keychain.set(apiKey, account: Self.keychainAccount)
+                } catch {
+                    Log.app.error("Failed to save Hermes API key to keychain: \(error)")
+                }
             }
         }
     }

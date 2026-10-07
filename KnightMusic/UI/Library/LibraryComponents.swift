@@ -72,11 +72,15 @@ enum ArtistPlaybackHelper {
     static func playArtistSongs(artist: Artist, library: LibraryRepository, player: PlayerEngine, shuffle: Bool) {
         Task {
             guard let db = library.database else { return }
-            let songs = (try? await db.pool.read { db in
-                try LibraryQueries.songs(db, artistId: artist.id)
-            }) ?? []
-            guard !songs.isEmpty else { return }
-            player.play(songs, shuffle: shuffle)
+            do {
+                let songs = try await db.pool.read { db in
+                    try LibraryQueries.songs(db, artistId: artist.id)
+                }
+                guard !songs.isEmpty else { return }
+                player.play(songs, shuffle: shuffle)
+            } catch {
+                Log.database.error("Failed to read songs for artist \(artist.id): \(error)")
+            }
         }
     }
 }
@@ -145,8 +149,12 @@ struct AlbumContextMenu: View {
         Button {
             Task {
                 let isStarred = album.starred != nil
-                try? await library.toggleStar(.album, id: album.id, currentlyStarred: isStarred)
-                Haptics.impact(.medium)
+                do {
+                    try await library.toggleStar(.album, id: album.id, currentlyStarred: isStarred)
+                    Haptics.impact(.medium)
+                } catch {
+                    Log.sync.error("Toggle star album failed for \(album.id): \(error)")
+                }
             }
         } label: {
             Label(album.starred != nil ? "Unfavorite" : "Favorite",
@@ -176,8 +184,12 @@ struct ArtistContextMenu: View {
         Button {
             Task {
                 let isStarred = artist.starred != nil
-                try? await library.toggleStar(.artist, id: artist.id, currentlyStarred: isStarred)
-                Haptics.impact(.medium)
+                do {
+                    try await library.toggleStar(.artist, id: artist.id, currentlyStarred: isStarred)
+                    Haptics.impact(.medium)
+                } catch {
+                    Log.sync.error("Toggle star artist failed for \(artist.id): \(error)")
+                }
             }
         } label: {
             Label(artist.starred != nil ? "Unfavorite" : "Favorite",

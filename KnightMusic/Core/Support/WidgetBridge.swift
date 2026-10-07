@@ -119,7 +119,11 @@ final class WidgetBridge {
                 if !FileManager.default.fileExists(atPath: fileURL.path) {
                     if let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300),
                        let data = image.jpegData(compressionQuality: 0.85) {
-                        try? data.write(to: fileURL, options: .atomic)
+                        do {
+                            try data.write(to: fileURL, options: .atomic)
+                        } catch {
+                            Log.app.warning("Widget now-playing artwork write failed: \(error)")
+                        }
                     }
                 }
                 if FileManager.default.fileExists(atPath: fileURL.path) {
@@ -160,7 +164,11 @@ final class WidgetBridge {
                 if !FileManager.default.fileExists(atPath: fileURL.path) {
                     if let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300),
                        let data = image.jpegData(compressionQuality: 0.85) {
-                        try? data.write(to: fileURL, options: .atomic)
+                        do {
+                            try data.write(to: fileURL, options: .atomic)
+                        } catch {
+                            Log.app.warning("Widget recent album artwork write failed for \(album.id): \(error)")
+                        }
                     }
                 }
                 if FileManager.default.fileExists(atPath: fileURL.path) {
@@ -180,7 +188,11 @@ final class WidgetBridge {
                 if !FileManager.default.fileExists(atPath: fileURL.path) {
                     if let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300),
                        let data = image.jpegData(compressionQuality: 0.85) {
-                        try? data.write(to: fileURL, options: .atomic)
+                        do {
+                            try data.write(to: fileURL, options: .atomic)
+                        } catch {
+                            Log.app.warning("Widget newest album artwork write failed for \(album.id): \(error)")
+                        }
                     }
                 }
                 if FileManager.default.fileExists(atPath: fileURL.path) {
@@ -231,9 +243,14 @@ final class WidgetBridge {
             return Array(list.prefix(8))
         }
         guard let db = app?.database else { return [] }
-        return (try? await db.pool.read { db in
-            try LibraryQueries.albums(db, sort: .recentlyPlayed, search: "", limit: 8)
-        }) ?? []
+        do {
+            return try await db.pool.read { db in
+                try LibraryQueries.albums(db, sort: .recentlyPlayed, search: "", limit: 8)
+            }
+        } catch {
+            Log.app.warning("Widget fetchRecentAlbums failed: \(error)")
+            return []
+        }
     }
 
     private func fetchNewestAlbums() async -> [Album] {
@@ -241,9 +258,14 @@ final class WidgetBridge {
             return Array(list.prefix(8))
         }
         guard let db = app?.database else { return [] }
-        return (try? await db.pool.read { db in
-            try LibraryQueries.albums(db, sort: .recentlyAdded, search: "", limit: 8)
-        }) ?? []
+        do {
+            return try await db.pool.read { db in
+                try LibraryQueries.albums(db, sort: .recentlyAdded, search: "", limit: 8)
+            }
+        } catch {
+            Log.app.warning("Widget fetchNewestAlbums failed: \(error)")
+            return []
+        }
     }
 
     private func safeFilename(for id: String) -> String {

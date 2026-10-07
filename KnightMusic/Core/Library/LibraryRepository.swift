@@ -210,7 +210,12 @@ final class LibraryRepository {
 
     func songs(ids: [String]) async -> [Song] {
         guard let database, !ids.isEmpty else { return [] }
-        return (try? await database.pool.read { db in try LibraryQueries.songs(db, ids: ids) }) ?? []
+        do {
+            return try await database.pool.read { db in try LibraryQueries.songs(db, ids: ids) }
+        } catch {
+            Log.database.error("Failed to read songs(\(ids)): \(error)")
+            return []
+        }
     }
 
     func song(id: String) async -> Song? {
@@ -219,18 +224,29 @@ final class LibraryRepository {
 
     func albumContent(id: String) async -> AlbumContent {
         guard let database else { return AlbumContent() }
-        return (try? await database.pool.read { db in try LibraryQueries.album(db, id: id) }) ?? AlbumContent()
+        do {
+            return try await database.pool.read { db in try LibraryQueries.album(db, id: id) }
+        } catch {
+            Log.database.error("Failed to read albumContent(\(id)): \(error)")
+            return AlbumContent()
+        }
     }
 
     // MARK: - Lyrics & artist info (DB first, then server)
 
     func lyrics(songId: String) async -> [StructuredLyrics] {
         guard let database else { return [] }
-        let cached: (json: String, fetchedAt: Date)? = try? await database.pool.read { db -> (json: String, fetchedAt: Date)? in
-            guard let row = try Row.fetchOne(db, sql: "SELECT json, fetchedAt FROM lyrics WHERE songId = ?", arguments: [songId]) else { return nil }
-            let json: String = row["json"]
-            let fetchedAt: Date = row["fetchedAt"]
-            return (json, fetchedAt)
+        let cached: (json: String, fetchedAt: Date)?
+        do {
+            cached = try await database.pool.read { db -> (json: String, fetchedAt: Date)? in
+                guard let row = try Row.fetchOne(db, sql: "SELECT json, fetchedAt FROM lyrics WHERE songId = ?", arguments: [songId]) else { return nil }
+                let json: String = row["json"]
+                let fetchedAt: Date = row["fetchedAt"]
+                return (json, fetchedAt)
+            }
+        } catch {
+            Log.database.warning("Reading cached lyrics for \(songId) failed: \(error)")
+            cached = nil
         }
         let decoder = JSONDecoder()
         if let cached, let data = cached.json.data(using: .utf8),
@@ -242,13 +258,17 @@ final class LibraryRepository {
         guard let client, !isOfflineProvider() else { return [] }
         do {
             let fetched = try await client.getLyricsBySongId(id: songId)
-            if let data = try? JSONEncoder().encode(fetched), let json = String(data: data, encoding: .utf8) {
-                try? await database.pool.write { db in
-                    try db.execute(
-                        sql: "INSERT INTO lyrics(songId, json, fetchedAt) VALUES (?, ?, ?) ON CONFLICT(songId) DO UPDATE SET json = excluded.json, fetchedAt = excluded.fetchedAt",
-                        arguments: [songId, json, Date()]
-                    )
+            do {
+                if let data = try? JSONEncoder().encode(fetched), let json = String(data: data, encoding: .utf8) {
+                    try await database.pool.write { db in
+                        try db.execute(
+                            sql: "INSERT INTO lyrics(songId, json, fetchedAt) VALUES (?, ?, ?) ON CONFLICT(songId) DO UPDATE SET json = excluded.json, fetchedAt = excluded.fetchedAt",
+                            arguments: [songId, json, Date()]
+                        )
+                    }
                 }
+            } catch {
+                Log.database.warning("Caching lyrics for \(songId) failed: \(error)")
             }
             return fetched
         } catch {
@@ -259,24 +279,34 @@ final class LibraryRepository {
 
     func artistInfo(artistId: String) async -> ArtistInfo? {
         guard let database else { return nil }
-        let cached: (json: String, fetchedAt: Date)? = try? await database.pool.read { db -> (json: String, fetchedAt: Date)? in
-            guard let row = try Row.fetchOne(db, sql: "SELECT json, fetchedAt FROM artistInfo WHERE artistId = ?", arguments: [artistId]) else { return nil }
-            let json: String = row["json"]
-            let fetchedAt: Date = row["fetchedAt"]
-            return (json, fetchedAt)
+        let cached: (json: String, fetchedAt: Date)?
+        do {
+            cached = try await database.pool.read { db -> (json: String, fetchedAt: Date)? in
+                guard let row = try Row.fetchOne(db, sql: "SELECT json, fetchedAt FROM artistInfo WHERE artistId = ?", arguments: [artistId]) else { return nil }
+                let json: String = row["json"]
+                let fetchedAt: Date = row["fetchedAt"]
+                return (json, fetchedAt)
+            }
+        } catch {
+            Log.database.warning("Reading cached artistInfo for \(artistId) failed: \(error)")
+            cached = nil
         }
         let stored: ArtistInfo? = cached.flatMap { $0.json.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(ArtistInfo.self, from: $0) }
         if let stored, let cached, Date().timeIntervalSince(cached.fetchedAt) < 14 * 86400 || isOfflineProvider() { return stored }
         guard let client, !isOfflineProvider() else { return stored }
         do {
             let info = try await client.getArtistInfo2(id: artistId)
-            if let data = try? JSONEncoder().encode(info), let json = String(data: data, encoding: .utf8) {
-                try? await database.pool.write { db in
-                    try db.execute(
-                        sql: "INSERT INTO artistInfo(artistId, json, fetchedAt) VALUES (?, ?, ?) ON CONFLICT(artistId) DO UPDATE SET json = excluded.json, fetchedAt = excluded.fetchedAt",
-                        arguments: [artistId, json, Date()]
-                    )
+            do {
+                if let data = try? JSONEncoder().encode(info), let json = String(data: data, encoding: .utf8) {
+                    try await database.pool.write { db in
+                        try db.execute(
+                            sql: "INSERT INTO artistInfo(artistId, json, fetchedAt) VALUES (?, ?, ?) ON CONFLICT(artistId) DO UPDATE SET json = excluded.json, fetchedAt = excluded.fetchedAt",
+                            arguments: [artistId, json, Date()]
+                        )
+                    }
                 }
+            } catch {
+                Log.database.warning("Caching artistInfo for \(artistId) failed: \(error)")
             }
             return info
         } catch {
@@ -311,12 +341,16 @@ final class LibraryRepository {
     /// Reflects a completed play in the mirror immediately (the server updates on scrobble).
     func markPlayed(songId: String, at date: Date = Date()) async {
         guard let database else { return }
-        try? await database.pool.write { db in
-            try db.execute(sql: "UPDATE song SET played = ?, playCount = COALESCE(playCount, 0) + 1 WHERE id = ?", arguments: [date, songId])
-            try db.execute(
-                sql: "UPDATE album SET played = ?, playCount = COALESCE(playCount, 0) + 1 WHERE id = (SELECT albumId FROM song WHERE id = ?)",
-                arguments: [date, songId]
-            )
+        do {
+            try await database.pool.write { db in
+                try db.execute(sql: "UPDATE song SET played = ?, playCount = COALESCE(playCount, 0) + 1 WHERE id = ?", arguments: [date, songId])
+                try db.execute(
+                    sql: "UPDATE album SET played = ?, playCount = COALESCE(playCount, 0) + 1 WHERE id = (SELECT albumId FROM song WHERE id = ?)",
+                    arguments: [date, songId]
+                )
+            }
+        } catch {
+            Log.database.warning("markPlayed failed for \(songId): \(error)")
         }
     }
 
@@ -363,7 +397,11 @@ final class LibraryRepository {
                 onSongStarChanged?(id, on)
             }
         } catch {
-            try? await write(database, "UPDATE \(table) SET starred = ? WHERE id = ?", [previous, id])
+            do {
+                try await write(database, "UPDATE \(table) SET starred = ? WHERE id = ?", [previous, id])
+            } catch let rollbackError {
+                Log.database.error("Rollback starred failed for \(id): \(rollbackError)")
+            }
             report(error, "Could not update favorite")
             throw error
         }
@@ -376,7 +414,11 @@ final class LibraryRepository {
     /// Updates only the local mirror row for a song's star status (used when the server has already been notified).
     func applyLocalStar(songId: String, starred: Bool) async {
         guard let database else { return }
-        try? await write(database, "UPDATE song SET starred = ? WHERE id = ?", [starred ? Date() : nil, songId])
+        do {
+            try await write(database, "UPDATE song SET starred = ? WHERE id = ?", [starred ? Date() : nil, songId])
+        } catch {
+            Log.database.error("applyLocalStar failed for \(songId): \(error)")
+        }
     }
 
     /// Rating 0...5 (0 clears). Songs and albums.
@@ -393,7 +435,11 @@ final class LibraryRepository {
         do {
             try await client.setRating(id: id, rating: value)
         } catch {
-            try? await write(database, "UPDATE \(table) SET userRating = ? WHERE id = ?", [previous, id])
+            do {
+                try await write(database, "UPDATE \(table) SET userRating = ? WHERE id = ?", [previous, id])
+            } catch let rollbackError {
+                Log.database.error("Rollback userRating failed for \(id): \(rollbackError)")
+            }
             report(error, "Could not save rating")
             throw error
         }
@@ -486,7 +532,11 @@ final class LibraryRepository {
         do {
             try await client.updatePlaylist(id: id, songIndexesToRemove: indexes)
         } catch {
-            try? await replaceEntries(database, playlistId: id, songIds: before)
+            do {
+                try await replaceEntries(database, playlistId: id, songIds: before)
+            } catch let rollbackError {
+                Log.database.error("Rollback removeFromPlaylist failed for \(id): \(rollbackError)")
+            }
             report(error, "Could not remove from playlist")
             throw error
         }
@@ -506,7 +556,11 @@ final class LibraryRepository {
         do {
             try await client.createPlaylist(playlistId: id, songIds: items)
         } catch {
-            try? await replaceEntries(database, playlistId: id, songIds: before)
+            do {
+                try await replaceEntries(database, playlistId: id, songIds: before)
+            } catch let rollbackError {
+                Log.database.error("Rollback movePlaylistEntries failed for \(id): \(rollbackError)")
+            }
             report(error, "Could not reorder playlist")
             throw error
         }
@@ -548,7 +602,7 @@ final class LibraryRepository {
 
     // MARK: - Helpers
 
-    private func report(_ error: Error, _ prefix: String) {
+    func report(_ error: Error, _ prefix: String) {
         let detail = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         Log.sync.error("\(prefix): \(error)")
         lastError = "\(prefix). \(detail)"

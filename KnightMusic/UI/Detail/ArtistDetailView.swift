@@ -312,7 +312,11 @@ struct ArtistDetailView: View {
             Button {
                 Haptics.impact(.light)
                 Task {
-                    try? await library.toggleStar(.artist, id: artist.id, currentlyStarred: isStarred)
+                    do {
+                        try await library.toggleStar(.artist, id: artist.id, currentlyStarred: isStarred)
+                    } catch {
+                        Log.sync.error("Toggle star artist failed for \(artist.id): \(error)")
+                    }
                 }
             } label: {
                 Image(systemName: isStarred ? "heart.fill" : "heart")

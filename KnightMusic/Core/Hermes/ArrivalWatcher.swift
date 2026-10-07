@@ -156,8 +156,11 @@ final class ArrivalWatcher {
     private func savePendingWatches(_ watches: [PendingArrivalWatch]) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        if let data = try? encoder.encode(watches) {
+        do {
+            let data = try encoder.encode(watches)
             UserDefaults.standard.set(data, forKey: userDefaultsKey)
+        } catch {
+            Log.sync.error("Failed to encode pending arrival watches: \(error)")
         }
     }
 
@@ -364,43 +367,48 @@ final class ArrivalWatcher {
 
     private func searchDatabase(database: LibraryDatabase, for track: AddedTrack, specificId: String? = nil) async -> Song? {
         let cleanTitle = track.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (try? await database.pool.read { db in
-            // 1. If specific ID provided, check that first
-            if let specificId, let song = try Song.fetchOne(db, sql: "SELECT * FROM song WHERE id = ?", arguments: [specificId]) {
-                if Self.matches(track: track, song: song) {
-                    return song
-                }
-            }
-
-            var candidates: [Song] = []
-
-            // 2. Search via FTS5 / LibraryQueries
-            if let searchResults = try? LibraryQueries.search(db, text: cleanTitle, limit: 30) {
-                candidates.append(contentsOf: searchResults.songs)
-            }
-
-            // 3. Search recently added songs
-            if let recent = try? Song.fetchAll(db, sql: "SELECT * FROM song ORDER BY created DESC LIMIT 50") {
-                candidates.append(contentsOf: recent)
-            }
-
-            // 4. Fallback LIKE search on title
-            let like = LibraryQueries.likePattern(cleanTitle)
-            if let byLike = try? Song.fetchAll(db, sql: "SELECT * FROM song WHERE title LIKE ? ESCAPE '\\' LIMIT 30", arguments: [like]) {
-                candidates.append(contentsOf: byLike)
-            }
-
-            // Deduplicate and test matches
-            var seen = Set<String>()
-            for song in candidates {
-                if seen.insert(song.id).inserted {
+        do {
+            return try await database.pool.read { db in
+                // 1. If specific ID provided, check that first
+                if let specificId, let song = try Song.fetchOne(db, sql: "SELECT * FROM song WHERE id = ?", arguments: [specificId]) {
                     if Self.matches(track: track, song: song) {
                         return song
                     }
                 }
+
+                var candidates: [Song] = []
+
+                // 2. Search via FTS5 / LibraryQueries
+                if let searchResults = try? LibraryQueries.search(db, text: cleanTitle, limit: 30) {
+                    candidates.append(contentsOf: searchResults.songs)
+                }
+
+                // 3. Search recently added songs
+                if let recent = try? Song.fetchAll(db, sql: "SELECT * FROM song ORDER BY created DESC LIMIT 50") {
+                    candidates.append(contentsOf: recent)
+                }
+
+                // 4. Fallback LIKE search on title
+                let like = LibraryQueries.likePattern(cleanTitle)
+                if let byLike = try? Song.fetchAll(db, sql: "SELECT * FROM song WHERE title LIKE ? ESCAPE '\\' LIMIT 30", arguments: [like]) {
+                    candidates.append(contentsOf: byLike)
+                }
+
+                // Deduplicate and test matches
+                var seen = Set<String>()
+                for song in candidates {
+                    if seen.insert(song.id).inserted {
+                        if Self.matches(track: track, song: song) {
+                            return song
+                        }
+                    }
+                }
+                return nil
             }
+        } catch {
+            Log.database.error("searchDatabase failed in ArrivalWatcher: \(error)")
             return nil
-        }) ?? nil
+        }
     }
 
     // MARK: - Resume Unfinished Watches

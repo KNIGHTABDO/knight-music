@@ -169,7 +169,11 @@ func excludeFromBackup(_ url: URL) {
     var u = url
     var values = URLResourceValues()
     values.isExcludedFromBackup = true
-    try? u.setResourceValues(values)
+    do {
+        try u.setResourceValues(values)
+    } catch {
+        Log.playback.warning("Failed to exclude \(url.lastPathComponent) from backup: \(error)")
+    }
 }
 
 // MARK: - GRDB records (tables are created by LibraryDatabase migrations)

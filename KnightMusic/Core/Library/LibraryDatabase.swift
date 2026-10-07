@@ -41,14 +41,23 @@ final class LibraryDatabase: @unchecked Sendable {
     }
 
     func close() {
-        try? pool.close()
+        do {
+            try pool.close()
+        } catch {
+            Log.database.error("Failed to close database pool: \(error)")
+        }
     }
 
     // MARK: - Sync state helpers
 
     func stateValue(_ key: String) async -> String? {
-        try? await pool.read { db in
-            try String.fetchOne(db, sql: "SELECT value FROM syncState WHERE key = ?", arguments: [key])
+        do {
+            return try await pool.read { db in
+                try String.fetchOne(db, sql: "SELECT value FROM syncState WHERE key = ?", arguments: [key])
+            }
+        } catch {
+            Log.database.error("stateValue(\(key)) failed: \(error)")
+            return nil
         }
     }
 

@@ -155,7 +155,11 @@ actor AutoMixClient: AutoMixPlanProvider {
     }
 
     private func store(_ plan: AutoMixPlan, key: String) {
-        guard let data = try? JSONEncoder().encode(plan) else { return }
-        try? data.write(to: directory.appendingPathComponent(key + ".json"), options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(plan)
+            try data.write(to: directory.appendingPathComponent(key + ".json"), options: .atomic)
+        } catch {
+            Log.playback.warning("AutoMix plan cache write failed for \(key): \(error)")
+        }
     }
 }

@@ -135,8 +135,12 @@ final class SpeechDictationManager: NSObject {
         // Hand the session back to music playback instead of deactivating it (which would stop the player).
         let session = AVAudioSession.sharedInstance()
         if session.category != .playback {
-            try? session.setCategory(.playback, mode: .default)
-            try? session.setActive(true)
+            do {
+                try session.setCategory(.playback, mode: .default)
+                try session.setActive(true)
+            } catch {
+                Log.playback.error("Failed to restore playback audio session: \(error)")
+            }
         }
     }
 }

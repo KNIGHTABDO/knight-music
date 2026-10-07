@@ -106,7 +106,11 @@ struct PlaylistsView: View {
                             showCreateSheet = false
                             newPlaylistName = ""
                             Task {
-                                try? await library.createPlaylist(name: name)
+                                do {
+                                    try await library.createPlaylist(name: name)
+                                } catch {
+                                    Log.sync.error("Create playlist failed: \(error)")
+                                }
                             }
                         }
                         .disabled(newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -123,7 +127,11 @@ struct PlaylistsView: View {
         ) { playlist in
             Button("Delete Playlist", role: .destructive) {
                 Task {
-                    try? await library.deletePlaylist(id: playlist.id)
+                    do {
+                        try await library.deletePlaylist(id: playlist.id)
+                    } catch {
+                        Log.sync.error("Delete playlist failed: \(error)")
+                    }
                 }
             }
         } message: { playlist in

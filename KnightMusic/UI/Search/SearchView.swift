@@ -70,8 +70,14 @@ struct SearchView: View {
             isSearching = true
 
             if let db = library.database {
-                let results = try? await db.pool.read { db in
-                    try LibraryQueries.search(db, text: trimmed)
+                let results: SearchResults?
+                do {
+                    results = try await db.pool.read { db in
+                        try LibraryQueries.search(db, text: trimmed)
+                    }
+                } catch {
+                    Log.database.error("Search query failed for '\(trimmed)': \(error)")
+                    results = nil
                 }
                 guard !Task.isCancelled else { return }
                 if let results {
@@ -79,6 +85,8 @@ struct SearchView: View {
                         searchResults = results
                         isSearching = false
                     }
+                } else {
+                    isSearching = false
                 }
             } else {
                 let live = library.search(trimmed)

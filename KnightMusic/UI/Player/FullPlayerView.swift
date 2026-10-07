@@ -97,7 +97,11 @@ struct FullPlayerView: View {
             .onChange(of: currentRating) { _, newRating in
                 guard let song = player.currentSong else { return }
                 Task {
-                    try? await library.setRating(.song, id: song.id, rating: newRating)
+                    do {
+                        try await library.setRating(.song, id: song.id, rating: newRating)
+                    } catch {
+                        Log.sync.error("Set rating failed for song \(song.id): \(error)")
+                    }
                 }
             }
         }

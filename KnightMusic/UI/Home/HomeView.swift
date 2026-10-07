@@ -264,9 +264,15 @@ struct HomeView: View {
     private func shuffleAll() async {
         let songs: [Song]
         if let db = library.database {
-            songs = (try? await db.pool.read { db in
-                try LibraryQueries.songs(db, sort: .title, search: "", limit: nil)
-            }) ?? []
+            do {
+                songs = try await db.pool.read { db in
+                    try LibraryQueries.songs(db, sort: .title, search: "", limit: nil)
+                }
+            } catch {
+                Log.database.error("Home shuffleAll query failed: \(error)")
+                ui?.showToast("Couldn’t load songs to shuffle.")
+                songs = []
+            }
         } else {
             songs = library.songs(sort: .title).value
         }

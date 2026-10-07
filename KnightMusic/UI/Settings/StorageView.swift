@@ -5,6 +5,7 @@ struct StorageView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(DownloadManager.self) private var downloads
     @Environment(PlayerEngine.self) private var player
+    @Environment(UIState.self) private var ui: UIState?
 
     @State private var storageManager: StorageManager?
     @State private var albumBreakdown: [AlbumStorage] = []
@@ -197,9 +198,11 @@ struct StorageView: View {
     private func refreshSizes() {
         storageManager?.refresh()
         animatedArtworkSize = calculateFolderSize(animatedArtworkURL)
-        if let disk = try? DataCache(name: "com.knightabdo.knightmusic.artwork") {
+        do {
+            let disk = try DataCache(name: "com.knightabdo.knightmusic.artwork")
             imageCacheSize = disk.totalSize
-        } else {
+        } catch {
+            Log.artwork.warning("Failed to open DataCache in StorageView: \(error)")
             imageCacheSize = 0
         }
     }
@@ -224,13 +227,24 @@ struct StorageView: View {
 
     private func clearArtworkCaches() {
         let url = animatedArtworkURL
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: url.path) {
+        do {
+            let files = try FileManager.default.contentsOfDirectory(atPath: url.path)
             for file in files {
-                try? FileManager.default.removeItem(at: url.appendingPathComponent(file))
+                do {
+                    try FileManager.default.removeItem(at: url.appendingPathComponent(file))
+                } catch {
+                    Log.artwork.warning("Failed to delete animated artwork file \(file): \(error)")
+                }
             }
+        } catch {
+            Log.artwork.warning("Failed to list animated artwork directory: \(error)")
         }
-        if let disk = try? DataCache(name: "com.knightabdo.knightmusic.artwork") {
+        do {
+            let disk = try DataCache(name: "com.knightabdo.knightmusic.artwork")
             disk.removeAll()
+        } catch {
+            Log.artwork.error("Failed to clear artwork DataCache: \(error)")
+            ui?.showToast("Couldn’t clear artwork cache.")
         }
         ImagePipeline.shared.cache.removeAll()
     }
@@ -240,13 +254,20 @@ struct StorageView: View {
         Task {
             guard let db = downloads.database else { return }
             for album in albumsToDelete {
-                let songIds: [String] = (try? await db.read { db in
-                    try String.fetchAll(
-                        db,
-                        sql: "SELECT songId FROM download JOIN song ON song.id = download.songId WHERE song.albumId = ?",
-                        arguments: [album.albumId]
-                    )
-                }) ?? []
+                let songIds: [String]
+                do {
+                    songIds = try await db.read { db in
+                        try String.fetchAll(
+                            db,
+                            sql: "SELECT songId FROM download JOIN song ON song.id = download.songId WHERE song.albumId = ?",
+                            arguments: [album.albumId]
+                        )
+                    }
+                } catch {
+                    Log.downloads.error("Failed to read songs for album \(album.albumId) in deleteAlbums: \(error)")
+                    ui?.showToast("Couldn’t delete downloaded album.")
+                    songIds = []
+                }
                 downloads.delete(songIds: songIds)
             }
             storageManager?.refresh()

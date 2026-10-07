@@ -141,8 +141,11 @@ final class KnightConversationStore {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(conversation) {
-            try? data.write(to: file, options: [.atomic])
+        do {
+            let data = try encoder.encode(conversation)
+            try data.write(to: file, options: [.atomic])
+        } catch {
+            Log.app.error("Failed to persist conversation \(conversation.id): \(error)")
         }
     }
 }

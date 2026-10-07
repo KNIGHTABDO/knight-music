@@ -40,8 +40,12 @@ struct SongActionsMenu: View {
                 ForEach(playlists.value) { pl in
                     Button(pl.name) {
                         Task {
-                            try? await library.addToPlaylist(id: pl.id, songIds: [song.id])
-                            ui.showToast("Added to \(pl.name)")
+                            do {
+                                try await library.addToPlaylist(id: pl.id, songIds: [song.id])
+                                ui.showToast("Added to \(pl.name)")
+                            } catch {
+                                Log.sync.error("Add to playlist failed: \(error)")
+                            }
                         }
                     }
                 }
@@ -73,7 +77,11 @@ struct SongActionsMenu: View {
         Button {
             Haptics.impact(.light)
             Task {
-                try? await library.setStarred(.song, id: song.id, !isStarred)
+                do {
+                    try await library.setStarred(.song, id: song.id, !isStarred)
+                } catch {
+                    Log.sync.error("Set starred failed for \(song.id): \(error)")
+                }
             }
         } label: {
             Label(isStarred ? "Unfavorite" : "Favorite", systemImage: isStarred ? "heart.slash" : "heart")
@@ -83,7 +91,11 @@ struct SongActionsMenu: View {
             ForEach(1...5, id: \.self) { rating in
                 Button {
                     Task {
-                        try? await library.setRating(.song, id: song.id, rating: rating)
+                        do {
+                            try await library.setRating(.song, id: song.id, rating: rating)
+                        } catch {
+                            Log.sync.error("Set rating failed for \(song.id): \(error)")
+                        }
                     }
                 } label: {
                     if (song.userRating ?? 0) == rating {
@@ -97,7 +109,11 @@ struct SongActionsMenu: View {
                 Divider()
                 Button(role: .destructive) {
                     Task {
-                        try? await library.setRating(.song, id: song.id, rating: 0)
+                        do {
+                            try await library.setRating(.song, id: song.id, rating: 0)
+                        } catch {
+                            Log.sync.error("Clear rating failed for \(song.id): \(error)")
+                        }
                     }
                 } label: {
                     Label("Clear Rating", systemImage: "xmark")

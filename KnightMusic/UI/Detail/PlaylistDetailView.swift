@@ -75,12 +75,20 @@ struct PlaylistDetailView: View {
                     }
                     .onMove { source, destination in
                         Task {
-                            try? await library.movePlaylistEntries(id: playlistId, from: source, to: destination)
+                            do {
+                                try await library.movePlaylistEntries(id: playlistId, from: source, to: destination)
+                            } catch {
+                                Log.sync.error("Move playlist entries failed: \(error)")
+                            }
                         }
                     }
                     .onDelete { indexSet in
                         Task {
-                            try? await library.removeFromPlaylist(id: playlistId, indexes: Array(indexSet))
+                            do {
+                                try await library.removeFromPlaylist(id: playlistId, indexes: Array(indexSet))
+                            } catch {
+                                Log.sync.error("Remove from playlist failed: \(error)")
+                            }
                         }
                     }
                 }
@@ -100,8 +108,12 @@ struct PlaylistDetailView: View {
                 let trimmed = newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
                     Task {
-                        try? await library.renamePlaylist(id: playlistId, name: trimmed)
-                        ui.showToast("Playlist Renamed")
+                        do {
+                            try await library.renamePlaylist(id: playlistId, name: trimmed)
+                            ui.showToast("Playlist Renamed")
+                        } catch {
+                            Log.sync.error("Rename playlist failed: \(error)")
+                        }
                     }
                 }
             }
@@ -113,9 +125,13 @@ struct PlaylistDetailView: View {
         ) {
             Button("Delete Playlist", role: .destructive) {
                 Task {
-                    try? await library.deletePlaylist(id: playlistId)
-                    ui.showToast("Playlist Deleted")
-                    dismiss()
+                    do {
+                        try await library.deletePlaylist(id: playlistId)
+                        ui.showToast("Playlist Deleted")
+                        dismiss()
+                    } catch {
+                        Log.sync.error("Delete playlist failed: \(error)")
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -233,7 +249,11 @@ struct PlaylistDetailView: View {
                 Divider()
                 Button(role: .destructive) {
                     Task {
-                        try? await library.removeFromPlaylist(id: playlistId, indexes: [index])
+                        do {
+                            try await library.removeFromPlaylist(id: playlistId, indexes: [index])
+                        } catch {
+                            Log.sync.error("Remove from playlist failed: \(error)")
+                        }
                     }
                 } label: {
                     Label("Remove from Playlist", systemImage: "trash")
@@ -246,7 +266,11 @@ struct PlaylistDetailView: View {
             Divider()
             Button(role: .destructive) {
                 Task {
-                    try? await library.removeFromPlaylist(id: playlistId, indexes: [index])
+                    do {
+                        try await library.removeFromPlaylist(id: playlistId, indexes: [index])
+                    } catch {
+                        Log.sync.error("Remove from playlist failed: \(error)")
+                    }
                 }
             } label: {
                 Label("Remove from Playlist", systemImage: "trash")

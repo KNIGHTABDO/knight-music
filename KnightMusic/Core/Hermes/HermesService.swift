@@ -157,7 +157,11 @@ final class HermesService {
 
         if let runId = runIdToStop {
             Task { [client] in
-                try? await client.stopRun(runId: runId)
+                do {
+                    try await client.stopRun(runId: runId)
+                } catch {
+                    Log.app.warning("stopRun failed for \(runId): \(error)")
+                }
             }
         }
 

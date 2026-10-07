@@ -291,7 +291,11 @@ struct AlbumDetailView: View {
             Button {
                 Haptics.impact(.light)
                 Task {
-                    try? await library.toggleStar(.album, id: album.id, currentlyStarred: isStarred)
+                    do {
+                        try await library.toggleStar(.album, id: album.id, currentlyStarred: isStarred)
+                    } catch {
+                        Log.sync.error("Toggle star album failed for \(album.id): \(error)")
+                    }
                 }
             } label: {
                 Image(systemName: isStarred ? "heart.fill" : "heart")
@@ -374,8 +378,12 @@ struct AlbumDetailView: View {
                         ForEach(playlists.value) { pl in
                             Button(pl.name) {
                                 Task {
-                                    try? await library.addToPlaylist(id: pl.id, songIds: songIds)
-                                    ui.showToast("Added to \(pl.name)")
+                                    do {
+                                        try await library.addToPlaylist(id: pl.id, songIds: songIds)
+                                        ui.showToast("Added to \(pl.name)")
+                                    } catch {
+                                        Log.sync.error("Add to playlist failed for \(pl.id): \(error)")
+                                    }
                                 }
                             }
                         }
