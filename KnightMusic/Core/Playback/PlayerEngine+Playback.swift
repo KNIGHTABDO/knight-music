@@ -252,6 +252,13 @@ extension PlayerEngine {
         nextPrepared = prepared
     }
 
+    /// A song saved ahead finished after its successor item was already queued as a stream: swap in the local file.
+    func refreshGaplessNextIfCached() {
+        guard !settings.autoMix, let next = nextPrepared, next.resolved.kind == .streaming,
+              streamCache.contains(next.entry.song.id) else { return }
+        prepareGaplessNext()
+    }
+
     func promoteNext() {
         guard let next = nextPrepared else { return }
         scrobbler.end()

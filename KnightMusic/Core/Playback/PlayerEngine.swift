@@ -158,6 +158,7 @@ final class PlayerEngine {
             Task { @MainActor in
                 guard let self, self.cacheTransfers != transfers else { return }
                 self.cacheTransfers = transfers
+                self.refreshGaplessNextIfCached()
             }
         }
         notificationTokens.append(NotificationCenter.default.addObserver(
