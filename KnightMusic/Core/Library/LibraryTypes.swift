@@ -26,7 +26,7 @@ enum SongSort: String, CaseIterable, Sendable {
     case title, artist, album, year, recentlyAdded, mostPlayed, recentlyPlayed
 }
 
-struct SearchResults: Sendable {
+struct SearchResults: Sendable, Equatable {
     var artists: [Artist] = []
     var albums: [Album] = []
     var songs: [Song] = []
@@ -35,12 +35,12 @@ struct SearchResults: Sendable {
 }
 
 /// An album with its tracks ordered by disc and track number.
-struct AlbumContent: Sendable {
+struct AlbumContent: Sendable, Equatable {
     var album: Album?
     var songs: [Song] = []
 }
 
-struct LibraryCounts: Sendable {
+struct LibraryCounts: Sendable, Equatable {
     var artists = 0
     var albums = 0
     var songs = 0

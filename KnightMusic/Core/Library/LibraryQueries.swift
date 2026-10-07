@@ -14,11 +14,11 @@ enum LibraryQueries {
         return "%" + escaped + "%"
     }
 
-    /// FTS5 MATCH expression: every word becomes a quoted prefix term ("word"*). Nil if there are no words.
+    /// FTS5 MATCH expression: every word becomes a quoted prefix term ("word"*), ANDed together. Nil if there are no words.
     static func ftsPattern(_ text: String) -> String? {
         let words = text.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
         guard !words.isEmpty else { return nil }
-        return words.map { "\"" + $0.replacingOccurrences(of: "\"", with: "\"\"") + "\"*" }.joined(separator: " ")
+        return words.map { "\"" + $0.replacingOccurrences(of: "\"", with: "\"\"") + "\"*" }.joined(separator: " AND ")
     }
 
     private static func trimmed(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -49,12 +49,12 @@ enum LibraryQueries {
 
     private static func albumOrder(_ sort: AlbumSort) -> (where: String, order: String) {
         switch sort {
-        case .name: return ("", "name COLLATE NOCASE")
-        case .artist: return ("", "artist COLLATE NOCASE, year, name COLLATE NOCASE")
-        case .year: return ("", "year DESC, name COLLATE NOCASE")
-        case .recentlyAdded: return ("", "created DESC, name COLLATE NOCASE")
-        case .mostPlayed: return ("playCount > 0", "playCount DESC, played DESC")
-        case .recentlyPlayed: return ("played IS NOT NULL", "played DESC")
+        case .name: return ("", "album.name COLLATE NOCASE")
+        case .artist: return ("", "album.artist COLLATE NOCASE, album.year, album.name COLLATE NOCASE")
+        case .year: return ("", "album.year DESC, album.name COLLATE NOCASE")
+        case .recentlyAdded: return ("", "album.created DESC, album.name COLLATE NOCASE")
+        case .mostPlayed: return ("album.playCount > 0", "album.playCount DESC, album.played DESC")
+        case .recentlyPlayed: return ("album.played IS NOT NULL", "album.played DESC")
         }
     }
 
@@ -64,12 +64,15 @@ enum LibraryQueries {
         var args: [(any DatabaseValueConvertible)?] = []
         if !spec.where.isEmpty { clauses.append(spec.where) }
         let q = trimmed(search)
-        if !q.isEmpty {
-            clauses.append("(name LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\')")
-            args.append(likePattern(q))
-            args.append(likePattern(q))
+        let pattern = q.isEmpty ? nil : ftsPattern(q)
+        var sql: String
+        if let pattern {
+            sql = "SELECT album.* FROM album JOIN albumFts ON albumFts.rowid = album.rowid"
+            clauses.append("albumFts MATCH ?")
+            args.append(pattern)
+        } else {
+            sql = "SELECT album.* FROM album"
         }
-        var sql = "SELECT * FROM album"
         if !clauses.isEmpty { sql += " WHERE " + clauses.joined(separator: " AND ") }
         sql += " ORDER BY " + spec.order
         if let limit { sql += " LIMIT \(limit)" }
@@ -123,13 +126,13 @@ enum LibraryQueries {
 
     private static func songOrder(_ sort: SongSort) -> (where: String, order: String) {
         switch sort {
-        case .title: return ("", "title COLLATE NOCASE")
-        case .artist: return ("", "artist COLLATE NOCASE, album COLLATE NOCASE, COALESCE(discNumber, 1), COALESCE(track, 0)")
-        case .album: return ("", "album COLLATE NOCASE, COALESCE(discNumber, 1), COALESCE(track, 0)")
-        case .year: return ("", "year DESC, album COLLATE NOCASE, COALESCE(discNumber, 1), COALESCE(track, 0)")
-        case .recentlyAdded: return ("", "created DESC, title COLLATE NOCASE")
-        case .mostPlayed: return ("playCount > 0", "playCount DESC, played DESC")
-        case .recentlyPlayed: return ("played IS NOT NULL", "played DESC")
+        case .title: return ("", "song.title COLLATE NOCASE")
+        case .artist: return ("", "song.artist COLLATE NOCASE, song.album COLLATE NOCASE, COALESCE(song.discNumber, 1), COALESCE(song.track, 0)")
+        case .album: return ("", "song.album COLLATE NOCASE, COALESCE(song.discNumber, 1), COALESCE(song.track, 0)")
+        case .year: return ("", "song.year DESC, song.album COLLATE NOCASE, COALESCE(song.discNumber, 1), COALESCE(song.track, 0)")
+        case .recentlyAdded: return ("", "song.created DESC, song.title COLLATE NOCASE")
+        case .mostPlayed: return ("song.playCount > 0", "song.playCount DESC, song.played DESC")
+        case .recentlyPlayed: return ("song.played IS NOT NULL", "song.played DESC")
         }
     }
 
@@ -139,11 +142,15 @@ enum LibraryQueries {
         var args: [(any DatabaseValueConvertible)?] = []
         if !spec.where.isEmpty { clauses.append(spec.where) }
         let q = trimmed(search)
-        if !q.isEmpty {
-            clauses.append("(title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\' OR album LIKE ? ESCAPE '\\')")
-            for _ in 0..<3 { args.append(likePattern(q)) }
+        let pattern = q.isEmpty ? nil : ftsPattern(q)
+        var sql: String
+        if let pattern {
+            sql = "SELECT song.* FROM song JOIN songFts ON songFts.rowid = song.rowid"
+            clauses.append("songFts MATCH ?")
+            args.append(pattern)
+        } else {
+            sql = "SELECT song.* FROM song"
         }
-        var sql = "SELECT * FROM song"
         if !clauses.isEmpty { sql += " WHERE " + clauses.joined(separator: " AND ") }
         sql += " ORDER BY " + spec.order
         if let limit { sql += " LIMIT \(limit)" }
