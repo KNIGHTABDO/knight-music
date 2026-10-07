@@ -41,27 +41,6 @@ enum LyricsTimeline {
         return result
     }
 
-    /// Parameter and naming overloads for flexibility and test callers.
-    nonisolated static func binarySearch(for timeMs: Int, in startTimes: [Int]) -> Int? {
-        activeLineIndex(for: timeMs, in: startTimes)
-    }
-
-    nonisolated static func activeLineIndex(timeMs: Int, in startTimes: [Int]) -> Int? {
-        activeLineIndex(for: timeMs, in: startTimes)
-    }
-
-    nonisolated static func activeLineIndex(timeMs: Int, startTimes: [Int]) -> Int? {
-        activeLineIndex(for: timeMs, in: startTimes)
-    }
-
-    nonisolated static func binarySearch(timeMs: Int, startTimes: [Int]) -> Int? {
-        activeLineIndex(for: timeMs, in: startTimes)
-    }
-
-    nonisolated static func activeLineIndex(for currentTime: TimeInterval, in startTimes: [Int]) -> Int? {
-        activeLineIndex(for: Int(currentTime * 1000), in: startTimes)
-    }
-
     /// Precomputes a sorted array of line start times (ms) adjusted for the effective offset.
     nonisolated static func lineStartTimes(for lyrics: StructuredLyrics, effectiveOffsetMs: Int = 0) -> [Int] {
         var lastStart = 0
@@ -76,30 +55,4 @@ enum LyricsTimeline {
     nonisolated static func identifiedLines(for lyrics: StructuredLyrics) -> [IdentifiedLyricLine] {
         lyrics.line.enumerated().map { IdentifiedLyricLine(id: $0.offset, line: $0.element) }
     }
-}
-
-// MARK: - Free function overloads
-
-nonisolated func activeLineIndex(for timeMs: Int, in startTimes: [Int]) -> Int? {
-    LyricsTimeline.activeLineIndex(for: timeMs, in: startTimes)
-}
-
-nonisolated func binarySearch(for timeMs: Int, in startTimes: [Int]) -> Int? {
-    LyricsTimeline.activeLineIndex(for: timeMs, in: startTimes)
-}
-
-nonisolated func activeLineIndex(timeMs: Int, in startTimes: [Int]) -> Int? {
-    LyricsTimeline.activeLineIndex(for: timeMs, in: startTimes)
-}
-
-nonisolated func activeLineIndex(timeMs: Int, startTimes: [Int]) -> Int? {
-    LyricsTimeline.activeLineIndex(for: timeMs, in: startTimes)
-}
-
-nonisolated func binarySearch(timeMs: Int, startTimes: [Int]) -> Int? {
-    LyricsTimeline.activeLineIndex(for: timeMs, in: startTimes)
-}
-
-nonisolated func activeLineIndex(for currentTime: TimeInterval, in startTimes: [Int]) -> Int? {
-    LyricsTimeline.activeLineIndex(for: currentTime, in: startTimes)
 }
