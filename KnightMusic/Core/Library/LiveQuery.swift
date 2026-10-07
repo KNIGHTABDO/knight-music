@@ -35,9 +35,11 @@ final class LiveQuery<Value: Sendable & Equatable> {
             coalesceTask = nil
             pendingValue = nil
         }
+        var isFirstDelivery = true
         do {
             for try await newValue in observation.values(in: pool) {
-                if !isLoaded {
+                if isFirstDelivery {
+                    isFirstDelivery = false
                     if newValue != value {
                         value = newValue
                     }
