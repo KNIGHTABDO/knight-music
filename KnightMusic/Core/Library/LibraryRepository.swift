@@ -213,7 +213,7 @@ final class LibraryRepository {
         do {
             return try await database.pool.read { db in try LibraryQueries.songs(db, ids: ids) }
         } catch {
-            Log.database.error("Failed to read songs(\(ids)): \(error)")
+            Log.database.error("Failed to read \(ids.count) songs: \(error)")
             return []
         }
     }
