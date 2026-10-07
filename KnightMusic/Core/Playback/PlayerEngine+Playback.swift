@@ -291,18 +291,51 @@ extension PlayerEngine {
     // MARK: Cache feeding
 
     func syncCache() {
-        guard settings.autoMix, settings.streamCacheEnabled, !services.isOffline, currentRadio == nil,
-              services.urls != nil, currentIndex < order.count else {
-            // AutoMix still needs its incoming song as a local file when the stream cache is off.
-            // With AutoMix off nothing is saved ahead: pending background downloads are cancelled.
-            let keep = plannedMix.map { Set([$0.to.id]) } ?? []
-            if !settings.autoMix || !settings.streamCacheEnabled || currentRadio != nil { streamCache.retainOnly(keep) }
+        if settings.autoMix {
+            guard settings.streamCacheEnabled, !services.isOffline, currentRadio == nil,
+                  services.urls != nil, currentIndex < order.count else {
+                // AutoMix still needs its incoming song as a local file when the stream cache is off.
+                // With AutoMix off nothing is saved ahead: pending background downloads are cancelled.
+                let keep = plannedMix.map { Set([$0.to.id]) } ?? []
+                if !settings.autoMix || !settings.streamCacheEnabled || currentRadio != nil { streamCache.retainOnly(keep) }
+                return
+            }
+            let depth = services.network == .cellular ? 2 : 3
+            let upper = min(order.count, currentIndex + depth)
+            let songs = order[currentIndex..<upper].map(\.song)
+            streamCache.retainOnly(Set(songs.map(\.id) + (plannedMix.map { [$0.to.id] } ?? [])))
+            let quality = currentQuality()
+            for song in songs where downloads?.localFileURL(for: song.id) == nil && !streamCache.contains(song.id) {
+                guard let url = streamURL(for: song, quality: quality) else { continue }
+                streamCache.cache(songId: song.id, url: url, quality: quality,
+                                  fileExtension: cacheExtension(for: song, quality: quality),
+                                  limitMB: settings.streamCacheLimitMB)
+            }
             return
         }
-        let depth = services.network == .cellular ? 2 : 3
-        let upper = min(order.count, currentIndex + depth)
-        let songs = order[currentIndex..<upper].map(\.song)
-        streamCache.retainOnly(Set(songs.map(\.id) + (plannedMix.map { [$0.to.id] } ?? [])))
+
+        let networkAllowed: Bool
+        switch settings.saveAheadMode {
+        case .off:
+            networkAllowed = false
+        case .wifiOnly:
+            networkAllowed = (services.network == .wifi)
+        case .always:
+            networkAllowed = (services.network == .wifi || services.network == .cellular)
+        }
+
+        guard networkAllowed, settings.streamCacheEnabled, !services.isOffline, currentRadio == nil,
+              services.urls != nil else {
+            let keep = plannedMix.map { Set([$0.to.id]) } ?? []
+            streamCache.retainOnly(keep)
+            return
+        }
+
+        let start = currentIndex + 1
+        let upper = min(order.count, start + 2)
+        let songs = start < upper ? Array(order[start..<upper].map(\.song)) : []
+        let keep = Set(songs.map(\.id) + (plannedMix.map { [$0.to.id] } ?? []))
+        streamCache.retainOnly(keep)
         let quality = currentQuality()
         for song in songs where downloads?.localFileURL(for: song.id) == nil && !streamCache.contains(song.id) {
             guard let url = streamURL(for: song, quality: quality) else { continue }

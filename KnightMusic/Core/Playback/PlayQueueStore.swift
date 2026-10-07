@@ -1,7 +1,23 @@
 import Foundation
 
+struct QueueSignature: Equatable, Sendable {
+    let count: Int
+    let orderHash: Int
+    let originalOrderHash: Int
+    let repeatMode: RepeatMode
+    let shuffle: Bool
+
+    static let empty = QueueSignature(
+        count: 0,
+        orderHash: 0,
+        originalOrderHash: 0,
+        repeatMode: .off,
+        shuffle: false
+    )
+}
+
 /// Local persistence of the play queue (large, written on change) and playback position (small, written often).
-struct SavedQueue: Codable {
+struct SavedQueue: Codable, Sendable {
     var songs: [Song]
     /// Positions (into `songs`) in the original, un-shuffled order. Nil when not shuffled.
     var originalOrder: [Int]?
@@ -9,7 +25,7 @@ struct SavedQueue: Codable {
     var shuffle: Bool
 }
 
-struct SavedPosition: Codable {
+struct SavedPosition: Codable, Sendable {
     var currentIndex: Int
     var position: TimeInterval
     var savedAt: Date
@@ -27,35 +43,49 @@ final class PlayQueueStore: @unchecked Sendable {
         positionURL = base.appendingPathComponent("PlayPosition.json")
     }
 
-    func save(_ queue: SavedQueue?) {
-        write(queue, to: queueURL)
+    func save(_ queue: SavedQueue?, synchronous: Bool = false) {
+        write(queue, to: queueURL, synchronous: synchronous)
     }
 
-    func save(_ position: SavedPosition) {
-        write(position, to: positionURL)
+    func save(_ position: SavedPosition, synchronous: Bool = false) {
+        write(position, to: positionURL, synchronous: synchronous)
     }
 
-    func loadQueue() -> SavedQueue? { read(SavedQueue.self, from: queueURL) }
-    func loadPosition() -> SavedPosition? { read(SavedPosition.self, from: positionURL) }
+    func loadQueue() -> SavedQueue? {
+        ioQueue.sync { read(SavedQueue.self, from: queueURL) }
+    }
 
-    private func write<T: Encodable>(_ value: T?, to url: URL) {
-        let data: Data?
-        if let value {
-            do { data = try JSONEncoder().encode(value) } catch {
-                PlaybackLog.logger.error("Queue encode failed: \(error.localizedDescription)")
-                return
+    func loadPosition() -> SavedPosition? {
+        ioQueue.sync { read(SavedPosition.self, from: positionURL) }
+    }
+
+    private func write<T: Encodable & Sendable>(_ value: T?, to url: URL, synchronous: Bool = false) {
+        let work: @Sendable () -> Void = {
+            let data: Data?
+            if let value {
+                do {
+                    data = try JSONEncoder().encode(value)
+                } catch {
+                    PlaybackLog.logger.error("Queue encode failed: \(error.localizedDescription)")
+                    return
+                }
+            } else {
+                data = nil
             }
-        } else {
-            data = nil
-        }
-        ioQueue.async {
             if let data {
-                do { try data.write(to: url, options: .atomic) } catch {
+                do {
+                    try data.write(to: url, options: .atomic)
+                } catch {
                     PlaybackLog.logger.error("Queue write failed: \(error.localizedDescription)")
                 }
             } else {
                 try? FileManager.default.removeItem(at: url)
             }
+        }
+        if synchronous {
+            ioQueue.sync(execute: work)
+        } else {
+            ioQueue.async(execute: work)
         }
     }
 

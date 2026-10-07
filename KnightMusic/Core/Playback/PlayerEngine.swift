@@ -144,6 +144,7 @@ final class PlayerEngine {
     @ObservationIgnored var autoMixPlanTask: Task<Void, Never>?
     @ObservationIgnored var lastPrefetchSignature = ""
     @ObservationIgnored var volumeAutomation: Timer?
+    @ObservationIgnored var lastSavedQueueSignature: QueueSignature?
 
     var settings: PlaybackSettings { services.settings }
 

@@ -82,6 +82,7 @@ extension AppModel {
             s.offlineMode = self.isOffline
             s.streamCacheLimitMB = self.settings.streamCacheLimitMB
             s.serverQueueSyncEnabled = self.settings.syncPlayQueueWithServer
+            s.saveAheadMode = SaveAheadMode(rawValue: self.settings.saveAheadMode.rawValue) ?? .off
             return s
         }
 
@@ -145,6 +146,7 @@ extension AppModel {
             _ = settings.replayGainMode
             _ = settings.scrobblingEnabled
             _ = settings.syncPlayQueueWithServer
+            _ = settings.saveAheadMode
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }

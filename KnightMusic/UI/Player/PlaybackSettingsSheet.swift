@@ -64,6 +64,16 @@ struct PlaybackSettingsSheet: View {
         )
     }
 
+    private var saveAheadBinding: Binding<AppSettings.SaveAheadMode> {
+        Binding(
+            get: { settings.saveAheadMode },
+            set: {
+                settings.saveAheadMode = $0
+                player.settingsDidChange()
+            }
+        )
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -105,13 +115,23 @@ struct PlaybackSettingsSheet: View {
                     }
                 }
 
-                Section("Cache Limit") {
+                Section {
                     Picker("Stream Cache", selection: cacheLimitBinding) {
                         Text("512 MB").tag(512)
                         Text("1 GB").tag(1024)
                         Text("2 GB").tag(2048)
                         Text("4 GB").tag(4096)
                     }
+
+                    Picker("Save Next Songs Ahead", selection: saveAheadBinding) {
+                        Text("Off").tag(AppSettings.SaveAheadMode.off)
+                        Text("On Wi-Fi").tag(AppSettings.SaveAheadMode.wifiOnly)
+                        Text("Always").tag(AppSettings.SaveAheadMode.always)
+                    }
+                } header: {
+                    Text("Cache Limit")
+                } footer: {
+                    Text("Downloads the next songs in the background so playback doesn't stall on a weak connection.")
                 }
             }
             .navigationTitle("Playback Settings")

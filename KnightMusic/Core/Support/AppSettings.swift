@@ -5,6 +5,7 @@ import SwiftUI
 final class AppSettings {
     enum OfflineMode: String, CaseIterable, Codable { case automatic, manual }
     enum ReplayGainMode: String, CaseIterable, Codable { case off, track, album }
+    enum SaveAheadMode: String, CaseIterable, Codable, Sendable { case off, wifiOnly, always }
     enum Appearance: String, CaseIterable, Codable, Identifiable {
         case system, light, dark
         var id: String { rawValue }
@@ -55,6 +56,7 @@ final class AppSettings {
     var lockScreenAnimatedArtworkEnabled: Bool { didSet { save(lockScreenAnimatedArtworkEnabled, "lockScreenAnimatedArtworkEnabled") } }
     var syncPlayQueueWithServer: Bool { didSet { save(syncPlayQueueWithServer, "syncPlayQueueWithServer") } }
     var showRatings: Bool { didSet { save(showRatings, "showRatings") } }
+    var saveAheadMode: SaveAheadMode { didSet { save(saveAheadMode.rawValue, "saveAheadMode") } }
 
     init() {
         let d = UserDefaults.standard
@@ -81,6 +83,7 @@ final class AppSettings {
         lockScreenAnimatedArtworkEnabled = bool("lockScreenAnimatedArtworkEnabled", true)
         syncPlayQueueWithServer = bool("syncPlayQueueWithServer", true)
         showRatings = bool("showRatings", true)
+        saveAheadMode = SaveAheadMode(rawValue: string("saveAheadMode", "")) ?? .off
     }
 
     /// Parameters for `SubsonicClient.streamURL` given the current network class.
