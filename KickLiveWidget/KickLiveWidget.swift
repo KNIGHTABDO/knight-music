@@ -1,13 +1,6 @@
 import SwiftUI
 import WidgetKit
 
-@main
-struct KickLiveWidgetBundle: WidgetBundle {
-    var body: some Widget {
-        KickLiveWidget()
-    }
-}
-
 struct KickLiveWidget: Widget {
     nonisolated static let kind = "KickLiveWidget"
 

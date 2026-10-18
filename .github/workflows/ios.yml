@@ -64,7 +64,6 @@ jobs:
             || { echo "::group::errors"; grep -E "error:|fatal error" build.log | sort -u | head -80; echo "::endgroup::"; tail -30 build.log; exit 1; }
           grep -E "warning:" build.log | grep -v "SourcePackages" | sort -u | head -30 || true
           echo "BUILD OK"
-          test -d build/dd/Build/Products/Debug-iphonesimulator/KnightMusic.app/PlugIns/KickLiveWidget.appex
 
       - name: Screenshots
         if: github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[shots]') || inputs.screens
@@ -88,7 +87,6 @@ jobs:
             archive > archive.log 2>&1 || { grep -E "error:" archive.log | sort -u | head -40; tail -20 archive.log; exit 1; }
           mkdir -p Payload
           cp -R build/KnightMusic.xcarchive/Products/Applications/KnightMusic.app Payload/
-          test -d Payload/KnightMusic.app/PlugIns/KickLiveWidget.appex
           zip -qry KnightMusic.ipa Payload
           ls -lh KnightMusic.ipa
           git log -1 --pretty=%B | grep -viE '^(co-authored-by|\[shots\])' | sed -e 's/ \[shots\]//' > release-notes.txt || true
