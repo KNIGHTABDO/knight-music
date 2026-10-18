@@ -35,6 +35,8 @@ targets:
     dependencies:
       - target: KnightMusicWidgets
         embed: true
+      - target: KickLiveWidget
+        embed: true
       - package: GRDB
       - package: Nuke
         product: Nuke
@@ -105,3 +107,23 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
+  KickLiveWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: KickLiveWidget
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.knightabdo.knightmusic.KickLiveWidget
+        PRODUCT_NAME: KickLiveWidget
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: KickLiveWidget/Info.plist
+    info:
+      path: KickLiveWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Kick Live
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension

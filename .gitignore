@@ -9,3 +9,4 @@ KnightMusic/Resources/Info.plist
 .gemini-tasks-*.out
 __pycache__/
 *.pyc
+KickLiveWidget/KickSecrets.swift
