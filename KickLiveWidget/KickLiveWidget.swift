@@ -9,7 +9,7 @@ struct KickLiveWidgetBundle: WidgetBundle {
 }
 
 struct KickLiveWidget: Widget {
-    static let kind = "KickLiveWidget"
+    nonisolated static let kind = "KickLiveWidget"
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: Self.kind, provider: KickLiveProvider()) { entry in
