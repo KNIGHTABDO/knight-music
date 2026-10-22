@@ -70,6 +70,10 @@ for s in "${SCREENS[@]}"; do
   xcrun simctl launch "$UDID" $BUNDLE -KMDemo YES -KMScreen home -KMCarPlayScreen "$s" >/dev/null; sleep 8
   openApp; sleep 10
   shot "$s"
+  if [ "$s" = nowplaying ]; then
+    sleep 20; shot nowplaying-late
+    tap 52 428; sleep 3; tap 367 98; sleep 6; shot system-nowplaying   # CarPlay's own Now Playing app
+  fi
 done
 xcrun simctl spawn "$UDID" log show --last 10m --predicate 'subsystem == "com.knightabdo.knightmusic"' --style compact > "$OUT/carplay-log.txt" 2>/dev/null || true
 xcrun simctl spawn "$UDID" log show --last 10m --predicate 'process == "SpringBoard" AND (messageType == error OR messageType == fault OR eventMessage CONTAINS[c] "carplay" OR eventMessage CONTAINS[c] "KnightMusic")' --style compact 2>/dev/null | tail -400 > "$OUT/carplay-springboard-log.txt" || true
