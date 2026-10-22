@@ -1,7 +1,8 @@
 # Manual probe: can a macOS runner open the Simulator's CarPlay display and screenshot it?
 name: carplay-probe
 on:
-  workflow_dispatch:
+  push:
+    paths: [scripts/carplay-probe.sh]
 jobs:
   probe:
     runs-on: macos-26

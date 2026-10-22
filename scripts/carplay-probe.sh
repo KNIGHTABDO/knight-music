@@ -20,3 +20,4 @@ xcrun simctl io "$UDID" screenshot --display=external "$OUT/carplay-1.png" >> "$
 osascript -e 'tell application "System Events" to tell process "Simulator" to get {name, position, size} of every window' >> "$OUT/menus.txt" 2>&1
 xcrun simctl io "$UDID" enumerate >> "$OUT/menus.txt" 2>&1
 cat "$OUT/menus.txt"
+# probe
