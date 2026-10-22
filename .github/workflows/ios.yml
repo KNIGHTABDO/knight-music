@@ -61,6 +61,17 @@ jobs:
         if: github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[shots]') || inputs.screens
         run: bash scripts/screens.sh build/dd/Build/Products/Debug-iphonesimulator/KnightMusic.app screens
 
+      - name: CarPlay screenshots
+        if: contains(github.event.head_commit.message, '[carplay]')
+        run: |
+          # Re-sign ad hoc so the simulator build carries the carplay-audio entitlement (CarPlay scene only connects with it).
+          xcodebuild -project KnightMusic.xcodeproj -scheme KnightMusic -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/dd -clonedSourcePackagesDirPath build/SourcePackages \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build > build-cp.log 2>&1 || { grep -E "error:" build-cp.log | head -20; exit 1; }
+          codesign -d --entitlements - build/dd/Build/Products/Debug-iphonesimulator/KnightMusic.app 2>&1 | grep -i carplay || echo "WARNING: no carplay entitlement embedded"
+          bash scripts/carplay-screens.sh build/dd/Build/Products/Debug-iphonesimulator/KnightMusic.app screens
+
       - uses: actions/upload-artifact@v4
         if: always() && hashFiles('screens/*.png') != ''
         with:
