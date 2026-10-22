@@ -90,6 +90,13 @@ final class AppModel {
 
     // MARK: - Launch
 
+    /// Idempotent launch entry: the phone UI, a CarPlay scene and background launches (remote play, Siri) all call it.
+    func startIfNeeded() {
+        guard !started else { return }
+        started = true
+        Task { await start() }
+    }
+
     func start() async {
         started = true
         updates.checkIfDue()

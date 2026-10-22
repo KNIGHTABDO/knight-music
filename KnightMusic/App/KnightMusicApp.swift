@@ -4,6 +4,28 @@ import UIKit
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // Launches without a phone window (CarPlay, steering-wheel play, Siri) never run RootView's .task.
+        AppModel.shared?.startIfNeeded()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        if connectingSceneSession.role == .carTemplateApplication {
+            let config = UISceneConfiguration(name: "CarPlay", sessionRole: connectingSceneSession.role)
+            config.delegateClass = CarPlaySceneDelegate.self
+            return config
+        }
+        return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+    }
+
+    func application(
+        _ application: UIApplication,
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
@@ -43,7 +65,7 @@ struct KnightMusicApp: App {
                 .environment(app.updates)
                 .preferredColorScheme(app.settings.appearance.colorScheme)
 
-                .task { await app.start() }
+                .task { app.startIfNeeded() }
                 .onOpenURL { url in
                     guard url.scheme?.lowercased() == "knightmusic" else { return }
                     if url.host == "album" {

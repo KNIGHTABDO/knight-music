@@ -49,6 +49,8 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: KnightMusic/Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: KnightMusic/Resources/KnightMusic.entitlements
+        # CarPlay needs Apple's managed carplay-audio entitlement; only the simulator (and a paid, approved account) can carry it.
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": KnightMusic/Resources/KnightMusic-CarPlay.entitlements
     info:
       path: KnightMusic/Resources/Info.plist
       properties:
@@ -64,7 +66,7 @@ targets:
         UILaunchScreen:
           UIColorName: ""
         UIApplicationSceneManifest:
-          UIApplicationSupportsMultipleScenes: false
+          UIApplicationSupportsMultipleScenes: true
         UIBackgroundModes: [audio, fetch, processing]
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
