@@ -23,14 +23,8 @@ public enum IntentError: LocalizedError {
 
 @MainActor
 func prepareAppForPlayback() async throws -> (AppModel, LibraryDatabase) {
-    let app: AppModel
-    if let shared = AppModel.shared {
-        app = shared
-    } else {
-        let model = AppModel()
-        AppModel.shared = model
-        app = model
-    }
+    // KnightMusicApp.init creates the one AppModel before any intent runs in the app process.
+    guard let app = AppModel.shared else { throw IntentError.notSignedIn }
     app.startIfNeeded()
 
     if app.session != .ready || app.database == nil {

@@ -7,11 +7,8 @@ import GRDB
 private enum EntityDatabaseHelper {
     @MainActor
     static func database() -> LibraryDatabase? {
-        if let db = AppModel.shared?.database { return db }
-        let model = AppModel()
-        AppModel.shared = model
-        model.startIfNeeded()
-        return model.database
+        AppModel.shared?.startIfNeeded()
+        return AppModel.shared?.database
     }
 }
 

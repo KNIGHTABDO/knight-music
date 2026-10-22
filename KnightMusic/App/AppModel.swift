@@ -152,7 +152,11 @@ final class AppModel {
             guard self.network.isConnected, let engine = self.syncEngine else { return false }
             let ok = await engine.sync(force: force)
             self.serverReachable = ok || self.serverReachable && !self.syncStatusIndicatesTransportFailure
-            if ok { self.accounts.touchSync(account.id) }
+            if ok {
+                self.accounts.touchSync(account.id)
+                // Siri resolves album/artist/playlist names from these parameters; refresh them once the mirror changed.
+                KnightMusicShortcuts.updateParameters()
+            }
             return ok
         }
         syncTask = task

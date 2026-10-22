@@ -97,20 +97,21 @@ final class CarPlayLibraryTab {
         }
     }
 
-    private func pushArtists() {
+    func pushArtists() {
         guard let coordinator, coordinator.canPush else { return }
-        let artistsQuery = coordinator.library.artists()
-        var artists = artistsQuery.value
+        Task { @MainActor in
+            let artists = await coordinator.library.artists().load()
 
-        if coordinator.appModel.isOffline {
-            Task { [weak self, weak coordinator] in
-                guard let coordinator else { return }
-                let playableIds = await coordinator.playableFilter.fetchPlayableArtistIds()
-                let filtered = artists.filter { playableIds.contains($0.id) }
-                self?.presentArtistsList(filtered, coordinator: coordinator)
+            if coordinator.appModel.isOffline {
+                Task { [weak self, weak coordinator] in
+                    guard let coordinator else { return }
+                    let playableIds = await coordinator.playableFilter.fetchPlayableArtistIds()
+                    let filtered = artists.filter { playableIds.contains($0.id) }
+                    self?.presentArtistsList(filtered, coordinator: coordinator)
+                }
+            } else {
+                presentArtistsList(artists, coordinator: coordinator)
             }
-        } else {
-            presentArtistsList(artists, coordinator: coordinator)
         }
     }
 
@@ -186,19 +187,21 @@ final class CarPlayLibraryTab {
         coordinator.push(template)
     }
 
-    private func pushAlbums() {
+    func pushAlbums() {
         guard let coordinator, coordinator.canPush else { return }
-        let albums = coordinator.library.albums(sort: .name).value
+        Task { @MainActor in
+            let albums = await coordinator.library.albums(sort: .name).load()
 
-        if coordinator.appModel.isOffline {
-            Task { [weak self, weak coordinator] in
-                guard let coordinator else { return }
-                let playableIds = await coordinator.playableFilter.fetchPlayableAlbumIds()
-                let filtered = albums.filter { playableIds.contains($0.id) }
-                self?.presentAlbumsList(filtered, coordinator: coordinator)
+            if coordinator.appModel.isOffline {
+                Task { [weak self, weak coordinator] in
+                    guard let coordinator else { return }
+                    let playableIds = await coordinator.playableFilter.fetchPlayableAlbumIds()
+                    let filtered = albums.filter { playableIds.contains($0.id) }
+                    self?.presentAlbumsList(filtered, coordinator: coordinator)
+                }
+            } else {
+                presentAlbumsList(albums, coordinator: coordinator)
             }
-        } else {
-            presentAlbumsList(albums, coordinator: coordinator)
         }
     }
 
@@ -275,99 +278,103 @@ final class CarPlayLibraryTab {
 
     private func pushSongs() {
         guard let coordinator, coordinator.canPush else { return }
-        let favoriteSongs = coordinator.library.favoriteSongs().value
-        let songs = coordinator.playableFilter.filterSongs(favoriteSongs)
-        let template = CPListTemplate(title: "Songs", sections: [])
+        Task { @MainActor in
+            let favoriteSongs = await coordinator.library.favoriteSongs().load()
+            let songs = coordinator.playableFilter.filterSongs(favoriteSongs)
+            let template = CPListTemplate(title: "Songs", sections: [])
 
-        if songs.isEmpty {
-            let isOffline = coordinator.appModel.isOffline
-            template.emptyViewTitleVariants = [isOffline ? "Not available offline" : "No Favorite Songs"]
-            template.emptyViewSubtitleVariants = [isOffline ? "No favorite songs are downloaded." : "Favorite songs on your iPhone to see them here."]
-            coordinator.push(template)
-            return
-        }
+            if songs.isEmpty {
+                let isOffline = coordinator.appModel.isOffline
+                template.emptyViewTitleVariants = [isOffline ? "Not available offline" : "No Favorite Songs"]
+                template.emptyViewSubtitleVariants = [isOffline ? "No favorite songs are downloaded." : "Favorite songs on your iPhone to see them here."]
+                coordinator.push(template)
+                return
+            }
 
-        let maxItems = CPListTemplate.maximumItemCount
-        let maxSections = CPListTemplate.maximumSectionCount
-        let grouped = Dictionary(grouping: songs, by: { CarPlayItemFactory.letterBucket(for: $0.title) })
-        let sortedLetters = CarPlayItemFactory.sortLetters(Array(grouped.keys))
+            let maxItems = CPListTemplate.maximumItemCount
+            let maxSections = CPListTemplate.maximumSectionCount
+            let grouped = Dictionary(grouping: songs, by: { CarPlayItemFactory.letterBucket(for: $0.title) })
+            let sortedLetters = CarPlayItemFactory.sortLetters(Array(grouped.keys))
 
-        if songs.count <= maxItems && sortedLetters.count <= maxSections {
-            // A–Z Sections
-            var sections: [CPListSection] = []
-            for letter in sortedLetters {
-                guard let letterSongs = grouped[letter] else { continue }
-                let items = letterSongs.map { song -> CPListItem in
-                    let item = CPListItem(text: song.title, detailText: song.artist, image: nil, accessoryImage: nil, accessoryType: .none)
-                    item.userInfo = song.id
-                    item.isPlaying = (song.id == coordinator.player.currentSong?.id)
-                    item.playingIndicatorLocation = .trailing
-                    coordinator.registerSongItem(item, songId: song.id)
+            if songs.count <= maxItems && sortedLetters.count <= maxSections {
+                // A–Z Sections
+                var sections: [CPListSection] = []
+                for letter in sortedLetters {
+                    guard let letterSongs = grouped[letter] else { continue }
+                    let items = letterSongs.map { song -> CPListItem in
+                        let item = CPListItem(text: song.title, detailText: song.artist, image: nil, accessoryImage: nil, accessoryType: .none)
+                        item.userInfo = song.id
+                        item.isPlaying = (song.id == coordinator.player.currentSong?.id)
+                        item.playingIndicatorLocation = .trailing
+                        coordinator.registerSongItem(item, songId: song.id)
 
+                        item.handler = { [weak coordinator] _, completion in
+                            defer { completion() }
+                            if let index = songs.firstIndex(where: { $0.id == song.id }) {
+                                coordinator?.playSongs(songs, startAt: index, shuffle: false)
+                            }
+                        }
+                        return item
+                    }
+                    sections.append(CPListSection(items: items, header: letter, sectionIndexTitle: letter))
+                }
+                template.updateSections(CarPlayItemFactory.clampSections(sections))
+            } else {
+                // Letter List
+                var letterItems: [CPListTemplateItem] = []
+                for letter in sortedLetters {
+                    guard let letterSongs = grouped[letter] else { continue }
+                    let count = letterSongs.count
+                    let detail = count == 1 ? "1 song" : "\(count) songs"
+                    let item = CPListItem(text: letter, detailText: detail, image: nil, accessoryImage: nil, accessoryType: .disclosureIndicator)
+                    item.userInfo = "letter-\(letter)"
                     item.handler = { [weak coordinator] _, completion in
                         defer { completion() }
-                        if let index = songs.firstIndex(where: { $0.id == song.id }) {
-                            coordinator?.playSongs(songs, startAt: index, shuffle: false)
-                        }
+                        guard let coordinator, coordinator.canPush else { return }
+                        let letterTemplate = CarPlayDetailTemplates.makeLetterSongsList(title: letter, songs: letterSongs, coordinator: coordinator)
+                        coordinator.push(letterTemplate)
                     }
-                    return item
+                    letterItems.append(item)
                 }
-                sections.append(CPListSection(items: items, header: letter, sectionIndexTitle: letter))
+                template.updateSections(CarPlayItemFactory.clampSections([CPListSection(items: letterItems)]))
             }
-            template.updateSections(CarPlayItemFactory.clampSections(sections))
-        } else {
-            // Letter List
-            var letterItems: [CPListTemplateItem] = []
-            for letter in sortedLetters {
-                guard let letterSongs = grouped[letter] else { continue }
-                let count = letterSongs.count
-                let detail = count == 1 ? "1 song" : "\(count) songs"
-                let item = CPListItem(text: letter, detailText: detail, image: nil, accessoryImage: nil, accessoryType: .disclosureIndicator)
-                item.userInfo = "letter-\(letter)"
-                item.handler = { [weak coordinator] _, completion in
-                    defer { completion() }
-                    guard let coordinator, coordinator.canPush else { return }
-                    let letterTemplate = CarPlayDetailTemplates.makeLetterSongsList(title: letter, songs: letterSongs, coordinator: coordinator)
-                    coordinator.push(letterTemplate)
-                }
-                letterItems.append(item)
-            }
-            template.updateSections(CarPlayItemFactory.clampSections([CPListSection(items: letterItems)]))
-        }
 
-        coordinator.push(template)
+            coordinator.push(template)
+        }
     }
 
     private func pushGenres() {
         guard let coordinator, coordinator.canPush else { return }
-        let genres = coordinator.library.genres().value
-        let template = CPListTemplate(title: "Genres", sections: [])
+        Task { @MainActor in
+            let genres = await coordinator.library.genres().load()
+            let template = CPListTemplate(title: "Genres", sections: [])
 
-        if genres.isEmpty {
-            let isOffline = coordinator.appModel.isOffline
-            template.emptyViewTitleVariants = [isOffline ? "Not available offline" : "No Genres"]
-            template.emptyViewSubtitleVariants = ["No music genres found in your library."]
-            coordinator.push(template)
-            return
-        }
-
-        let items = genres.map { genre -> CPListItem in
-            let count = genre.albumCount ?? 0
-            let detail = count == 1 ? "1 album" : "\(count) albums"
-            let item = CPListItem(text: genre.value, detailText: detail, image: UIImage(systemName: "guitars"), accessoryImage: nil, accessoryType: .disclosureIndicator)
-            item.userInfo = genre.id
-
-            item.handler = { [weak coordinator] _, completion in
-                defer { completion() }
-                guard let coordinator, coordinator.canPush else { return }
-                let genreDetail = CarPlayDetailTemplates.makeGenreDetail(genre: genre.value, coordinator: coordinator)
-                coordinator.push(genreDetail)
+            if genres.isEmpty {
+                let isOffline = coordinator.appModel.isOffline
+                template.emptyViewTitleVariants = [isOffline ? "Not available offline" : "No Genres"]
+                template.emptyViewSubtitleVariants = ["No music genres found in your library."]
+                coordinator.push(template)
+                return
             }
-            return item
-        }
 
-        template.updateSections(CarPlayItemFactory.clampSections([CPListSection(items: items)]))
-        coordinator.push(template)
+            let items = genres.map { genre -> CPListItem in
+                let count = genre.albumCount ?? 0
+                let detail = count == 1 ? "1 album" : "\(count) albums"
+                let item = CPListItem(text: genre.value, detailText: detail, image: UIImage(systemName: "guitars"), accessoryImage: nil, accessoryType: .disclosureIndicator)
+                item.userInfo = genre.id
+
+                item.handler = { [weak coordinator] _, completion in
+                    defer { completion() }
+                    guard let coordinator, coordinator.canPush else { return }
+                    let genreDetail = CarPlayDetailTemplates.makeGenreDetail(genre: genre.value, coordinator: coordinator)
+                    coordinator.push(genreDetail)
+                }
+                return item
+            }
+
+            template.updateSections(CarPlayItemFactory.clampSections([CPListSection(items: items)]))
+            coordinator.push(template)
+        }
     }
 
     private func pushRadio() {

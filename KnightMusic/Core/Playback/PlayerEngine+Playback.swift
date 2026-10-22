@@ -594,7 +594,7 @@ extension PlayerEngine {
             return false
         }
 
-        PlaybackLog.logger.info("Reloading entry \(entry.song.title) at position \(position)s with URL \(resolved.url.absoluteString)")
+        PlaybackLog.logger.info("Reloading entry \(entry.song.title) at position \(position)s")
         trackedNetworkChangeCount = services.networkChangeCount?() ?? 0
         trackedBaseURL = newBase
         activate(entry: entry, resolved: resolved, autoplay: wasPlaying, startAt: position)

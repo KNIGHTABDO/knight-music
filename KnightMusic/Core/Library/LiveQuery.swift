@@ -26,6 +26,18 @@ final class LiveQuery<Value: Sendable & Equatable> {
         self.fetch = fetch
     }
 
+    /// One-shot read of the current rows, for callers that act once instead of observing (CarPlay, intents).
+    /// `value` alone is only current while something is running the query.
+    func load() async -> Value {
+        guard let pool = database?.pool else { return value }
+        do {
+            return try await pool.read(fetch)
+        } catch {
+            Log.database.error("live query load failed: \(error)")
+            return value
+        }
+    }
+
     /// Runs until the surrounding task is cancelled (e.g. the view disappears).
     func run() async {
         guard let pool = database?.pool else { return }

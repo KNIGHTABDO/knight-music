@@ -60,6 +60,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
         observeSession()
         observePlayer()
         observeOffline()
+        CarPlayDebugRouting.applyIfNeeded(self)
     }
 
     func disconnect() {
@@ -196,7 +197,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
 
     func playArtist(_ artist: Artist, shuffle: Bool = false) {
         Task { @MainActor in
-            let allSongs = library.songs(artistId: artist.id).value
+            let allSongs = await library.songs(artistId: artist.id).load()
             let songs = playableFilter.filterSongs(allSongs)
             guard !songs.isEmpty else {
                 showAlert(message: appModel.isOffline ? "No downloaded songs for this artist." : "This artist has no songs.")
@@ -209,7 +210,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
 
     func playPlaylist(_ playlist: Playlist, shuffle: Bool = false) {
         Task { @MainActor in
-            let allSongs = library.playlistSongs(id: playlist.id).value
+            let allSongs = await library.playlistSongs(id: playlist.id).load()
             let songs = playableFilter.filterSongs(allSongs)
             guard !songs.isEmpty else {
                 showAlert(message: appModel.isOffline ? "No downloaded songs in this playlist." : "This playlist has no songs.")
@@ -228,7 +229,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
                     try LibraryQueries.songs(db, sort: .title, search: "", limit: nil)
                 }) ?? []
             } else {
-                songs = library.songs(sort: .title).value
+                songs = await library.songs(sort: .title).load()
             }
             let playable = appModel.isOffline ? playableFilter.filterSongs(songs) : songs
             guard !playable.isEmpty else {
@@ -241,23 +242,27 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
     }
 
     func playFavoriteSongs() {
-        let songs = playableFilter.filterSongs(library.favoriteSongs().value)
-        guard !songs.isEmpty else {
-            showAlert(message: appModel.isOffline ? "No favorite songs available offline." : "No favorite songs found.")
-            return
+        Task { @MainActor in
+            let songs = playableFilter.filterSongs(await library.favoriteSongs().load())
+            guard !songs.isEmpty else {
+                showAlert(message: appModel.isOffline ? "No favorite songs available offline." : "No favorite songs found.")
+                return
+            }
+            player.play(songs, shuffle: true)
+            pushNowPlayingIfNeeded()
         }
-        player.play(songs, shuffle: true)
-        pushNowPlayingIfNeeded()
     }
 
     func playDownloadedSongs() {
-        let songs = library.downloadedSongs().value
-        guard !songs.isEmpty else {
-            showAlert(message: "No downloaded songs found.")
-            return
+        Task { @MainActor in
+            let songs = await library.downloadedSongs().load()
+            guard !songs.isEmpty else {
+                showAlert(message: "No downloaded songs found.")
+                return
+            }
+            player.play(songs, shuffle: true)
+            pushNowPlayingIfNeeded()
         }
-        player.play(songs, shuffle: true)
-        pushNowPlayingIfNeeded()
     }
 
     // MARK: - Playing Indicators

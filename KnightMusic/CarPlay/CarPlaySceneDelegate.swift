@@ -9,9 +9,9 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         _ templateApplicationScene: CPTemplateApplicationScene,
         didConnect interfaceController: CPInterfaceController
     ) {
-        AppModel.shared?.startIfNeeded()
         MainActor.assumeIsolated {
             guard let app = AppModel.shared else { return }
+            app.startIfNeeded()
             let coord = CarPlayCoordinator(appModel: app, interfaceController: interfaceController)
             self.coordinator = coord
             coord.start()

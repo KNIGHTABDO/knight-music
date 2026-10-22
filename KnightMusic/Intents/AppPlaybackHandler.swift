@@ -10,11 +10,7 @@ final class AppPlaybackHandler: IntentPlaybackHandling {
     }
 
     private var activeApp: AppModel? {
-        if let app { return app }
-        if let shared = AppModel.shared { return shared }
-        let model = AppModel()
-        AppModel.shared = model
-        return model
+        app ?? AppModel.shared
     }
 
     private func waitForReady() async -> (AppModel, LibraryDatabase)? {
