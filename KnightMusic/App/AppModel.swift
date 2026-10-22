@@ -171,24 +171,37 @@ final class AppModel {
 
     // MARK: - Address resolution
 
-    func reresolveAddress(maxAge: TimeInterval = 0) async {
-        guard let account = activeAccount, let password else { return }
+    /// Waits for an in-progress address resolution to complete (max `timeout` seconds).
+    func waitForAddressResolution(timeout: TimeInterval = 5) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while addressResolver.isResolving, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
+    @discardableResult
+    func reresolveAddress(maxAge: TimeInterval = 0) async -> URL? {
+        guard let account = activeAccount, let password else { return nil }
         if maxAge > 0, serverReachable, network.isConnected,
-           let last = addressResolver.lastResolvedAt, Date().timeIntervalSince(last) < maxAge { return }
+           let last = addressResolver.lastResolvedAt, Date().timeIntervalSince(last) < maxAge {
+            return client?.baseURL
+        }
         guard network.isConnected else {
             serverReachable = false
-            return
+            return nil
         }
         let url = await addressResolver.resolve(account: account, password: password)
-        guard activeAccount?.id == account.id else { return }
+        guard activeAccount?.id == account.id else { return nil }
         if let url {
             serverReachable = true
             if url != client?.baseURL {
                 installClient(baseURL: url)
                 notifySessionChanged()
             }
+            return url
         } else {
             serverReachable = false
+            return nil
         }
     }
 

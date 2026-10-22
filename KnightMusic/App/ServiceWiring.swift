@@ -52,6 +52,10 @@ final class ArtworkBridge: ArtworkProviding, @unchecked Sendable {
         await ArtworkLoader.shared.image(coverArt: coverArt, size: size)
     }
 
+    func cachedImage(coverArt: String?, size: Int) -> UIImage? {
+        ArtworkLoader.shared.cachedImage(coverArt: coverArt, size: size)
+    }
+
     func nowPlayingEntries(for song: Song) async -> [String: Any] {
         await service.nowPlayingEntries(for: song)
     }
@@ -62,6 +66,23 @@ final class ArtworkBridge: ArtworkProviding, @unchecked Sendable {
 extension AppModel {
     func installServiceWiring() {
         playbackServices.artwork = ArtworkBridge(service: artwork)
+
+        playbackServices.reresolveAddress = { [weak self] in
+            await self?.reresolveAddress()
+            return self?.client?.baseURL
+        }
+        playbackServices.currentBaseURL = { [weak self] in
+            self?.client?.baseURL
+        }
+        playbackServices.networkChangeCount = { [weak self] in
+            self?.network.changeCount ?? 0
+        }
+        playbackServices.isResolvingAddress = { [weak self] in
+            self?.addressResolver.isResolving ?? false
+        }
+        playbackServices.waitForAddressResolution = { [weak self] timeout in
+            await self?.waitForAddressResolution(timeout: timeout)
+        }
 
         playbackServices.settingsProvider = { [weak self] in
             guard let self else { return PlaybackSettings() }

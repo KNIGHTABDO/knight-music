@@ -192,7 +192,10 @@ extension PlayerEngine {
         while session.aRampIndex < ramp.count, ramp[session.aRampIndex].count >= 2, t >= ramp[session.aRampIndex][0] {
             let rate = Float(ramp[session.aRampIndex][1])
             player.defaultRate = rate
-            if player.rate > 0 { player.rate = rate }
+            if player.rate > 0 {
+                player.rate = rate
+                nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: Double(rate))
+            }
             session.aRampIndex += 1
         }
     }
@@ -357,7 +360,10 @@ extension PlayerEngine {
         while tail.rampIndex < tail.ramp.count, tail.ramp[tail.rampIndex].count >= 2, bTime >= tail.ramp[tail.rampIndex][0] {
             let rate = Float(tail.ramp[tail.rampIndex][1])
             player.defaultRate = rate
-            if player.rate > 0 { player.rate = rate }
+            if player.rate > 0 {
+                player.rate = rate
+                nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: Double(rate))
+            }
             tail.rampIndex += 1
         }
         if tail.finished, tail.rampIndex >= tail.ramp.count, bTime >= tail.automationEnd { endTail(tail) }
@@ -375,7 +381,10 @@ extension PlayerEngine {
     private func endTail(_ tail: MixTail) {
         if !tail.finished { stopOutgoing(tail) }
         player.defaultRate = 1
-        if player.rate > 0, abs(player.rate - 1) > 0.0001 { player.rate = 1 }
+        if player.rate > 0, abs(player.rate - 1) > 0.0001 {
+            player.rate = 1
+            nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: 1.0)
+        }
         player.automaticallyWaitsToMinimizeStalling = true
         tracked?.automation.clear()
         tail.player.automaticallyWaitsToMinimizeStalling = true
@@ -408,7 +417,10 @@ extension PlayerEngine {
         if tracked === session.outgoing, player.defaultRate != 1 {
             // A may have started easing into the blend tempo: back to its own.
             player.defaultRate = 1
-            if player.rate > 0 { player.rate = 1 }
+            if player.rate > 0 {
+                player.rate = 1
+                nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: 1.0)
+            }
         }
         applyVolume()                       // undo any volume automation on a streamed outgoing song
         if reprepare, tracked === session.outgoing { prepareNextWithoutAutoMix() }

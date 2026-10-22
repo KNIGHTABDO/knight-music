@@ -64,6 +64,7 @@ extension PlayerEngine {
     /// Jump to an absolute index of `order`.
     func skip(to index: Int) {
         guard order.indices.contains(index), currentRadio == nil else { return }
+        remote?.cancelSeeking()
         userWantsPlaying = true
         audioSession.activate()
         if index == currentIndex {
