@@ -41,41 +41,62 @@ final class NowPlayingCenter {
         currentSongId = song.id
         var next: [String: Any] = [
             MPMediaItemPropertyTitle: song.title,
-            MPMediaItemPropertyArtist: song.artist ?? "",
-            MPMediaItemPropertyAlbumTitle: song.album ?? "",
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
-            MPNowPlayingInfoPropertyPlaybackRate: rate,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
-            MPNowPlayingInfoPropertyPlaybackQueueIndex: queueIndex,
-            MPNowPlayingInfoPropertyPlaybackQueueCount: queueCount,
             MPNowPlayingInfoPropertyIsLiveStream: isLive,
         ]
-        if duration > 0, !isLive { next[MPMediaItemPropertyPlaybackDuration] = duration }
+        if let artist = song.artist, !artist.isEmpty { next[MPMediaItemPropertyArtist] = artist }
+        if let album = song.album, !album.isEmpty { next[MPMediaItemPropertyAlbumTitle] = album }
         if let track = song.track { next[MPMediaItemPropertyAlbumTrackNumber] = track }
         if let genre = song.genre { next[MPMediaItemPropertyGenre] = genre }
+
+        if !isLive {
+            next[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
+            next[MPNowPlayingInfoPropertyPlaybackRate] = rate
+            next[MPNowPlayingInfoPropertyPlaybackQueueIndex] = queueIndex
+            next[MPNowPlayingInfoPropertyPlaybackQueueCount] = queueCount
+            if duration > 0 { next[MPMediaItemPropertyPlaybackDuration] = duration }
+        }
+
+        // If the cover is already in the cache, attach it synchronously in the same publish
+        if !isLive, let provider = artwork, let cached = provider.cachedImage(coverArt: song.coverArt, size: 600) {
+            next[MPMediaItemPropertyArtwork] = makeArtwork(image: cached)
+        }
+
         info = next
         publish()
+        MPNowPlayingInfoCenter.default().playbackState = rate > 0 ? .playing : .paused
+
         guard !isLive, let provider = artwork else { return }
         let id = song.id
         artworkTask = Task { [weak self] in
-            if let image = await provider.image(coverArt: song.coverArt, size: 600) {
-                guard !Task.isCancelled else { return }
-                let art = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                self?.merge([MPMediaItemPropertyArtwork: art], songId: id)
+            if self?.info[MPMediaItemPropertyArtwork] == nil,
+               let image = await provider.image(coverArt: song.coverArt, size: 600) {
+                guard !Task.isCancelled, self?.currentSongId == id else { return }
+                let art = self?.makeArtwork(image: image)
+                if let art {
+                    self?.merge([MPMediaItemPropertyArtwork: art], songId: id)
+                }
             }
             let entries = await provider.nowPlayingEntries(for: song)
-            guard !Task.isCancelled, !entries.isEmpty else { return }
+            guard !Task.isCancelled, self?.currentSongId == id, !entries.isEmpty else { return }
             self?.merge(entries, songId: id)
         }
     }
 
-    func updatePlayback(elapsed: TimeInterval, rate: Double) {
+    func updatePlayback(elapsed: TimeInterval, rate: Double, state: MPNowPlayingPlaybackState? = nil) {
         guard currentSongId != nil else { return }
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
-        info[MPNowPlayingInfoPropertyPlaybackRate] = rate
+        let isLive = (info[MPNowPlayingInfoPropertyIsLiveStream] as? Bool) == true
+        if !isLive {
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
+            info[MPNowPlayingInfoPropertyPlaybackRate] = rate
+        }
         publish()
-        MPNowPlayingInfoCenter.default().playbackState = rate > 0 ? .playing : .paused
+        if let state {
+            MPNowPlayingInfoCenter.default().playbackState = state
+        } else {
+            MPNowPlayingInfoCenter.default().playbackState = rate > 0 ? .playing : .paused
+        }
     }
 
     func updateDuration(_ duration: TimeInterval) {
@@ -121,5 +142,20 @@ final class NowPlayingCenter {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         let keyList = info.keys.sorted().joined(separator: ", ")
         Log.artwork.info("published keys: \(keyList)")
+    }
+
+    private func makeArtwork(image: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { requestedSize in
+            guard requestedSize.width > 0, requestedSize.height > 0 else { return image }
+            if requestedSize.width >= image.size.width && requestedSize.height >= image.size.height {
+                return image
+            }
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = image.scale
+            let renderer = UIGraphicsImageRenderer(size: requestedSize, format: format)
+            return renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: requestedSize))
+            }
+        }
     }
 }

@@ -115,9 +115,12 @@ extension PlayerEngine {
         scrobbler.end()
         seekGeneration += 1
         seekTarget = nil
+        remote?.cancelSeeking()
         tracked?.observations.removeAll()
         nextPrepared?.observations.removeAll()
         nextPrepared = nil
+        trackedNetworkChangeCount = services.networkChangeCount?() ?? 0
+        trackedBaseURL = services.currentBaseURL?()
         let prepared = makePrepared(entry: entry, resolved: resolved)
         tracked = prepared
         player.pause()
@@ -147,8 +150,10 @@ extension PlayerEngine {
         currentTime = startAt
         bufferedFraction = (p.resolved.kind == .streaming || p.resolved.kind == .radio) ? 0 : 1
         scrobbleBegun = false
+        remote?.cancelSeeking()
         if let i = order.firstIndex(where: { $0.id == p.entry.id }) { currentIndex = i }
-        nowPlaying.setSong(song, isLive: p.isRadio, duration: duration, elapsed: startAt, rate: playing ? 1 : 0,
+        let rate = playing ? Double(player.rate > 0 ? player.rate : 1.0) : 0.0
+        nowPlaying.setSong(song, isLive: p.isRadio, duration: duration, elapsed: startAt, rate: rate,
                            queueIndex: currentIndex, queueCount: order.count)
         remote?.refresh()
     }
@@ -168,6 +173,7 @@ extension PlayerEngine {
     func clearPlayback() {
         stopPlayer()
         scrobbler.end()
+        remote?.cancelSeeking()
         order = []
         originalOrder = []
         currentIndex = 0
@@ -188,8 +194,9 @@ extension PlayerEngine {
         scrobbler.end()
         userWantsPlaying = false
         failedEntryIds = []
+        remote?.cancelSeeking()
         load(index: 0, autoplay: false, silent: true)
-        nowPlaying.updatePlayback(elapsed: 0, rate: 0)
+        nowPlaying.updatePlayback(elapsed: 0, rate: 0, state: .stopped)
     }
 
     // MARK: Gapless preparation
@@ -390,11 +397,45 @@ extension PlayerEngine {
     }
 
     func wireAudioSession() {
-        audioSession.onInterruptionEnded = { [weak self] shouldResume in
-            guard let self, shouldResume, self.userWantsPlaying else { return }
-            self.resume()
+        audioSession.onInterruptionBegan = { [weak self] in
+            guard let self else { return }
+            PlaybackLog.logger.info("Audio interruption began: keeping userWantsPlaying, settling AutoMix, pausing decks")
+            self.isInterrupted = true
+            self.remote?.cancelSeeking()
+            self.settleAutoMix(keepIncoming: true)
+            self.player.pause()
+            self.pauseAutoMixDecks()
+            self.isPlaying = false
+            self.isBuffering = false
+            self.nowPlaying.updatePlayback(elapsed: self.elapsedNow(), rate: 0, state: .interrupted)
         }
-        audioSession.onRouteLost = { [weak self] in self?.pause() }
+        audioSession.onInterruptionEnded = { [weak self] shouldResume in
+            guard let self else { return }
+            PlaybackLog.logger.info("Audio interruption ended (shouldResume=\(shouldResume), userWantsPlaying=\(self.userWantsPlaying))")
+            self.isInterrupted = false
+            if shouldResume, self.userWantsPlaying {
+                self.audioSession.activate()
+                self.resume()
+            } else {
+                self.userWantsPlaying = false
+                self.isPlaying = false
+                self.nowPlaying.updatePlayback(elapsed: self.elapsedNow(), rate: 0, state: .paused)
+            }
+        }
+        audioSession.onRouteLost = { [weak self] in
+            PlaybackLog.logger.info("Audio route lost (disconnect): pausing playback")
+            self?.pause()
+        }
+        audioSession.onNewDeviceAvailable = { [weak self] in
+            guard let self else { return }
+            PlaybackLog.logger.info("Audio route new device available (CarPlay connect): keeping playback state")
+            if self.userWantsPlaying, !self.isPlaying {
+                self.player.play()
+                self.isPlaying = true
+                let rate = self.isBuffering ? 0.0 : 1.0
+                self.nowPlaying.updatePlayback(elapsed: self.elapsedNow(), rate: rate, state: .playing)
+            }
+        }
         audioSession.onMediaServicesReset = { [weak self] in self?.recoverFromMediaServicesReset() }
     }
 
@@ -422,6 +463,22 @@ extension PlayerEngine {
         let t = time.seconds
         guard t.isFinite, t >= 0 else { return }
         currentTime = t
+
+        // Check for stream stall (> 6s buffering while userWantsPlaying) with network/address change
+        if isBuffering, userWantsPlaying, let tracked, tracked.resolved.kind == .streaming,
+           let startedAt = bufferingStartedAt, now - startedAt > 6.0, !isRetryingHandoff {
+            let pathChanged = (services.networkChangeCount?() ?? 0) != trackedNetworkChangeCount
+            let addressChanged = services.currentBaseURL?() != trackedBaseURL
+            if pathChanged || addressChanged {
+                PlaybackLog.logger.warning("Stream stalled (> 6s buffering) with network/address change: triggering handoff retry")
+                isRetryingHandoff = true
+                Task { @MainActor [weak self] in
+                    await self?.retryCurrentStreamAfterHandoff(reason: "buffering stalled > 6s with network/address change")
+                    self?.isRetryingHandoff = false
+                }
+            }
+        }
+
         guard isPlaying, !isBuffering else { return }
         if !scrobbleBegun, let song = currentSong, currentRadio == nil {
             scrobbleBegun = true
@@ -436,8 +493,17 @@ extension PlayerEngine {
         let playing = status != .paused
         if isPlaying != playing { isPlaying = playing }
         let buffering = status == .waitingToPlayAtSpecifiedRate && player.reasonForWaitingToPlay != .noItemToPlay
-        if isBuffering != buffering { isBuffering = buffering }
-        nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: status == .playing ? 1 : 0)
+        if isBuffering != buffering {
+            isBuffering = buffering
+            if buffering {
+                bufferingStartedAt = ProcessInfo.processInfo.systemUptime
+            } else {
+                bufferingStartedAt = nil
+            }
+        }
+        // While buffering publish rate 0 so the car's progress bar does not run ahead
+        let effectiveRate = (status == .playing && !buffering) ? 1.0 : 0.0
+        nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: effectiveRate)
     }
 
     func currentItemChanged() {
@@ -484,7 +550,57 @@ extension PlayerEngine {
         }
     }
 
-    // MARK: Failures
+    // MARK: - Failures and Handoff
+
+    func checkNextPreparedAddress() {
+        guard let next = nextPrepared, next.resolved.kind == .streaming,
+              let curBase = services.currentBaseURL?() else { return }
+        if !next.resolved.url.absoluteString.hasPrefix(curBase.absoluteString) {
+            PlaybackLog.logger.info("Re-preparing nextPrepared (\(next.entry.song.title)) because URL points to old address")
+            prepareNext()
+        }
+    }
+
+    @discardableResult
+    func retryCurrentStreamAfterHandoff(reason: String) async -> Bool {
+        guard let tracked, tracked.resolved.kind == .streaming else { return false }
+        let entry = tracked.entry
+        let now = ProcessInfo.processInfo.systemUptime
+        var timestamps = streamRetryHistory[entry.id] ?? []
+        timestamps = timestamps.filter { now - $0 < 60 }
+        if timestamps.count >= 2 {
+            PlaybackLog.logger.warning("Handoff retry limit exceeded for entry \(entry.song.title) (at most 2 per 60s); falling back to failure")
+            return false
+        }
+        timestamps.append(now)
+        streamRetryHistory[entry.id] = timestamps
+
+        PlaybackLog.logger.info("Handoff retry \(timestamps.count)/2 for \(entry.song.title) at \(self.elapsedNow())s: \(reason)")
+        let position = elapsedNow()
+        let wasPlaying = userWantsPlaying
+
+        // Re-resolve address using existing API
+        PlaybackLog.logger.info("Re-resolving address...")
+        _ = await services.reresolveAddress?()
+        guard let newBase = services.currentBaseURL?() else {
+            PlaybackLog.logger.error("Address re-resolution failed (no reachable address)")
+            return false
+        }
+        PlaybackLog.logger.info("Address resolved to \(newBase.absoluteString)")
+
+        // Check if playable with new client
+        guard let resolved = resolve(entry.song), resolved.kind == .streaming else {
+            PlaybackLog.logger.error("Failed to resolve stream URL from new client")
+            return false
+        }
+
+        PlaybackLog.logger.info("Reloading entry \(entry.song.title) at position \(position)s with URL \(resolved.url.absoluteString)")
+        trackedNetworkChangeCount = services.networkChangeCount?() ?? 0
+        trackedBaseURL = newBase
+        activate(entry: entry, resolved: resolved, autoplay: wasPlaying, startAt: position)
+        checkNextPreparedAddress()
+        return true
+    }
 
     func handleFailure(_ p: PreparedItem) {
         let message = p.item.error?.localizedDescription ?? "Unknown playback error"
@@ -505,6 +621,26 @@ extension PlayerEngine {
             load(index: currentIndex, autoplay: userWantsPlaying, startAt: currentTime)
             return
         }
+        // LAN to Tailscale handoff check for network stream failure
+        if p.resolved.kind == .streaming {
+            let pathChanged = (services.networkChangeCount?() ?? 0) != trackedNetworkChangeCount
+            let addressChanged = services.currentBaseURL?() != trackedBaseURL
+            if pathChanged || addressChanged {
+                PlaybackLog.logger.info("Current stream item failed during network/address change: attempting handoff retry")
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let ok = await self.retryCurrentStreamAfterHandoff(reason: "stream item failed with network/address change")
+                    if !ok {
+                        self.finishFailedItem(p, message: message)
+                    }
+                }
+                return
+            }
+        }
+        finishFailedItem(p, message: message)
+    }
+
+    private func finishFailedItem(_ p: PreparedItem, message: String) {
         failedEntryIds.insert(p.entry.id)
         report("Couldn\u{2019}t play \u{201C}\(p.entry.song.title)\u{201D}: \(message)")
         consecutiveFailures += 1

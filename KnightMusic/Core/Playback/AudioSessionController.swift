@@ -7,16 +7,20 @@ final class AudioSessionController {
     var onInterruptionBegan: (() -> Void)?
     var onInterruptionEnded: ((_ shouldResume: Bool) -> Void)?
     var onRouteLost: (() -> Void)?
+    var onNewDeviceAvailable: (() -> Void)?
     var onMediaServicesReset: (() -> Void)?
 
     private var tokens: [NSObjectProtocol] = []
+    private var lastInterruptionReason: AVAudioSession.InterruptionReason?
 
     init() {
         let nc = NotificationCenter.default
         tokens.append(nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
             let options = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
-            MainActor.assumeIsolated { self?.handleInterruption(type: type, options: options) }
+            let reasonVal = note.userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt
+            let reason = reasonVal.flatMap { AVAudioSession.InterruptionReason(rawValue: $0) }
+            MainActor.assumeIsolated { self?.handleInterruption(type: type, options: options, reason: reason) }
         })
         tokens.append(nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
             let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
@@ -37,14 +41,19 @@ final class AudioSessionController {
         }
     }
 
-    private func handleInterruption(type: UInt?, options: UInt?) {
+    private func handleInterruption(type: UInt?, options: UInt?, reason: AVAudioSession.InterruptionReason?) {
         guard let type, let kind = AVAudioSession.InterruptionType(rawValue: type) else { return }
         switch kind {
         case .began:
+            lastInterruptionReason = reason
             onInterruptionBegan?()
         case .ended:
+            let effectiveReason = reason ?? lastInterruptionReason
+            lastInterruptionReason = nil
             let opts = AVAudioSession.InterruptionOptions(rawValue: options ?? 0)
-            onInterruptionEnded?(opts.contains(.shouldResume))
+            let disallowResume = effectiveReason == .routeDisconnected || effectiveReason == .appWasSuspended
+            let shouldResume = opts.contains(.shouldResume) && !disallowResume
+            onInterruptionEnded?(shouldResume)
         @unknown default:
             break
         }
@@ -52,6 +61,13 @@ final class AudioSessionController {
 
     private func handleRouteChange(reason: UInt?) {
         guard let reason, let why = AVAudioSession.RouteChangeReason(rawValue: reason) else { return }
-        if why == .oldDeviceUnavailable { onRouteLost?() }
+        switch why {
+        case .oldDeviceUnavailable:
+            onRouteLost?()
+        case .newDeviceAvailable:
+            onNewDeviceAvailable?()
+        default:
+            break
+        }
     }
 }

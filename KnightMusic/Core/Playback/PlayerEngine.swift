@@ -145,6 +145,12 @@ final class PlayerEngine {
     @ObservationIgnored var lastPrefetchSignature = ""
     @ObservationIgnored var volumeAutomation: Timer?
     @ObservationIgnored var lastSavedQueueSignature: QueueSignature?
+    @ObservationIgnored var isInterrupted = false
+    @ObservationIgnored var streamRetryHistory: [UUID: [TimeInterval]] = [:]
+    @ObservationIgnored var bufferingStartedAt: TimeInterval?
+    @ObservationIgnored var trackedNetworkChangeCount = 0
+    @ObservationIgnored var trackedBaseURL: URL?
+    @ObservationIgnored var isRetryingHandoff = false
 
     var settings: PlaybackSettings { services.settings }
 
@@ -183,6 +189,7 @@ final class PlayerEngine {
     func servicesDidChange() {
         nowPlaying.artwork = services.artwork
         if !services.isOffline { scrobbler.flushPending() }
+        checkNextPreparedAddress()
     }
 
     /// Call when settings changed (ReplayGain, gapless, quality...).
@@ -194,11 +201,20 @@ final class PlayerEngine {
 
     /// Call when connectivity changed: re-prepares the next item and flushes pending scrobbles.
     func networkDidChange() {
+        if isBuffering, let tracked, tracked.resolved.kind == .streaming, !isRetryingHandoff {
+            PlaybackLog.logger.info("Network path changed while stream is buffering: attempting handoff retry")
+            isRetryingHandoff = true
+            Task { @MainActor [weak self] in
+                await self?.retryCurrentStreamAfterHandoff(reason: "network path changed while buffering")
+                self?.isRetryingHandoff = false
+            }
+        }
         if let next = nextPrepared, services.isOffline, next.resolved.kind == .streaming {
             prepareNext()
         } else if nextPrepared == nil, tracked != nil {
             prepareNext()
         }
+        checkNextPreparedAddress()
         if !services.isOffline {
             scrobbler.flushPending()
             syncCache()
@@ -241,6 +257,7 @@ final class PlayerEngine {
             report("Radio isn't available offline.")
             return
         }
+        remote?.cancelSeeking()
         let song = Song(id: "radio:\(station.id)", title: station.name, artist: "Live Radio")
         let entry = QueueEntry(song: song)
         currentRadio = station
@@ -252,6 +269,7 @@ final class PlayerEngine {
         audioSession.activate()
         let resolved = ResolvedSource(url: url, kind: .radio, quality: nil, description: "Live Radio")
         activate(entry: entry, resolved: resolved, autoplay: true, startAt: 0)
+        remote?.refresh()
     }
 
     func togglePlayPause() {
@@ -260,11 +278,12 @@ final class PlayerEngine {
 
     func pause() {
         userWantsPlaying = false
+        remote?.cancelSeeking()
         player.pause()
         pauseAutoMixDecks()
         isPlaying = false
         isBuffering = false
-        nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: 0)
+        nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: 0, state: .paused)
         savePositionNow()
         scheduleServerSave(immediate: false)
     }
@@ -277,13 +296,35 @@ final class PlayerEngine {
             load(index: currentIndex, autoplay: true, startAt: currentTime)
             return
         }
+        if let currentSong, !isLocal(currentSong), services.isResolvingAddress?() == true {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                PlaybackLog.logger.info("Cold launch: waiting up to 5s for address resolution before playing")
+                await self.services.waitForAddressResolution?(5.0)
+                guard self.userWantsPlaying else { return }
+                if self.tracked?.resolved.kind == .streaming,
+                   let curBase = self.services.currentBaseURL?(),
+                   !self.tracked!.resolved.url.absoluteString.hasPrefix(curBase.absoluteString) {
+                    PlaybackLog.logger.info("Cold launch: reloading current song with newly resolved address")
+                    self.load(index: self.currentIndex, autoplay: true, startAt: self.currentTime)
+                    return
+                }
+                if !self.resumeAutoMixDecks() { self.player.play() }
+                self.isPlaying = true
+                let rate = self.isBuffering ? 0.0 : 1.0
+                self.nowPlaying.updatePlayback(elapsed: self.elapsedNow(), rate: rate, state: .playing)
+            }
+            return
+        }
         if !resumeAutoMixDecks() { player.play() }
         isPlaying = true
-        nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: 1)
+        let rate = isBuffering ? 0.0 : 1.0
+        nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: rate, state: .playing)
     }
 
     func next() {
         guard !order.isEmpty, currentRadio == nil else { return }
+        remote?.cancelSeeking()
         // Skipping mid-blend finishes it: the incoming song simply carries on alone.
         if let session = mixSession, session.phase == .mixing {
             settleAutoMix(keepIncoming: true)
@@ -312,9 +353,10 @@ final class PlayerEngine {
 
     func previous() {
         guard !order.isEmpty, currentRadio == nil else { return }
+        remote?.cancelSeeking()
         if mixSession != nil { cancelMix(reprepare: false) }
         if mixTail != nil { settleAutoMix(keepIncoming: true) }
-        if currentTime > 3 || (currentIndex == 0 && repeatMode != .all) {
+        if elapsedNow() > 3 || (currentIndex == 0 && repeatMode != .all) {
             seek(to: 0)
             return
         }
@@ -343,7 +385,10 @@ final class PlayerEngine {
             Task { @MainActor in
                 guard let self, self.seekGeneration == generation else { return }
                 self.seekTarget = nil
-                if finished { self.nowPlaying.updatePlayback(elapsed: self.currentTime, rate: self.isPlaying ? 1 : 0) }
+                if finished {
+                    let rate = (self.isPlaying && !self.isBuffering) ? 1.0 : 0.0
+                    self.nowPlaying.updatePlayback(elapsed: self.currentTime, rate: rate)
+                }
             }
         }
     }

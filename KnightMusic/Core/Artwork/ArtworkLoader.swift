@@ -101,6 +101,20 @@ final class ArtworkLoader: @unchecked Sendable {
         }
     }
 
+    /// Synchronous memory-cache lookup for a cover image. Checks the requested pixel bucket first, then falls back to any cached bucket.
+    func cachedImage(coverArt: String?, size: Int) -> UIImage? {
+        guard let id = coverArt, !id.isEmpty else { return nil }
+        if let req = request(coverArt: id, pixels: size), let img = pipeline.cache.cachedImage(for: req)?.image {
+            return img
+        }
+        for bucket in Self.buckets where bucket != size {
+            if let req = request(coverArt: id, pixels: bucket), let img = pipeline.cache.cachedImage(for: req)?.image {
+                return img
+            }
+        }
+        return nil
+    }
+
     func prefetch(coverArts: [String?], pointSize: CGFloat, scale: CGFloat = 3) {
         let reqs = coverArts.compactMap { request(coverArt: $0, pointSize: pointSize, scale: scale) }
         guard !reqs.isEmpty else { return }

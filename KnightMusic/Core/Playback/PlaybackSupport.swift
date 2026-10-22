@@ -79,6 +79,7 @@ protocol AutoMixPlanProvider: Sendable {
 
 protocol ArtworkProviding {
     func image(coverArt: String?, size: Int) async -> UIImage?
+    func cachedImage(coverArt: String?, size: Int) -> UIImage?
     /// MPNowPlayingInfo entries for animated lock-screen artwork (empty when none).
     func nowPlayingEntries(for song: Song) async -> [String: Any]
 }
@@ -92,6 +93,11 @@ final class PlaybackServices: @unchecked Sendable {
     var autoMix: AutoMixPlanProvider?
     var settingsProvider: () -> PlaybackSettings = { PlaybackSettings() }
     var networkProvider: () -> PlaybackNetworkStatus = { .wifi }
+    var reresolveAddress: (@MainActor () async -> URL?)?
+    var currentBaseURL: (@MainActor () -> URL?)?
+    var networkChangeCount: (@MainActor () -> Int)?
+    var isResolvingAddress: (@MainActor () -> Bool)?
+    var waitForAddressResolution: (@MainActor (_ timeout: TimeInterval) async -> Void)?
 
     var settings: PlaybackSettings { settingsProvider() }
     var network: PlaybackNetworkStatus { networkProvider() }
