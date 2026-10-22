@@ -25,32 +25,36 @@ sleep 15
 shot() { xcrun simctl io "$UDID" screenshot --display=external "$OUT/carplay-$1.png" >/dev/null 2>&1 && echo "shot carplay-$1"; }
 
 # Click a point given in CarPlay display pixels (800x480) inside the Simulator's CarPlay window.
+# Real mouse events (CGEvent); System Events "click at" does not reach the CarPlay display as a touch.
+CLICK="$OUT/.click"
+cat > "$OUT/.click.swift" <<'SWIFT'
+import CoreGraphics
+import Foundation
+let a = CommandLine.arguments, p = CGPoint(x: Double(a[1])!, y: Double(a[2])!)
+for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+    CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(120_000)
+}
+SWIFT
+swiftc -O "$OUT/.click.swift" -o "$CLICK" && rm "$OUT/.click.swift"
+
+# Maps a point on the 800x480 CarPlay display to desktop coordinates. The window draws the display at half
+# size inside a 27pt bezel, below a title bar (measured from carplay-desktop-before.png).
 tap() {
-  osascript - "$1" "$2" "$OUT/carplay-taps.txt" <<'OSA'
-on run argv
-  set px to (item 1 of argv) as number
-  set py to (item 2 of argv) as number
-  set logf to item 3 of argv
-  tell application "Simulator" to activate
-  tell application "System Events" to tell process "Simulator"
-    set w to first window whose name contains "CarPlay"
-    set {wx, wy} to position of w
-    set {ww, wh} to size of w
-    set s to ww / 800
-    set bar to wh - 480 * s
-    set cx to wx + px * s
-    set cy to wy + bar + py * s
-    do shell script "echo tap " & px & "," & py & " to " & cx & "," & cy & " win " & wx & "," & wy & " " & ww & "x" & wh & " >> " & quoted form of logf
-    click at {cx, cy}
-  end tell
-end run
-OSA
+  local geo; geo=$(osascript -e 'tell application "Simulator" to activate' \
+    -e 'tell application "System Events" to tell process "Simulator" to get {position, size} of (first window whose name contains "CarPlay")')
+  local wx wy ww; IFS=', ' read -r wx wy ww _ <<<"$geo"
+  local s cx cy
+  s=$(echo "($ww - 54) / 800" | bc -l)
+  cx=$(echo "$wx + 27 + $1 * $s" | bc -l); cy=$(echo "$wy + 60 + $2 * $s" | bc -l)
+  echo "tap $1,$2 to $cx,$cy win $geo" >> "$OUT/carplay-taps.txt"
+  "$CLICK" "$cx" "$cy"
 }
 
 openApp() {
   local col=$((ICON % 4)) row=$((ICON / 4))
-  local x=$((203 + col * 167)) y=$((100 + row * 190))
-  tap 40 428; sleep 3          # dock home button
+  local x=$((200 + col * 167)) y=$((98 + row * 186))
+  tap 52 428; sleep 3          # dock home button
   tap "$x" "$y"
 }
 
