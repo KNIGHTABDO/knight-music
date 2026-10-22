@@ -26,10 +26,11 @@ shot() { xcrun simctl io "$UDID" screenshot --display=external "$OUT/carplay-$1.
 
 # Click a point given in CarPlay display pixels (800x480) inside the Simulator's CarPlay window.
 tap() {
-  osascript - "$1" "$2" <<'OSA'
+  osascript - "$1" "$2" "$OUT/carplay-taps.txt" <<'OSA'
 on run argv
   set px to (item 1 of argv) as number
   set py to (item 2 of argv) as number
+  set logf to item 3 of argv
   tell application "Simulator" to activate
   tell application "System Events" to tell process "Simulator"
     set w to first window whose name contains "CarPlay"
@@ -37,7 +38,10 @@ on run argv
     set {ww, wh} to size of w
     set s to ww / 800
     set bar to wh - 480 * s
-    click at {wx + px * s, wy + bar + py * s}
+    set cx to wx + px * s
+    set cy to wy + bar + py * s
+    do shell script "echo tap " & px & "," & py & " -> " & cx & "," & cy & " win " & wx & "," & wy & " " & ww & "x" & wh & " >> " & quoted form of logf
+    click at {cx, cy}
   end tell
 end run
 OSA
@@ -52,7 +56,11 @@ openApp() {
 
 xcrun simctl launch "$UDID" $BUNDLE -KMDemo YES -KMScreen home >/dev/null; sleep 40   # demo login + sync
 shot home
+# Calibration evidence: window geometry + the whole desktop, before and after the icon tap.
+osascript -e 'tell application "System Events" to tell process "Simulator" to get {name, position, size} of every window' > "$OUT/carplay-windows.txt" 2>&1
+screencapture -x "$OUT/carplay-desktop-before.png" 2>/dev/null
 openApp; sleep 10; shot first
+screencapture -x "$OUT/carplay-desktop-after.png" 2>/dev/null
 for s in "${SCREENS[@]}"; do
   xcrun simctl terminate "$UDID" $BUNDLE 2>/dev/null; sleep 2
   xcrun simctl launch "$UDID" $BUNDLE -KMDemo YES -KMScreen home -KMCarPlayScreen "$s" >/dev/null; sleep 8
