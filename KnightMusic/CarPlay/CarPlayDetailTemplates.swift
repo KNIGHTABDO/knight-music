@@ -7,8 +7,8 @@ import UIKit
 final class CarPlayDetailTemplates {
     // MARK: - Album Detail
 
-    static func makeAlbumDetail(albumId: String, coordinator: CarPlayCoordinator) -> CPListTemplate {
-        let template = CPListTemplate(title: "Album", sections: [])
+    static func makeAlbumDetail(albumId: String, title: String? = nil, coordinator: CarPlayCoordinator) -> CPListTemplate {
+        let template = CPListTemplate(title: title ?? "Album", sections: [])
         let albumQuery = coordinator.library.album(id: albumId)
 
         var queryTask: Task<Void, Never>?
@@ -24,8 +24,6 @@ final class CarPlayDetailTemplates {
                 }
                 return
             }
-
-            template.title = album.name
             let songs = coordinator.playableFilter.filterSongs(content.songs)
 
             if songs.isEmpty {
@@ -141,8 +139,8 @@ final class CarPlayDetailTemplates {
 
     // MARK: - Artist Detail
 
-    static func makeArtistDetail(artistId: String, coordinator: CarPlayCoordinator) -> CPListTemplate {
-        let template = CPListTemplate(title: "Artist", sections: [])
+    static func makeArtistDetail(artistId: String, title: String? = nil, coordinator: CarPlayCoordinator) -> CPListTemplate {
+        let template = CPListTemplate(title: title ?? "Artist", sections: [])
         let artistQuery = coordinator.library.artist(id: artistId)
         let topSongsQuery = coordinator.library.topSongs(artistId: artistId)
         let albumsQuery = coordinator.library.albums(artistId: artistId)
@@ -163,8 +161,6 @@ final class CarPlayDetailTemplates {
                 }
                 return
             }
-
-            template.title = artist.name
             let allSongs = coordinator.playableFilter.filterSongs(allSongsQuery.value)
             let topSongs = coordinator.playableFilter.filterSongs(topSongsQuery.value)
             let albums = albumsQuery.value
@@ -220,7 +216,7 @@ final class CarPlayDetailTemplates {
                         defer { completion() }
                         guard let coordinator else { return }
                         if coordinator.canPush {
-                            let albumDetail = makeAlbumDetail(albumId: album.id, coordinator: coordinator)
+                            let albumDetail = makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator)
                             coordinator.push(albumDetail)
                         } else {
                             coordinator.playAlbum(album, shuffle: false)
@@ -355,8 +351,8 @@ final class CarPlayDetailTemplates {
 
     // MARK: - Playlist Detail
 
-    static func makePlaylistDetail(playlistId: String, coordinator: CarPlayCoordinator) -> CPListTemplate {
-        let template = CPListTemplate(title: "Playlist", sections: [])
+    static func makePlaylistDetail(playlistId: String, title: String? = nil, coordinator: CarPlayCoordinator) -> CPListTemplate {
+        let template = CPListTemplate(title: title ?? "Playlist", sections: [])
         let playlistQuery = coordinator.library.playlist(id: playlistId)
         let songsQuery = coordinator.library.playlistSongs(id: playlistId)
 
@@ -373,8 +369,6 @@ final class CarPlayDetailTemplates {
                 }
                 return
             }
-
-            template.title = playlist.name
             let songs = coordinator.playableFilter.filterSongs(songsQuery.value)
 
             if songs.isEmpty {
@@ -486,7 +480,7 @@ final class CarPlayDetailTemplates {
                     defer { completion() }
                     guard let coordinator else { return }
                     if coordinator.canPush {
-                        let albumDetail = makeAlbumDetail(albumId: album.id, coordinator: coordinator)
+                        let albumDetail = makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator)
                         coordinator.push(albumDetail)
                     } else {
                         coordinator.playAlbum(album, shuffle: false)
@@ -624,7 +618,7 @@ final class CarPlayDetailTemplates {
                     defer { completion() }
                     guard let coordinator else { return }
                     if coordinator.canPush {
-                        let albumDetail = makeAlbumDetail(albumId: album.id, coordinator: coordinator)
+                        let albumDetail = makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator)
                         coordinator.push(albumDetail)
                     } else {
                         coordinator.playAlbum(album, shuffle: false)
@@ -710,7 +704,7 @@ final class CarPlayDetailTemplates {
                 defer { completion() }
                 guard let coordinator else { return }
                 if coordinator.canPush {
-                    let albumDetail = makeAlbumDetail(albumId: album.id, coordinator: coordinator)
+                    let albumDetail = makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator)
                     coordinator.push(albumDetail)
                 } else {
                     coordinator.playAlbum(album, shuffle: false)
@@ -745,7 +739,7 @@ final class CarPlayDetailTemplates {
                 defer { completion() }
                 guard let coordinator else { return }
                 if coordinator.canPush {
-                    let artistDetail = makeArtistDetail(artistId: artist.id, coordinator: coordinator)
+                    let artistDetail = makeArtistDetail(artistId: artist.id, title: artist.name, coordinator: coordinator)
                     coordinator.push(artistDetail)
                 } else {
                     coordinator.playArtist(artist, shuffle: false)

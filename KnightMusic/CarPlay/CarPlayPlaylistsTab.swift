@@ -83,7 +83,7 @@ final class CarPlayPlaylistsTab {
                 defer { completion() }
                 guard let coordinator else { return }
                 if coordinator.canPush {
-                    let detailTemplate = CarPlayDetailTemplates.makePlaylistDetail(playlistId: playlist.id, coordinator: coordinator)
+                    let detailTemplate = CarPlayDetailTemplates.makePlaylistDetail(playlistId: playlist.id, title: playlist.name, coordinator: coordinator)
                     coordinator.push(detailTemplate)
                 } else {
                     coordinator.playPlaylist(playlist, shuffle: false)

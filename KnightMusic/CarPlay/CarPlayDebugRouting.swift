@@ -1,5 +1,4 @@
 import CarPlay
-import GRDB
 
 /// CI screenshot mode (scripts/carplay-screens.sh): `-KMDemo YES -KMCarPlayScreen <name>` opens that CarPlay
 /// screen once the demo library is synced. Inert in normal launches.
@@ -38,18 +37,18 @@ enum CarPlayDebugRouting {
             coordinator.libraryTab?.pushAlbums()
         case "album":
             tabs?.selectTemplate(at: 1)
-            if let id = await first({ try LibraryQueries.albums($0, sort: .name, search: "", limit: 1).first?.id }, coordinator) {
-                coordinator.push(CarPlayDetailTemplates.makeAlbumDetail(albumId: id, coordinator: coordinator))
+            if let album = await coordinator.library.homeList(.newest).load().first {
+                coordinator.push(CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator))
             }
         case "artist":
             tabs?.selectTemplate(at: 1)
-            if let id = await coordinator.library.artists().load().first?.id {
-                coordinator.push(CarPlayDetailTemplates.makeArtistDetail(artistId: id, coordinator: coordinator))
+            if let artist = await coordinator.library.artists().load().first {
+                coordinator.push(CarPlayDetailTemplates.makeArtistDetail(artistId: artist.id, title: artist.name, coordinator: coordinator))
             }
         case "playlist":
             tabs?.selectTemplate(at: 2)
-            if let id = await coordinator.library.playlists().load().first?.id {
-                coordinator.push(CarPlayDetailTemplates.makePlaylistDetail(playlistId: id, coordinator: coordinator))
+            if let playlist = await coordinator.library.playlists().load().first {
+                coordinator.push(CarPlayDetailTemplates.makePlaylistDetail(playlistId: playlist.id, title: playlist.name, coordinator: coordinator))
             }
         case "nowplaying", "upnext":
             if let album = await coordinator.library.homeList(.newest).load().first {
@@ -63,10 +62,5 @@ enum CarPlayDebugRouting {
         default:
             Log.app.warning("unknown KMCarPlayScreen \(screen)")
         }
-    }
-
-    private static func first(_ fetch: @escaping @Sendable (Database) throws -> String?, _ coordinator: CarPlayCoordinator) async -> String? {
-        guard let database = coordinator.appModel.database else { return nil }
-        return try? await database.pool.read(fetch)
     }
 }

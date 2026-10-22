@@ -153,7 +153,7 @@ final class CarPlayLibraryTab {
                         defer { completion() }
                         guard let coordinator else { return }
                         if coordinator.canPush {
-                            let detail = CarPlayDetailTemplates.makeArtistDetail(artistId: artist.id, coordinator: coordinator)
+                            let detail = CarPlayDetailTemplates.makeArtistDetail(artistId: artist.id, title: artist.name, coordinator: coordinator)
                             coordinator.push(detail)
                         } else {
                             coordinator.playArtist(artist, shuffle: false)
@@ -242,7 +242,7 @@ final class CarPlayLibraryTab {
                         defer { completion() }
                         guard let coordinator else { return }
                         if coordinator.canPush {
-                            let detail = CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, coordinator: coordinator)
+                            let detail = CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator)
                             coordinator.push(detail)
                         } else {
                             coordinator.playAlbum(album, shuffle: false)

@@ -317,10 +317,10 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
     func nowPlayingTemplateAlbumArtistButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {
         guard canPush else { return }
         if let albumId = player.currentSong?.albumId {
-            let detail = CarPlayDetailTemplates.makeAlbumDetail(albumId: albumId, coordinator: self)
+            let detail = CarPlayDetailTemplates.makeAlbumDetail(albumId: albumId, title: player.currentSong?.album, coordinator: self)
             push(detail)
         } else if let artistId = player.currentSong?.artistId {
-            let detail = CarPlayDetailTemplates.makeArtistDetail(artistId: artistId, coordinator: self)
+            let detail = CarPlayDetailTemplates.makeArtistDetail(artistId: artistId, title: player.currentSong?.artist, coordinator: self)
             push(detail)
         }
     }

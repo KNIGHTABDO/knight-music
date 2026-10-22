@@ -106,7 +106,7 @@ final class CarPlayListenNowTab {
                 guard let coordinator, recentAlbums.indices.contains(index) else { return }
                 let album = recentAlbums[index]
                 if coordinator.canPush {
-                    let detail = CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, coordinator: coordinator)
+                    let detail = CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator)
                     coordinator.push(detail)
                 } else {
                     coordinator.playAlbum(album, shuffle: false)
@@ -166,7 +166,7 @@ final class CarPlayListenNowTab {
                     defer { completion() }
                     guard let coordinator else { return }
                     if coordinator.canPush {
-                        let detailTemplate = CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, coordinator: coordinator)
+                        let detailTemplate = CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator)
                         coordinator.push(detailTemplate)
                     } else {
                         coordinator.playAlbum(album, shuffle: false)
@@ -209,7 +209,7 @@ final class CarPlayListenNowTab {
                     defer { completion() }
                     guard let coordinator else { return }
                     if coordinator.canPush {
-                        let detailTemplate = CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, coordinator: coordinator)
+                        let detailTemplate = CarPlayDetailTemplates.makeAlbumDetail(albumId: album.id, title: album.name, coordinator: coordinator)
                         coordinator.push(detailTemplate)
                     } else {
                         coordinator.playAlbum(album, shuffle: false)
