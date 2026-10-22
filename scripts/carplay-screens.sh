@@ -40,7 +40,7 @@ on run argv
     set bar to wh - 480 * s
     set cx to wx + px * s
     set cy to wy + bar + py * s
-    do shell script "echo tap " & px & "," & py & " -> " & cx & "," & cy & " win " & wx & "," & wy & " " & ww & "x" & wh & " >> " & quoted form of logf
+    do shell script "echo tap " & px & "," & py & " to " & cx & "," & cy & " win " & wx & "," & wy & " " & ww & "x" & wh & " >> " & quoted form of logf
     click at {cx, cy}
   end tell
 end run
@@ -68,4 +68,7 @@ for s in "${SCREENS[@]}"; do
   shot "$s"
 done
 xcrun simctl spawn "$UDID" log show --last 10m --predicate 'subsystem == "com.knightabdo.knightmusic"' --style compact > "$OUT/carplay-log.txt" 2>/dev/null || true
+xcrun simctl spawn "$UDID" log show --last 10m --predicate 'process == "SpringBoard" AND (messageType == error OR messageType == fault OR eventMessage CONTAINS[c] "carplay" OR eventMessage CONTAINS[c] "KnightMusic")' --style compact 2>/dev/null | tail -400 > "$OUT/carplay-springboard-log.txt" || true
+mkdir -p "$OUT/crashes"
+find ~/Library/Logs/DiagnosticReports -mmin -30 \( -name 'SpringBoard*' -o -name 'KnightMusic*' -o -name 'CarPlay*' \) -exec cp {} "$OUT/crashes/" \; 2>/dev/null || true
 ls "$OUT"
