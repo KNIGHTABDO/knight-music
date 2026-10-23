@@ -31,9 +31,12 @@ cat > "$OUT/.click.swift" <<'SWIFT'
 import CoreGraphics
 import Foundation
 let a = CommandLine.arguments, p = CGPoint(x: Double(a[1])!, y: Double(a[2])!)
-for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
-    CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
-    usleep(120_000)
+let source = CGEventSource(stateID: .hidSystemState)
+for (type, pause) in [(CGEventType.mouseMoved, 300_000), (.leftMouseDown, 180_000), (.leftMouseUp, 150_000)] {
+    let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: p, mouseButton: .left)
+    event?.setIntegerValueField(.mouseEventClickState, value: 1)
+    event?.post(tap: .cghidEventTap)
+    usleep(useconds_t(pause))
 }
 SWIFT
 swiftc -O "$OUT/.click.swift" -o "$CLICK" && rm "$OUT/.click.swift"
@@ -48,7 +51,7 @@ tap() {
     -e 'get {position, size} of w' -e 'end tell')
   local wx wy ww; IFS=', ' read -r wx wy ww _ <<<"$geo"
   # A click on a window that isn't key only focuses it; click the title bar first so the real tap lands.
-  "$CLICK" "$(echo "$wx + $ww / 2" | bc -l)" "$((wy + 12))"; sleep 0.5
+  "$CLICK" "$(echo "$wx + $ww / 2" | bc -l)" "$((wy + 12))"; sleep 1   # > double-click interval
   local s cx cy
   s=$(echo "($ww - 54) / 800" | bc -l)
   cx=$(echo "$wx + 27 + $1 * $s" | bc -l); cy=$(echo "$wy + 60 + $2 * $s" | bc -l)
@@ -71,9 +74,11 @@ screencapture -x "$OUT/carplay-desktop-before.png" 2>/dev/null
 # The simulated CarPlay display sometimes ignores the first tap on an icon: retry until the app logs its scene.
 connected() { xcrun simctl spawn "$UDID" log show --last 10m --predicate 'subsystem == "com.knightabdo.knightmusic" AND eventMessage CONTAINS "CarPlay connected"' --style compact 2>/dev/null | grep -q "CarPlay connected"; }
 for attempt in 1 2 3 4; do
-  openApp; sleep 15
+  if [ $((attempt % 2)) = 1 ]; then openApp; else tap 52 200; fi   # grid icon, then the sidebar's recent-app icon
+  sleep 15
   connected && { echo "CarPlay connected after $attempt tap(s)"; break; }
   echo "CarPlay not connected after tap $attempt"
+  screencapture -x "$OUT/carplay-desktop-miss$attempt.png" 2>/dev/null
 done
 sleep 5; shot first
 screencapture -x "$OUT/carplay-desktop-after.png" 2>/dev/null
