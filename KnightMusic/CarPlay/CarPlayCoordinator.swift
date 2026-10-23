@@ -167,8 +167,13 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
 
     func pushNowPlayingIfNeeded(animated: Bool = true) {
         guard let interfaceController else { return }
-        if interfaceController.topTemplate !== CPNowPlayingTemplate.shared {
-            interfaceController.pushTemplate(CPNowPlayingTemplate.shared, animated: animated, completion: Self.reportFailure("push Now Playing"))
+        let nowPlaying = CPNowPlayingTemplate.shared
+        guard interfaceController.topTemplate !== nowPlaying else { return }
+        // Already in the stack under Up Next etc.: go back to it, pushing the same instance twice fails.
+        if interfaceController.templates.contains(where: { $0 === nowPlaying }) {
+            interfaceController.pop(to: nowPlaying, animated: animated, completion: Self.reportFailure("pop to Now Playing"))
+        } else {
+            interfaceController.pushTemplate(nowPlaying, animated: animated, completion: Self.reportFailure("push Now Playing"))
         }
     }
 
