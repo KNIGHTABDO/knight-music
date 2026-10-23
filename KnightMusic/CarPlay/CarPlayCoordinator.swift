@@ -99,6 +99,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
     }
 
     private func showSignInPrompt() {
+        Log.ui.info("CarPlay root: sign-in prompt")
         isShowingTabBar = false
         listenNowTab?.stop()
         libraryTab?.stop()
@@ -112,6 +113,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
     }
 
     private func showTabBar() {
+        Log.ui.info("CarPlay root: tab bar (session revision \(appModel.sessionRevision))")
         isShowingTabBar = true
         lastHandledRevision = appModel.sessionRevision
 

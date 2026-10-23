@@ -10,7 +10,11 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         didConnect interfaceController: CPInterfaceController
     ) {
         MainActor.assumeIsolated {
-            guard let app = AppModel.shared else { return }
+            guard let app = AppModel.shared else {
+                Log.ui.error("CarPlay connected before AppModel exists; nothing to show")
+                return
+            }
+            Log.ui.info("CarPlay connected")
             app.startIfNeeded()
             let coord = CarPlayCoordinator(appModel: app, interfaceController: interfaceController)
             self.coordinator = coord
@@ -23,6 +27,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         didDisconnectInterfaceController interfaceController: CPInterfaceController
     ) {
         MainActor.assumeIsolated {
+            Log.ui.info("CarPlay disconnected")
             self.coordinator?.disconnect()
             self.coordinator = nil
         }
