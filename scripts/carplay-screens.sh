@@ -68,7 +68,14 @@ shot home
 # Calibration evidence: window geometry + the whole desktop, before and after the icon tap.
 osascript -e 'tell application "System Events" to tell process "Simulator" to get {name, position, size} of every window' > "$OUT/carplay-windows.txt" 2>&1
 screencapture -x "$OUT/carplay-desktop-before.png" 2>/dev/null
-openApp; sleep 10; shot first
+# The simulated CarPlay display sometimes ignores the first tap on an icon: retry until the app logs its scene.
+connected() { xcrun simctl spawn "$UDID" log show --last 10m --predicate 'subsystem == "com.knightabdo.knightmusic" AND eventMessage CONTAINS "CarPlay connected"' --style compact 2>/dev/null | grep -q "CarPlay connected"; }
+for attempt in 1 2 3 4; do
+  openApp; sleep 15
+  connected && { echo "CarPlay connected after $attempt tap(s)"; break; }
+  echo "CarPlay not connected after tap $attempt"
+done
+sleep 5; shot first
 screencapture -x "$OUT/carplay-desktop-after.png" 2>/dev/null
 # One launch for every screen: the app routes on a Darwin notification (CarPlayDebugRouting), because killing
 # the app while its CarPlay scene is live makes the simulated CarPlay display stop drawing.
