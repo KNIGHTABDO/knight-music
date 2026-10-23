@@ -70,21 +70,18 @@ osascript -e 'tell application "System Events" to tell process "Simulator" to ge
 screencapture -x "$OUT/carplay-desktop-before.png" 2>/dev/null
 openApp; sleep 10; shot first
 screencapture -x "$OUT/carplay-desktop-after.png" 2>/dev/null
+# One launch for every screen: the app routes on a Darwin notification (CarPlayDebugRouting), because killing
+# the app while its CarPlay scene is live makes the simulated CarPlay display stop drawing.
+ROUTE_FILE="$(xcrun simctl get_app_container "$UDID" $BUNDLE data)/tmp/km-carplay-screen"
 for s in "${SCREENS[@]}"; do
-  xcrun simctl terminate "$UDID" $BUNDLE 2>/dev/null; sleep 2
-  xcrun simctl launch "$UDID" $BUNDLE -KMDemo YES -KMScreen home -KMCarPlayScreen "$s" >/dev/null; sleep 8
-  openApp; sleep 10
+  printf '%s' "$s" > "$ROUTE_FILE"
+  xcrun simctl spawn "$UDID" notifyutil -p com.knightabdo.knightmusic.carplay-route
+  sleep 8
   shot "$s"
-  # The simulated CarPlay display sometimes stops drawing after relaunches (the app has connected and set its
-  # root template, but nothing renders). A blank wallpaper PNG is ~385 KB; any real screen is larger.
-  for _ in 1 2; do
-    [ "$(stat -f%z "$OUT/carplay-$s.png" 2>/dev/null || echo 0)" -gt 390000 ] && break
-    echo "blank $s, reopening" >> "$OUT/carplay-taps.txt"
-    openApp; sleep 10; shot "$s"
-  done
   if [ "$s" = nowplaying ]; then
     sleep 20; shot nowplaying-late
     tap 52 428; sleep 3; tap 367 98; sleep 6; shot system-nowplaying   # CarPlay's own Now Playing app
+    openApp; sleep 6
   fi
 done
 xcrun simctl spawn "$UDID" log show --last 10m --predicate 'subsystem == "com.knightabdo.knightmusic"' --style compact > "$OUT/carplay-log.txt" 2>/dev/null || true
