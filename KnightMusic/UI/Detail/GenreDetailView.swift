@@ -100,71 +100,7 @@ struct GenreDetailView: View {
                 message: "No songs found for “\(genre)”."
             )
         } else {
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Play / Shuffle glass buttons
-                    HStack(spacing: 12) {
-                        Button {
-                            Haptics.impact(.medium)
-                            player.play(songs, startAt: 0, shuffle: false)
-                        } label: {
-                            Label("Play", systemImage: "play.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 44)
-                        }
-                        .buttonStyle(.glass)
-                        .tint(Theme.accent)
-
-                        Button {
-                            Haptics.impact(.medium)
-                            player.play(songs, shuffle: true)
-                        } label: {
-                            Label("Shuffle", systemImage: "shuffle")
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 44)
-                        }
-                        .buttonStyle(.glass)
-                        .tint(Theme.accent)
-                    }
-                    .padding(.horizontal, Theme.margin)
-                    .padding(.vertical, 8)
-
-                    // Song rows
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                            let isPlaying = player.currentSong?.id == song.id
-                            let isPaused = isPlaying && !player.isPlaying
-                            let isDownloaded = downloads.isDownloaded(song.id)
-
-                            Button {
-                                Haptics.selection()
-                                player.play(songs, startAt: index, shuffle: false)
-                            } label: {
-                                SongRow(
-                                    song: song,
-                                    showsArtwork: true,
-                                    isPlaying: isPlaying,
-                                    isPaused: isPaused,
-                                    isDownloaded: isDownloaded
-                                ) {
-                                    SongActionsMenu(song: song)
-                                }
-                                .padding(.horizontal, Theme.margin)
-                                .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                SongActionsMenu(song: song)
-                            }
-
-                            Divider().padding(.leading, Theme.margin + 48 + 12)
-                        }
-                    }
-                    .padding(.bottom, 32)
-                }
-            }
+            SongCollectionList(songs: songs)
         }
     }
 }
