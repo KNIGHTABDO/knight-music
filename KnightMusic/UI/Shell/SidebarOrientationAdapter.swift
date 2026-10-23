@@ -3,12 +3,31 @@ import UIKit
 
 /// iPad: collapses the sidebar in portrait (content gets the full width) and pins it in landscape.
 /// Applied only when the orientation changes, so a sidebar the user shows or hides stays that way until the next rotation.
-struct SidebarOrientationAdapter: UIViewRepresentable {
-    func makeUIView(context: Context) -> OrientationProbe { OrientationProbe() }
-    func updateUIView(_ uiView: OrientationProbe, context: Context) {}
+struct SidebarOrientationAdapter: ViewModifier {
+    @State private var isLandscape: Bool?
 
-    final class OrientationProbe: UIView {
-        private var lastLandscape: Bool?
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { isLandscape = $0 }
+            .background(SidebarVisibilityProbe(isLandscape: isLandscape))
+    }
+}
+
+private struct SidebarVisibilityProbe: UIViewRepresentable {
+    var isLandscape: Bool?
+
+    func makeUIView(context: Context) -> ProbeView { ProbeView() }
+
+    func updateUIView(_ uiView: ProbeView, context: Context) {
+        uiView.isLandscape = isLandscape
+    }
+
+    final class ProbeView: UIView {
+        private var applied: Bool?
+
+        var isLandscape: Bool? {
+            didSet { scheduleApply() }
+        }
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -20,22 +39,19 @@ struct SidebarOrientationAdapter: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            apply()
+            scheduleApply()
         }
 
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            apply()
+        /// After the current layout pass, so the system's own size-change handling of the sidebar has run first.
+        private func scheduleApply() {
+            DispatchQueue.main.async { [weak self] in self?.apply() }
         }
 
         private func apply() {
-            guard let window, traitCollection.userInterfaceIdiom == .pad else { return }
-            let size = window.bounds.size
-            guard size.width > 0, size.height > 0 else { return }
-            let landscape = size.width > size.height
-            guard landscape != lastLandscape,
+            guard let landscape = isLandscape, landscape != applied,
+                  let window, traitCollection.userInterfaceIdiom == .pad,
                   let tabs = Self.tabBarController(in: window.rootViewController) else { return }
-            lastLandscape = landscape
+            applied = landscape
             tabs.sidebar.isHidden = !landscape
         }
 
