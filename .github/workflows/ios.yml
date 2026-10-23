@@ -36,6 +36,14 @@ jobs:
           [ -n "$XC" ] && sudo xcode-select -s "$XC"
           xcodebuild -version
 
+      - name: Generate Kick secrets
+        env:
+          KICK_CLIENT_ID: ${{ secrets.KICK_CLIENT_ID }}
+          KICK_CLIENT_SECRET: ${{ secrets.KICK_CLIENT_SECRET }}
+        run: |
+          printf 'enum KickSecrets {\n    static let CLIENT_ID = #"%s"#\n    static let CLIENT_SECRET = #"%s"#\n}\n' \
+            "$KICK_CLIENT_ID" "$KICK_CLIENT_SECRET" > KickLiveWidget/KickSecrets.swift
+
       - name: Generate project
         run: |
           brew install xcodegen >/dev/null

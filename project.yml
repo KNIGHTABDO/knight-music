@@ -102,6 +102,7 @@ targets:
     platform: iOS
     sources:
       - path: KnightMusicWidgets
+      - path: KickLiveWidget
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.knightabdo.knightmusic.widgets
