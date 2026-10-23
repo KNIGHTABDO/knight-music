@@ -28,7 +28,9 @@ struct AlbumDetailView: View {
                 EmptyStateView(
                     title: "Album Not Found",
                     systemImage: "opticaldisc",
-                    message: "This album is not available in your library."
+                    message: "This album is not available in your library.",
+                    actionTitle: "Sync Now",
+                    action: { Task { await app.pullToRefresh() } }
                 )
             }
         }

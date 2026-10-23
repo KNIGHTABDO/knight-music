@@ -29,7 +29,9 @@ struct SongsView: View {
                 EmptyStateView(
                     title: "No Songs",
                     systemImage: "music.note",
-                    message: searchText.isEmpty ? "No songs in your library." : "No results for “\(searchText)”."
+                    message: searchText.isEmpty ? "No songs in your library." : "No results for “\(searchText)”.",
+                    actionTitle: "Sync Now",
+                    action: { Task { await app.pullToRefresh() } }
                 )
             } else {
                 List {

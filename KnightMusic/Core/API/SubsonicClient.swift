@@ -26,7 +26,7 @@ struct QueryParams {
 actor SubsonicClient {
     nonisolated let baseURL: URL
     nonisolated let username: String
-    private nonisolated let password: String
+    nonisolated let password: String
     private nonisolated let onTransportError: (@Sendable () -> Void)?
     private let maxAttempts: Int
     private let session: URLSession

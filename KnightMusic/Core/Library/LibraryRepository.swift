@@ -575,6 +575,17 @@ final class LibraryRepository {
         }
     }
 
+    func createSmartPlaylist(name: String, rules: SmartPlaylistRules) async throws {
+        let client = try requireClient()
+        do {
+            let id = try await client.createSmartPlaylist(name: name, comment: "Smart playlist made in Knight Music", rules: rules)
+            try await refreshPlaylist(id: id)
+        } catch {
+            report(error, "Could not create smart playlist")
+            throw error
+        }
+    }
+
     func refreshPlaylist(id: String) async throws {
         let client = try requireClient()
         let database = try requireDatabase()

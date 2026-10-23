@@ -39,7 +39,9 @@ struct ArtistDetailView: View {
                 EmptyStateView(
                     title: "Artist Not Found",
                     systemImage: "person.crop.circle",
-                    message: "This artist is not available in your library."
+                    message: "This artist is not available in your library.",
+                    actionTitle: "Sync Now",
+                    action: { Task { await app.pullToRefresh() } }
                 )
             }
         }

@@ -259,7 +259,9 @@ struct HomeView: View {
         EmptyStateView(
             title: "No Music",
             systemImage: "music.note",
-            message: "Your library is empty. Pull down to refresh or check your server sync."
+            message: "Your library is empty. Sync with your server to bring your music in.",
+            actionTitle: "Sync Now",
+            action: { Task { await app.pullToRefresh() } }
         )
         .padding(.top, 60)
     }

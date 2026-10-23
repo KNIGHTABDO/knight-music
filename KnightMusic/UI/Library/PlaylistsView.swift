@@ -10,6 +10,16 @@ struct PlaylistsView: View {
     @State private var newPlaylistName = ""
     @State private var playlistToDelete: Playlist?
     @State private var showDeleteConfirmation = false
+    @State private var showSmartSheet = false
+    @AppStorage("playlists.sort") private var sort: PlaylistSort = .name
+
+    enum PlaylistSort: String, CaseIterable, Identifiable {
+        case name = "Name"
+        case recentlyUpdated = "Recently Updated"
+        case recentlyCreated = "Recently Created"
+        case songCount = "Most Songs"
+        var id: String { rawValue }
+    }
 
     var body: some View {
         let query = library.playlists()
@@ -27,7 +37,12 @@ struct PlaylistsView: View {
                 EmptyStateView(
                     title: "No Playlists",
                     systemImage: "music.note.list",
-                    message: searchText.isEmpty ? "No playlists in your library." : "No results for “\(searchText)”."
+                    message: searchText.isEmpty ? "No playlists in your library." : "No results for “\(searchText)”.",
+                    actionTitle: searchText.isEmpty ? "New Playlist" : nil,
+                    action: {
+                        newPlaylistName = ""
+                        showCreateSheet = true
+                    }
                 )
             } else {
                 List {
@@ -73,9 +88,27 @@ struct PlaylistsView: View {
                     .help("Ask Knight for a playlist")
                 }
 
-                Button {
-                    newPlaylistName = ""
-                    showCreateSheet = true
+                Menu {
+                    Picker("Sort By", selection: $sort) {
+                        ForEach(PlaylistSort.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort Playlists")
+
+                Menu {
+                    Button {
+                        newPlaylistName = ""
+                        showCreateSheet = true
+                    } label: {
+                        Label("New Playlist", systemImage: "music.note.list")
+                    }
+                    Button {
+                        showSmartSheet = true
+                    } label: {
+                        Label("New Smart Playlist", systemImage: "gearshape.2")
+                    }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 16, weight: .semibold))
@@ -105,19 +138,16 @@ struct PlaylistsView: View {
                             let name = newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines)
                             showCreateSheet = false
                             newPlaylistName = ""
-                            Task {
-                                do {
-                                    try await library.createPlaylist(name: name)
-                                } catch {
-                                    Log.sync.error("Create playlist failed: \(error)")
-                                }
-                            }
+                            Task { _ = try? await library.createPlaylist(name: name) }
                         }
                         .disabled(newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             }
             .presentationDetents([.height(200)])
+        }
+        .sheet(isPresented: $showSmartSheet) {
+            SmartPlaylistSheet()
         }
         .confirmationDialog(
             "Delete Playlist",
@@ -142,8 +172,17 @@ struct PlaylistsView: View {
 
     private func filtered(_ all: [Playlist]) -> [Playlist] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return all }
-        return all.filter { $0.name.localizedCaseInsensitiveContains(q) }
+        let matched = q.isEmpty ? all : all.filter { $0.name.localizedCaseInsensitiveContains(q) }
+        switch sort {
+        case .name:
+            return matched
+        case .recentlyUpdated:
+            return matched.sorted { ($0.changed ?? .distantPast) > ($1.changed ?? .distantPast) }
+        case .recentlyCreated:
+            return matched.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) }
+        case .songCount:
+            return matched.sorted { ($0.songCount ?? 0) > ($1.songCount ?? 0) }
+        }
     }
 }
 

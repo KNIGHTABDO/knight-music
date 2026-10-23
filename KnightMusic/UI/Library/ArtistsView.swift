@@ -10,10 +10,11 @@ struct ArtistsView: View {
     @Environment(LibraryRepository.self) private var library
     @State private var searchText = ""
     @State private var sortOrder: ArtistSortOrder = .name
+    @AppStorage("artists.favoritesOnly") private var favoritesOnly = false
 
     var body: some View {
         let query = library.artists(search: searchText)
-        let allArtists = sortedArtists(query.value)
+        let allArtists = sortedArtists(favoritesOnly ? query.value.filter { $0.starred != nil } : query.value)
         let sections = Sectioning.byFirstLetter(allArtists, letterFor: \.name)
 
         ScrollViewReader { proxy in
@@ -29,7 +30,16 @@ struct ArtistsView: View {
                     EmptyStateView(
                         title: "No Artists",
                         systemImage: "music.mic",
-                        message: searchText.isEmpty ? "No artists in your library." : "No results for “\(searchText)”."
+                        message: !searchText.isEmpty ? "No results for “\(searchText)”."
+                            : favoritesOnly ? "No favorite artists yet." : "No artists in your library.",
+                        actionTitle: favoritesOnly ? "Show All Artists" : (searchText.isEmpty ? "Sync Now" : nil),
+                        action: {
+                            if favoritesOnly {
+                                favoritesOnly = false
+                            } else {
+                                Task { await app.pullToRefresh() }
+                            }
+                        }
                     )
                 } else if sortOrder == .name {
                     List {
@@ -74,13 +84,20 @@ struct ArtistsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Picker("Sort", selection: $sortOrder) {
-                        ForEach(ArtistSortOrder.allCases, id: \.self) { order in
-                            Text(order.rawValue).tag(order)
+                    Section("Sort By") {
+                        Picker("Sort", selection: $sortOrder) {
+                            ForEach(ArtistSortOrder.allCases, id: \.self) { order in
+                                Text(order.rawValue).tag(order)
+                            }
+                        }
+                    }
+                    Section("Filter") {
+                        Toggle(isOn: $favoritesOnly) {
+                            Label("Favorites Only", systemImage: "heart")
                         }
                     }
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
+                    Image(systemName: favoritesOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 }
             }
         }

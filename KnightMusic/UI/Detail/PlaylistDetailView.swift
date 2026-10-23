@@ -31,7 +31,9 @@ struct PlaylistDetailView: View {
                 EmptyStateView(
                     title: "Playlist Not Found",
                     systemImage: "music.note.list",
-                    message: "This playlist is not available in your library."
+                    message: "This playlist is not available in your library.",
+                    actionTitle: "Sync Now",
+                    action: { Task { await app.pullToRefresh() } }
                 )
             }
         }

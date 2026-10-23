@@ -8,6 +8,9 @@ struct AlbumsView: View {
     @State private var sortOrder: AlbumSort = .name
     @State private var hasLoadedInitial = false
     @State private var previousAlbums: [Album] = []
+    @AppStorage("albums.layout") private var layout: LibraryLayout = .grid
+    @AppStorage("albums.favoritesOnly") private var favoritesOnly = false
+    @AppStorage("albums.descending") private var descending = false
 
     private var hasLetterSections: Bool {
         sortOrder == .name || sortOrder == .artist
@@ -15,8 +18,9 @@ struct AlbumsView: View {
 
     var body: some View {
         let query = library.albums(sort: sortOrder, search: debouncedSearchText)
-        let albums = query.isLoaded ? query.value : (hasLoadedInitial ? previousAlbums : query.value)
-        let sections = letterSections(from: albums)
+        let loaded = query.isLoaded ? query.value : (hasLoadedInitial ? previousAlbums : query.value)
+        let albums = refine(loaded)
+        let sections = descending ? Array(letterSections(from: albums).reversed()) : letterSections(from: albums)
         let showSkeleton = !query.isLoaded && !hasLoadedInitial
 
         let isScrubberVisible = hasLetterSections && sections.count > 1 && (query.isLoaded || hasLoadedInitial)
@@ -30,31 +34,34 @@ struct AlbumsView: View {
                     EmptyStateView(
                         title: "No Albums",
                         systemImage: "square.stack",
-                        message: searchText.isEmpty ? "No albums in your library." : "No results for “\(searchText)”."
+                        message: emptyMessage,
+                        actionTitle: favoritesOnly ? "Show All Albums" : (searchText.isEmpty ? "Sync Now" : nil),
+                        action: {
+                            if favoritesOnly {
+                                favoritesOnly = false
+                            } else {
+                                Task { await app.pullToRefresh() }
+                            }
+                        }
                     )
                     .padding(.top, 60)
                 } else if hasLetterSections {
-                    LazyVStack(alignment: .leading, spacing: 24) {
+                    LazyVStack(alignment: .leading, spacing: 16, pinnedViews: [.sectionHeaders]) {
                         ForEach(sections) { section in
-                            VStack(alignment: .leading, spacing: 14) {
-                                circularBadge(section.letter)
+                            Section {
+                                items(section.items)
+                                    .padding(.trailing, isScrubberVisible ? 22 : 0)
+                            } header: {
+                                LetterHeader(letter: section.letter)
                                     .id(section.letter)
-                                    .padding(.horizontal, Theme.margin)
-
-                                AdaptiveAlbumGrid(items: section.items) { album in
-                                    tile(album)
-                                }
-                                .padding(.trailing, isScrubberVisible ? 22 : 0)
                             }
                         }
                     }
-                    .padding(.vertical, Theme.margin)
+                    .padding(.bottom, Theme.margin)
                 } else {
-                    AdaptiveAlbumGrid(items: albums) { album in
-                        tile(album)
-                    }
-                    .padding(.trailing, isScrubberVisible ? 22 : 0)
-                    .padding(.vertical, Theme.margin)
+                    items(albums)
+                        .padding(.trailing, isScrubberVisible ? 22 : 0)
+                        .padding(.vertical, Theme.margin)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -104,16 +111,32 @@ struct AlbumsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Picker("Sort", selection: $sortOrder) {
-                        Text("Name").tag(AlbumSort.name)
-                        Text("Artist").tag(AlbumSort.artist)
-                        Text("Year").tag(AlbumSort.year)
-                        Text("Recently Added").tag(AlbumSort.recentlyAdded)
-                        Text("Most Played").tag(AlbumSort.mostPlayed)
-                        Text("Recently Played").tag(AlbumSort.recentlyPlayed)
+                    Picker("Layout", selection: $layout) {
+                        ForEach(LibraryLayout.allCases) { option in
+                            Label(option.title, systemImage: option.systemImage).tag(option)
+                        }
+                    }
+                    .pickerStyle(.palette)
+                    Section("Sort By") {
+                        Picker("Sort", selection: $sortOrder) {
+                            Text("Name").tag(AlbumSort.name)
+                            Text("Artist").tag(AlbumSort.artist)
+                            Text("Year").tag(AlbumSort.year)
+                            Text("Recently Added").tag(AlbumSort.recentlyAdded)
+                            Text("Most Played").tag(AlbumSort.mostPlayed)
+                            Text("Recently Played").tag(AlbumSort.recentlyPlayed)
+                        }
+                        Toggle(isOn: $descending) {
+                            Label("Reverse Order", systemImage: "arrow.up.arrow.down")
+                        }
+                    }
+                    Section("Filter") {
+                        Toggle(isOn: $favoritesOnly) {
+                            Label("Favorites Only", systemImage: "heart")
+                        }
                     }
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
+                    Image(systemName: favoritesOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 }
             }
         }
@@ -131,12 +154,37 @@ struct AlbumsView: View {
         }
     }
 
-    private func circularBadge(_ letter: String) -> some View {
-        Text(letter)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(Theme.accent)
-            .frame(width: 32, height: 32)
-            .background(Theme.label.opacity(0.12), in: Circle())
+    @ViewBuilder
+    private func items(_ albums: [Album]) -> some View {
+        switch layout {
+        case .grid:
+            AdaptiveAlbumGrid(items: albums) { album in
+                tile(album)
+            }
+        case .list:
+            LazyVStack(spacing: 0) {
+                ForEach(albums) { album in
+                    NavigationLink(value: Route.album(album.id)) {
+                        AlbumListRow(album: album)
+                            .padding(.horizontal, Theme.margin)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { AlbumContextMenu(album: album) }
+                    Divider().padding(.leading, Theme.margin + 68)
+                }
+            }
+        }
+    }
+
+    private func refine(_ albums: [Album]) -> [Album] {
+        let filtered = favoritesOnly ? albums.filter { $0.starred != nil } : albums
+        return descending ? filtered.reversed() : filtered
+    }
+
+    private var emptyMessage: String {
+        if !searchText.isEmpty { return "No results for “\(searchText)”." }
+        return favoritesOnly ? "No favorite albums. Turn off the Favorites filter to see everything." : "No albums in your library."
     }
 
     private func letterSections(from albums: [Album]) -> [LetterSection<Album>] {
