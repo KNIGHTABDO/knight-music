@@ -60,7 +60,7 @@ final class NowPlayingCenter {
 
         // If the cover is already in the cache, attach it synchronously in the same publish
         if !isLive, let provider = artwork, let cached = provider.cachedImage(coverArt: song.coverArt, size: 600) {
-            next[MPMediaItemPropertyArtwork] = makeArtwork(image: cached)
+            next[MPMediaItemPropertyArtwork] = Self.makeArtwork(image: cached)
         }
 
         info = next
@@ -73,10 +73,7 @@ final class NowPlayingCenter {
             if self?.info[MPMediaItemPropertyArtwork] == nil,
                let image = await provider.image(coverArt: song.coverArt, size: 600) {
                 guard !Task.isCancelled, self?.currentSongId == id else { return }
-                let art = self?.makeArtwork(image: image)
-                if let art {
-                    self?.merge([MPMediaItemPropertyArtwork: art], songId: id)
-                }
+                self?.merge([MPMediaItemPropertyArtwork: Self.makeArtwork(image: image)], songId: id)
             }
             let entries = await provider.nowPlayingEntries(for: song)
             guard !Task.isCancelled, self?.currentSongId == id, !entries.isEmpty else { return }
@@ -144,8 +141,11 @@ final class NowPlayingCenter {
         Log.artwork.info("published keys: \(keyList)")
     }
 
-    private func makeArtwork(image: UIImage) -> MPMediaItemArtwork {
+    /// Nonisolated so the request handler carries no main-actor isolation: MediaPlayer calls it on a background
+    /// queue (CarPlay, lock screen), where an inherited isolation check traps.
+    private nonisolated static func makeArtwork(image: UIImage) -> MPMediaItemArtwork {
         MPMediaItemArtwork(boundsSize: image.size) { requestedSize in
+            Log.artwork.debug("Now Playing artwork requested at \(requestedSize.width)x\(requestedSize.height)")
             guard requestedSize.width > 0, requestedSize.height > 0 else { return image }
             if requestedSize.width >= image.size.width && requestedSize.height >= image.size.height {
                 return image
