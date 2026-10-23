@@ -16,6 +16,7 @@ enum Route: Hashable {
     case playlists
     case genres
     case radioStations
+    case replay
     case knightChat(id: String, draft: String? = nil)
 }
 
@@ -67,6 +68,7 @@ extension View {
             case .playlists: PlaylistsView()
             case .genres: GenresView()
             case .radioStations: RadioStationsView()
+            case .replay: ReplayView()
             case .knightChat(let id, let draft): KnightChatView(conversationId: id, initialDraft: draft)
             }
 

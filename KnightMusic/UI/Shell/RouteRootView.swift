@@ -32,6 +32,8 @@ struct RouteRootView: View {
             GenresView()
         case .radioStations:
             RadioStationsView()
+        case .replay:
+            ReplayView()
         case .knightChat(let id, let draft):
             KnightChatView(conversationId: id, initialDraft: draft)
         }

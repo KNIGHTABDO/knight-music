@@ -34,7 +34,8 @@ struct MainTabsView: View {
         LibraryTabItem(id: .albumList(.recentlyPlayed), title: "Recently Played", systemImage: "clock", route: .albumList(.recentlyPlayed), customizationId: "library.recentlyPlayed"),
         LibraryTabItem(id: .albumList(.recentlyAdded), title: "Recently Added", systemImage: "plus.square.on.square", route: .albumList(.recentlyAdded), customizationId: "library.recentlyAdded"),
         LibraryTabItem(id: .albumList(.frequentlyPlayed), title: "Frequently Played", systemImage: "flame", route: .albumList(.frequentlyPlayed), customizationId: "library.frequentlyPlayed"),
-        LibraryTabItem(id: .albumList(.random), title: "Random", systemImage: "shuffle", route: .albumList(.random), customizationId: "library.random")
+        LibraryTabItem(id: .albumList(.random), title: "Random", systemImage: "shuffle", route: .albumList(.random), customizationId: "library.random"),
+        LibraryTabItem(id: .replay, title: "Knight Replay", systemImage: "chart.bar.xaxis", route: .replay, customizationId: "library.replay")
     ]
 
     var body: some View {

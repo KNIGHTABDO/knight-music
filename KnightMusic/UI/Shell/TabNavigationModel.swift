@@ -18,6 +18,7 @@ final class TabNavigationModel {
     var favoriteSongs = NavigationPath()
     var downloaded = NavigationPath()
     var radioStations = NavigationPath()
+    var replay = NavigationPath()
     var genres = NavigationPath()
     var playlists = NavigationPath()
     var recentlyPlayed = NavigationPath()
@@ -59,6 +60,8 @@ final class TabNavigationModel {
             }
         case .radioStations:
             return Binding(get: { self.radioStations }, set: { self.radioStations = $0 })
+        case .replay:
+            return Binding(get: { self.replay }, set: { self.replay = $0 })
         case .genres:
             return Binding(get: { self.genres }, set: { self.genres = $0 })
         case .playlists:

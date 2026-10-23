@@ -24,7 +24,8 @@ struct LibraryHubView: View {
         HubItem(title: "Radio Stations", icon: "antenna.radiowaves.left.and.right", route: .radioStations),
         HubItem(title: "Recently Played", icon: "clock", route: .albumList(.recentlyPlayed)),
         HubItem(title: "Frequently Played", icon: "flame", route: .albumList(.frequentlyPlayed)),
-        HubItem(title: "Random", icon: "shuffle", route: .albumList(.random))
+        HubItem(title: "Random", icon: "shuffle", route: .albumList(.random)),
+        HubItem(title: "Knight Replay", icon: "chart.bar.xaxis", route: .replay)
     ]
 
     var body: some View {
