@@ -1,9 +1,12 @@
 import SwiftUI
 
 /// Standard swipe actions for a song row inside a `List`: leading Play Next / Add to Queue,
-/// trailing Download (or Remove Download) / Love.
+/// trailing Love / Download (or Remove Download).
 struct SongSwipeActions: ViewModifier {
     let song: Song
+    /// Off where the list owns the trailing edge (e.g. `.onDelete` in a playlist); any trailing
+    /// `.swipeActions` would replace the system delete action.
+    var trailing = true
 
     @Environment(PlayerEngine.self) private var player
     @Environment(DownloadManager.self) private var downloads
@@ -11,9 +14,7 @@ struct SongSwipeActions: ViewModifier {
     @Environment(UIState.self) private var ui: UIState?
 
     func body(content: Content) -> some View {
-        let isStarred = song.starred != nil
-        let isDownloaded = downloads.isDownloaded(song.id)
-        content
+        let leading = content
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button {
                     Haptics.impact(.light)
@@ -33,43 +34,47 @@ struct SongSwipeActions: ViewModifier {
                 }
                 .tint(.orange)
             }
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                Button {
-                    Haptics.impact(.medium)
-                    Task {
-                        do {
-                            try await library.toggleStar(.song, id: song.id, currentlyStarred: isStarred)
-                        } catch {
-                            library.report(error, "Couldn’t update favorite")
-                        }
-                    }
-                } label: {
-                    Label(isStarred ? "Unlove" : "Love", systemImage: isStarred ? "heart.slash" : "heart")
-                }
-                .tint(.pink)
+        if trailing {
+            leading.swipeActions(edge: .trailing, allowsFullSwipe: false) { trailingActions }
+        } else {
+            leading
+        }
+    }
 
-                if isDownloaded {
-                    Button(role: .destructive) {
-                        downloads.delete(songIds: [song.id])
-                    } label: {
-                        Label("Remove Download", systemImage: "trash")
-                    }
-                } else {
-                    Button {
-                        Haptics.impact(.light)
-                        downloads.download(songs: [song])
-                        ui?.showToast("Downloading")
-                    } label: {
-                        Label("Download", systemImage: "arrow.down.circle")
-                    }
-                    .tint(.blue)
-                }
+    @ViewBuilder
+    private var trailingActions: some View {
+        let isStarred = song.starred != nil
+        Button {
+            Haptics.impact(.medium)
+            Task {
+                try? await library.toggleStar(.song, id: song.id, currentlyStarred: isStarred)
             }
+        } label: {
+            Label(isStarred ? "Unlove" : "Love", systemImage: isStarred ? "heart.slash" : "heart")
+        }
+        .tint(.pink)
+
+        if downloads.isDownloaded(song.id) {
+            Button(role: .destructive) {
+                downloads.delete(songIds: [song.id])
+            } label: {
+                Label("Remove Download", systemImage: "trash")
+            }
+        } else {
+            Button {
+                Haptics.impact(.light)
+                downloads.download(songs: [song])
+                ui?.showToast("Downloading")
+            } label: {
+                Label("Download", systemImage: "arrow.down.circle")
+            }
+            .tint(.blue)
+        }
     }
 }
 
 extension View {
-    func songSwipeActions(_ song: Song) -> some View {
-        modifier(SongSwipeActions(song: song))
+    func songSwipeActions(_ song: Song, trailing: Bool = true) -> some View {
+        modifier(SongSwipeActions(song: song, trailing: trailing))
     }
 }

@@ -41,17 +41,18 @@ struct SongActionsMenu: View {
         Divider()
 
         Menu {
-            if playlists.value.isEmpty {
-                Text("No Playlists Available")
-            } else {
+            Button {
+                ui.playlistPicker = PlaylistPickerRequest(songs: [song])
+            } label: {
+                Label("New Playlist…", systemImage: "plus")
+            }
+            if !playlists.value.isEmpty {
+                Divider()
                 ForEach(playlists.value) { pl in
                     Button(pl.name) {
                         Task {
-                            do {
-                                try await library.addToPlaylist(id: pl.id, songIds: [song.id])
+                            if (try? await library.addToPlaylist(id: pl.id, songIds: [song.id])) != nil {
                                 ui.showToast("Added to \(pl.name)")
-                            } catch {
-                                library.report(error, "Couldn’t add to \(pl.name)")
                             }
                         }
                     }
@@ -84,11 +85,7 @@ struct SongActionsMenu: View {
         Button {
             Haptics.impact(.light)
             Task {
-                do {
-                    try await library.setStarred(.song, id: song.id, !isStarred)
-                } catch {
-                    library.report(error, "Couldn’t update favorite")
-                }
+                try? await library.setStarred(.song, id: song.id, !isStarred)
             }
         } label: {
             Label(isStarred ? "Unfavorite" : "Favorite", systemImage: isStarred ? "heart.slash" : "heart")
@@ -98,11 +95,7 @@ struct SongActionsMenu: View {
             ForEach(1...5, id: \.self) { rating in
                 Button {
                     Task {
-                        do {
-                            try await library.setRating(.song, id: song.id, rating: rating)
-                        } catch {
-                            library.report(error, "Couldn’t rate song")
-                        }
+                        try? await library.setRating(.song, id: song.id, rating: rating)
                     }
                 } label: {
                     if (song.userRating ?? 0) == rating {
@@ -116,11 +109,7 @@ struct SongActionsMenu: View {
                 Divider()
                 Button(role: .destructive) {
                     Task {
-                        do {
-                            try await library.setRating(.song, id: song.id, rating: 0)
-                        } catch {
-                            library.report(error, "Couldn’t clear rating")
-                        }
+                        try? await library.setRating(.song, id: song.id, rating: 0)
                     }
                 } label: {
                     Label("Clear Rating", systemImage: "xmark")

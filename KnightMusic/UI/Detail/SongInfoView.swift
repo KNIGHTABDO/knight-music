@@ -116,7 +116,7 @@ struct SongInfoView: View {
     }
 }
 
-/// Presents the song info sheet requested through `UIState.songInfo`. Attached once in the shell and once in
+/// Presents the song info and playlist picker sheets requested through `UIState`. Attached once in the shell and once in
 /// the full player, because a sheet can't appear over the player from the shell.
 struct SongInfoPresenter: ViewModifier {
     var insidePlayer: Bool
@@ -131,6 +131,13 @@ struct SongInfoPresenter: ViewModifier {
             SongInfoView(songId: song.id, fallback: song)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(item: Binding(
+            get: { ui.isPlayerPresented == insidePlayer ? ui.playlistPicker : nil },
+            set: { ui.playlistPicker = $0 }
+        )) { request in
+            PlaylistPickerSheet(request: request)
+                .presentationDetents([.medium, .large])
         }
     }
 }

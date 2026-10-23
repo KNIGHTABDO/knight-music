@@ -366,9 +366,16 @@ final class LibraryRepository {
         }
     }
 
+    /// Mutations are user actions, so a missing connection is reported here once for all of them.
     private func requireClient() throws -> SubsonicClient {
-        guard let client else { throw LibraryError.notSignedIn }
-        if isOfflineProvider() { throw LibraryError.offline }
+        guard let client else {
+            report(LibraryError.notSignedIn, "Couldn’t save the change")
+            throw LibraryError.notSignedIn
+        }
+        if isOfflineProvider() {
+            report(LibraryError.offline, "Couldn’t save the change")
+            throw LibraryError.offline
+        }
         return client
     }
 

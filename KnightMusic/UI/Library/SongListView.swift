@@ -8,6 +8,7 @@ struct SongListView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(DownloadManager.self) private var downloads
     @State private var showDeleteAllConfirmation = false
+    @State private var selection = SongSelection()
 
     var body: some View {
         let query = songsQuery()
@@ -71,8 +72,13 @@ struct SongListView: View {
                                 SongActionsMenu(song: song)
                             }
                             .padding(.vertical, 4)
+                            .selectable(song.id, in: selection)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                if selection.isActive {
+                                    selection.toggle(song.id)
+                                    return
+                                }
                                 Haptics.impact(.medium)
                                 if let index = songs.firstIndex(where: { $0.id == song.id }) {
                                     player.play(songs, startAt: index, shuffle: false)
@@ -84,6 +90,7 @@ struct SongListView: View {
                                 SongActionsMenu(song: song)
                             }
                             .listRowBackground(Color.clear)
+                            .songSwipeActions(song)
                         }
                     }
                 }
@@ -93,6 +100,7 @@ struct SongListView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle(kind.title)
+        .songSelection(selection, songs: songs)
         .refreshable { await app.pullToRefresh() }
         .toolbar {
             if kind == .downloaded {

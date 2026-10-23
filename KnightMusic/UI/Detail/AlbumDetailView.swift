@@ -11,11 +11,11 @@ struct AlbumDetailView: View {
     @Environment(UIState.self) private var ui
     @Environment(HermesService.self) private var hermes: HermesService?
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var selection = SongSelection()
 
     var body: some View {
         let albumQuery = library.album(id: albumId)
         let content = albumQuery.value
-        let playlists = library.playlists()
 
         Group {
             if !albumQuery.isLoaded {
@@ -38,47 +38,66 @@ struct AlbumDetailView: View {
         .scrollEdgeEffectStyle(.soft, for: .top)
         .refreshable { await app.pullToRefresh() }
         .observing(albumQuery)
-        .observing(playlists)
     }
 
     // MARK: - Album Content
 
     private func albumContentView(album: Album, songs: [Song], moreAlbumsQuery: LiveQuery<[Album]>) -> some View {
         let otherAlbums = moreAlbumsQuery.value.filter { $0.id != album.id }
+        let discs = Dictionary(grouping: songs, by: { $0.discNumber ?? 1 })
+        let discNumbers = discs.keys.sorted()
 
-        return ScrollView {
-            VStack(spacing: 0) {
-                // Header (scrolls with content)
-                headerView(album: album, songs: songs)
-                    .padding(.horizontal, Theme.margin)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
+        return List {
+            headerView(album: album, songs: songs)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+                .listRowInsets(EdgeInsets(top: 0, leading: Theme.margin, bottom: 0, trailing: Theme.margin))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                // Track list
-                trackListView(album: album, songs: songs)
-
-                // Footer
-                footerView(album: album, songs: songs)
-
-                // More by the artist
-                if !otherAlbums.isEmpty {
-                    ShelfSection(title: "More by \(album.artist ?? "Artist")", items: otherAlbums) { other in
-                        NavigationLink(value: Route.album(other.id)) {
-                            AlbumTile(album: other)
-                        }
-                        .buttonStyle(.plain)
+            ForEach(discNumbers, id: \.self) { disc in
+                Section {
+                    ForEach(discs[disc] ?? []) { song in
+                        trackRow(song, album: album, songs: songs)
                     }
-                    .scrollClipDisabled()
-                    .padding(.top, 24)
-                    .padding(.bottom, 32)
-                } else {
-                    Spacer().frame(height: 32)
+                } header: {
+                    if discNumbers.count > 1 {
+                        Label("Disc \(disc)", systemImage: "opticaldisc")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.secondaryLabel)
+                            .padding(.top, 8)
+                    }
                 }
             }
+
+            footerView(album: album, songs: songs)
+                .listRowInsets(EdgeInsets(top: 20, leading: Theme.margin, bottom: 16, trailing: Theme.margin))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            if !otherAlbums.isEmpty {
+                ShelfSection(title: "More by \(album.artist ?? "Artist")", items: otherAlbums,
+                             headerRoute: album.artistId.map { Route.artist($0) }) { other in
+                    NavigationLink(value: Route.album(other.id)) {
+                        AlbumTile(album: other)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { AlbumContextMenu(album: other) }
+                }
+                .scrollClipDisabled()
+                .padding(.bottom, 32)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(alignment: .top) { AlbumBackdrop(coverArt: album.coverArt) }
         .toolbar {
             toolbarItems(album: album, songs: songs)
         }
+        .songSelection(selection, songs: songs)
     }
 
     // MARK: - Header
@@ -86,7 +105,7 @@ struct AlbumDetailView: View {
     @ViewBuilder
     private func headerView(album: Album, songs: [Song]) -> some View {
         if sizeClass == .regular {
-            // iPad regular width: artwork left, info + buttons right (HStack)
+            // iPad: artwork left, info + buttons right
             HStack(alignment: .bottom, spacing: 28) {
                 HeroArtworkView(
                     song: heroSong(for: album, songs: songs),
@@ -95,18 +114,18 @@ struct AlbumDetailView: View {
                 )
                 .frame(width: 300, height: 300)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .shadow(color: .black.opacity(0.35), radius: 14, y: 7)
+                .shadow(color: .black.opacity(0.4), radius: 18, y: 9)
                 .backgroundExtensionEffect()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    albumMetadata(album: album, alignment: .leading)
+                    albumMetadata(album: album, songs: songs, alignment: .leading)
                     Spacer().frame(height: 12)
                     playbackButtons(songs: songs)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            // iPhone compact width: large artwork centered (~70% width)
+            // iPhone: large centred artwork
             VStack(alignment: .center, spacing: 14) {
                 HeroArtworkView(
                     song: heroSong(for: album, songs: songs),
@@ -115,9 +134,9 @@ struct AlbumDetailView: View {
                 )
                 .frame(maxWidth: 280)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .shadow(color: .black.opacity(0.35), radius: 14, y: 7)
+                .shadow(color: .black.opacity(0.4), radius: 18, y: 9)
 
-                albumMetadata(album: album, alignment: .center)
+                albumMetadata(album: album, songs: songs, alignment: .center)
 
                 playbackButtons(songs: songs)
                     .padding(.top, 4)
@@ -126,10 +145,10 @@ struct AlbumDetailView: View {
         }
     }
 
-    private func albumMetadata(album: Album, alignment: HorizontalAlignment) -> some View {
+    private func albumMetadata(album: Album, songs: [Song], alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 4) {
             Text(album.name)
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: sizeClass == .regular ? 30 : 26, weight: .bold))
                 .foregroundStyle(Theme.label)
                 .multilineTextAlignment(alignment == .center ? .center : .leading)
 
@@ -137,25 +156,31 @@ struct AlbumDetailView: View {
                 if let artistId = album.artistId, !artistId.isEmpty {
                     NavigationLink(value: Route.artist(artistId)) {
                         Text(artist)
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: 20, weight: .regular))
                             .foregroundStyle(Theme.accent)
                     }
+                    .buttonStyle(.plain)
                 } else {
                     Text(artist)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(Theme.accent)
                 }
             }
 
-            let meta = [album.genre, album.year.map(String.init)]
+            let meta = [album.genre?.uppercased(), album.year.map(String.init)]
                 .compactMap { $0 }
                 .filter { !$0.isEmpty }
-                .joined(separator: " • ")
+                .joined(separator: " · ")
 
             if !meta.isEmpty {
                 Text(meta)
-                    .font(.system(size: 13))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.secondaryLabel)
+            }
+
+            if let badge = AudioQualityBadge(songs: songs) {
+                QualityBadge(badge: badge)
+                    .padding(.top, 4)
             }
         }
     }
@@ -190,86 +215,86 @@ struct AlbumDetailView: View {
 
     // MARK: - Track List
 
-    private func trackListView(album: Album, songs: [Song]) -> some View {
-        let discs = Dictionary(grouping: songs, by: { $0.discNumber ?? 1 })
-        let sortedDiscs = discs.keys.sorted()
-        let hasMultipleDiscs = sortedDiscs.count > 1
+    private func trackRow(_ song: Song, album: Album, songs: [Song]) -> some View {
+        let isPlaying = player.currentSong?.id == song.id
+        let showsArtist = song.artist != nil && song.artist != album.artist
 
-        return LazyVStack(spacing: 0) {
-            ForEach(sortedDiscs, id: \.self) { discNumber in
-                if hasMultipleDiscs {
-                    HStack {
-                        Text("Disc \(discNumber)")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.secondaryLabel)
-                        Spacer()
-                    }
-                    .padding(.horizontal, Theme.margin)
-                    .padding(.top, 16)
-                    .padding(.bottom, 6)
-                }
-
-                let discSongs = discs[discNumber] ?? []
-                ForEach(Array(discSongs.enumerated()), id: \.element.id) { index, song in
-                    let isPlaying = player.currentSong?.id == song.id
-                    let isPaused = isPlaying && !player.isPlaying
-                    let isDownloaded = downloads.isDownloaded(song.id)
-                    let showsArtist = song.artist != nil && song.artist != album.artist
-
-                    Button {
-                        Haptics.selection()
-                        if let overallIndex = songs.firstIndex(where: { $0.id == song.id }) {
-                            player.play(songs, startAt: overallIndex, shuffle: false)
-                        }
-                    } label: {
-                        SongRow(
-                            title: song.title,
-                            subtitle: showsArtist ? song.artist : nil,
-                            duration: song.durationSeconds,
-                            leading: .trackNumber(song.track),
-                            isPlaying: isPlaying,
-                            isPaused: isPaused,
-                            isDownloaded: isDownloaded
-                        ) {
-                            SongActionsMenu(song: song)
-                        }
-                        .padding(.horizontal, Theme.margin)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        SongActionsMenu(song: song)
-                    }
-
-                    Divider().padding(.leading, Theme.margin + 28 + 12)
-                }
+        return Button {
+            if selection.isActive {
+                selection.toggle(song.id)
+                return
             }
+            Haptics.selection()
+            if let overallIndex = songs.firstIndex(where: { $0.id == song.id }) {
+                player.play(songs, startAt: overallIndex, shuffle: false)
+            }
+        } label: {
+            SongRow(
+                title: song.title,
+                subtitle: showsArtist ? song.artist : nil,
+                duration: song.durationSeconds,
+                leading: .trackNumber(song.track),
+                isPlaying: isPlaying,
+                isPaused: isPlaying && !player.isPlaying,
+                isDownloaded: downloads.isDownloaded(song.id)
+            ) {
+                SongActionsMenu(song: song)
+            }
+            .selectable(song.id, in: selection)
         }
+        .buttonStyle(.plain)
+        .contextMenu {
+            SongActionsMenu(song: song)
+        }
+        .songSwipeActions(song)
+        .listRowInsets(EdgeInsets(top: 8, leading: Theme.margin, bottom: 8, trailing: Theme.margin))
+        .listRowBackground(Color.clear)
+        .listRowSeparatorTint(Theme.hairline)
     }
 
     // MARK: - Footer
 
     private func footerView(album: Album, songs: [Song]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
+            if let released = releaseText(album) {
+                Text(released)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.secondaryLabel)
+            }
+
             let totalSeconds = songs.reduce(0.0) { $0 + $1.durationSeconds }
             Text(KMFormat.songsAndDuration(count: songs.count, seconds: totalSeconds))
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 13))
                 .foregroundStyle(Theme.secondaryLabel)
 
-            if let created = album.created {
-                Text("Released " + created.formatted(date: .long, time: .omitted))
+            let labels = (album.recordLabels ?? []).map(\.name).filter { !$0.isEmpty }
+            if !labels.isEmpty {
+                Text(labels.joined(separator: ", "))
                     .font(.system(size: 13))
-                    .foregroundStyle(Theme.tertiaryLabel)
-            } else if let year = album.year {
-                Text("Released \(year)")
+                    .foregroundStyle(Theme.secondaryLabel)
+            }
+
+            if let created = album.created {
+                Text("Added " + created.formatted(date: .abbreviated, time: .omitted))
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.tertiaryLabel)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Theme.margin)
-        .padding(.top, 20)
-        .padding(.bottom, 16)
+    }
+
+    /// "October 4, 2019" from the tagged release date; just the year when that's all the tags say.
+    private func releaseText(_ album: Album) -> String? {
+        if let release = album.releaseDate, let date = release.date {
+            if release.month != nil, release.day != nil {
+                return date.formatted(date: .long, time: .omitted)
+            }
+            if release.month != nil {
+                return date.formatted(.dateTime.month(.wide).year())
+            }
+            return release.year.map(String.init)
+        }
+        return album.year.map(String.init)
     }
 
     // MARK: - Toolbar
@@ -284,18 +309,12 @@ struct AlbumDetailView: View {
             let s = downloads.status(for: id)?.state
             return s == .downloading || s == .queued
         }
-        let playlists = library.playlists()
-
         ToolbarItemGroup(placement: .topBarTrailing) {
             // Heart button (favorite toggle)
             Button {
                 Haptics.impact(.light)
                 Task {
-                    do {
-                        try await library.toggleStar(.album, id: album.id, currentlyStarred: isStarred)
-                    } catch {
-                        Log.sync.error("Toggle star album failed for \(album.id): \(error)")
-                    }
+                    try? await library.toggleStar(.album, id: album.id, currentlyStarred: isStarred)
                 }
             } label: {
                 Image(systemName: isStarred ? "heart.fill" : "heart")
@@ -371,25 +390,18 @@ struct AlbumDetailView: View {
                     Divider()
                 }
 
-                Menu {
-                    if playlists.value.isEmpty {
-                        Text("No Playlists Available")
-                    } else {
-                        ForEach(playlists.value) { pl in
-                            Button(pl.name) {
-                                Task {
-                                    do {
-                                        try await library.addToPlaylist(id: pl.id, songIds: songIds)
-                                        ui.showToast("Added to \(pl.name)")
-                                    } catch {
-                                        Log.sync.error("Add to playlist failed for \(pl.id): \(error)")
-                                    }
-                                }
-                            }
-                        }
-                    }
+                Button {
+                    ui.playlistPicker = PlaylistPickerRequest(songs: songs, suggestedName: album.name)
                 } label: {
-                    Label("Add to a Playlist…", systemImage: "plus")
+                    Label("Add to a Playlist…", systemImage: "text.badge.plus")
+                }
+
+                if let first = songs.first {
+                    Button {
+                        Task { await player.startStation(from: first) }
+                    } label: {
+                        Label("Start Station", systemImage: "dot.radiowaves.left.and.right")
+                    }
                 }
 
                 if let artistId = album.artistId, !artistId.isEmpty {

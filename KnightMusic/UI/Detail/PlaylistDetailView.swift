@@ -70,6 +70,7 @@ struct PlaylistDetailView: View {
                 } else {
                     ForEach(items) { item in
                         songRowView(song: item.song, index: item.index, songs: songs)
+                            .songSwipeActions(item.song, trailing: false)
                             .listRowInsets(EdgeInsets(top: 6, leading: Theme.margin, bottom: 6, trailing: Theme.margin))
                             .listRowBackground(Color.clear)
                     }

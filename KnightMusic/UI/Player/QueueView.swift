@@ -9,6 +9,7 @@ import SwiftUI
 struct QueueView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(AppSettings.self) private var settings
+    @Environment(UIState.self) private var ui: UIState?
 
     @State private var isHistoryExpanded = false
     @State private var isReordering = false
@@ -101,6 +102,21 @@ struct QueueView: View {
                 Spacer()
 
                 if !player.upcoming.isEmpty {
+                    Button {
+                        Haptics.impact(.light)
+                        let songs = (player.currentSong.map { [$0] } ?? []) + player.queue
+                        let name = "Queue " + Date().formatted(date: .abbreviated, time: .shortened)
+                        ui?.playlistPicker = PlaylistPickerRequest(songs: songs, suggestedName: name)
+                    } label: {
+                        Image(systemName: "text.badge.plus")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.85))
+                            .frame(width: 30, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .accessibilityLabel("Save Queue as Playlist")
+
                     Button(isReordering ? "Done" : "Reorder") {
                         Haptics.impact(.light)
                         withAnimation(.smooth) {

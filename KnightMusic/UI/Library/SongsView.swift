@@ -5,6 +5,7 @@ struct SongsView: View {
     @Environment(LibraryRepository.self) private var library
     @Environment(PlayerEngine.self) private var player
     @Environment(DownloadManager.self) private var downloads
+    @State private var selection = SongSelection()
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
     @State private var sort: SongSort = .title
@@ -73,8 +74,13 @@ struct SongsView: View {
                                 SongActionsMenu(song: song)
                             }
                             .padding(.vertical, 4)
+                            .selectable(song.id, in: selection)
                             .contentShape(Rectangle())
                             .onTapGesture {
+                                if selection.isActive {
+                                    selection.toggle(song.id)
+                                    return
+                                }
                                 Haptics.impact(.medium)
                                 if let index = songs.firstIndex(where: { $0.id == song.id }) {
                                     player.play(songs, startAt: index, shuffle: false)
@@ -86,6 +92,7 @@ struct SongsView: View {
                                 SongActionsMenu(song: song)
                             }
                             .listRowBackground(Color.clear)
+                            .songSwipeActions(song)
                         }
                     }
                 }
@@ -95,6 +102,7 @@ struct SongsView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Songs")
+        .songSelection(selection, songs: songs)
         .searchable(text: $searchText, prompt: "Search in Songs")
         .task(id: searchText) {
             let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)

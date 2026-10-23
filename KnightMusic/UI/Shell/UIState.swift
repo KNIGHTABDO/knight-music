@@ -22,6 +22,8 @@ final class UIState {
     var pendingRoute: Route?
     /// Song whose info sheet is showing (see `SongInfoPresenter`).
     var songInfo: Song?
+    /// Songs being added to a playlist (see `SongInfoPresenter`).
+    var playlistPicker: PlaylistPickerRequest?
 
     func open(_ route: Route) { pendingRoute = route }
 
