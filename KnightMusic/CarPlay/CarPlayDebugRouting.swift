@@ -42,7 +42,11 @@ enum CarPlayDebugRouting {
               let name = try? String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
               !name.isEmpty else { return }
         coordinator.popToRoot(animated: false)
-        open(name, coordinator: coordinator)
+        // CarPlay finishes the pop asynchronously; pushing a template that is still leaving the stack fails.
+        Task { @MainActor [weak coordinator] in
+            try? await Task.sleep(for: .milliseconds(800))
+            if let coordinator { open(name, coordinator: coordinator) }
+        }
     }
 
     private static func open(_ screen: String, coordinator: CarPlayCoordinator) {
