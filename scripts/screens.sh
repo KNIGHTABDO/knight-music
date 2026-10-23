@@ -7,7 +7,7 @@ set -uo pipefail
 APP="$1"; OUT="$2"; mkdir -p "$OUT"
 BUNDLE=com.knightabdo.knightmusic
 SCREENS=(home search artists albums songs playlists album artist player lyrics queue settings server downloads onboarding knight)
-LANDSCAPE=(home albums artists album player)   # iPad only, rotated by the app (-KMOrientation landscape)
+LANDSCAPE=(home albums artists album player)   # iPad only; Simulator.app rotates the device (apps can't on iPadOS 26)
 
 
 pick() { xcrun simctl list devices available -j | python3 -c "
@@ -15,6 +15,16 @@ import json,sys,re
 d=json.load(sys.stdin)['devices']
 c=[x for k,v in d.items() if 'iOS' in k for x in v if re.search(sys.argv[1],x['name'])]
 c.sort(key=lambda x:x['name']); print(c[-1]['udid'] if c else '')" "$1"; }
+
+# simctl cannot rotate; Simulator.app's "Rotate Left" (⌘←) can. Best effort: needs GUI scripting on the runner.
+rotate_left() {
+  open -a Simulator --args -CurrentDeviceUDID "$1" || return 1
+  sleep 12
+  osascript -e 'tell application "Simulator" to activate' \
+            -e 'delay 1' \
+            -e 'tell application "System Events" to key code 123 using command down' || { echo "rotation unavailable"; return 1; }
+  sleep 4
+}
 
 run_device() {
   local label="$1" udid="$2"
@@ -31,11 +41,11 @@ run_device() {
     sleep 9
     xcrun simctl io "$udid" screenshot "$OUT/${label}-${s}.png" >/dev/null 2>&1 && echo "shot $label-$s"
   done
-  if [ "$label" = ipad ]; then
+  if [ "$label" = ipad ] && rotate_left "$udid"; then
     for s in "${LANDSCAPE[@]}"; do
       xcrun simctl terminate "$udid" $BUNDLE 2>/dev/null
-      xcrun simctl launch "$udid" $BUNDLE -KMDemo YES -KMScreen "$s" -KMOrientation landscape >/dev/null
-      sleep 11
+      xcrun simctl launch "$udid" $BUNDLE -KMDemo YES -KMScreen "$s" >/dev/null
+      sleep 9
       xcrun simctl io "$udid" screenshot "$OUT/${label}-land-${s}.png" >/dev/null 2>&1 && echo "shot $label-land-$s"
     done
   fi
