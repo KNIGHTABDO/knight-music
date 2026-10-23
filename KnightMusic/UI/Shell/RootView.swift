@@ -94,6 +94,7 @@ struct RootView: View {
                 library.lastError = nil
             }
         }
+        .libraryDeepLinks { route in ui.open(route) }
         .onChange(of: ui.pendingRoute) { _, route in
             guard let route else { return }
             ui.pendingRoute = nil

@@ -49,6 +49,7 @@ struct ArtistDetailView: View {
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .libraryActivity("artist", id: artistId, title: artistQuery.value?.name)
         .refreshable { await app.pullToRefresh() }
         .task(id: artistId) {
             artistInfo = await library.artistInfo(artistId: artistId)

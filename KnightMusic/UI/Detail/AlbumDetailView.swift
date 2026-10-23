@@ -38,6 +38,7 @@ struct AlbumDetailView: View {
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .libraryActivity("album", id: albumId, title: content.album?.name)
         .refreshable { await app.pullToRefresh() }
         .observing(albumQuery)
     }

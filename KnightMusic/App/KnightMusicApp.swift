@@ -66,18 +66,6 @@ struct KnightMusicApp: App {
                 .preferredColorScheme(app.settings.appearance.colorScheme)
 
                 .task { app.startIfNeeded() }
-                .onOpenURL { url in
-                    guard url.scheme?.lowercased() == "knightmusic" else { return }
-                    if url.host == "album" {
-                        let albumId = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                        if !albumId.isEmpty {
-                            NotificationCenter.default.post(name: Notification.Name("KMOpenAlbum"), object: albumId)
-                        }
-                    } else if let idx = url.pathComponents.firstIndex(of: "album"), idx + 1 < url.pathComponents.count {
-                        let albumId = url.pathComponents[idx + 1]
-                        NotificationCenter.default.post(name: Notification.Name("KMOpenAlbum"), object: albumId)
-                    }
-                }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {

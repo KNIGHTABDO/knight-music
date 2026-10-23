@@ -157,6 +157,9 @@ final class AppModel {
                 self.accounts.touchSync(account.id)
                 // Siri resolves album/artist/playlist names from these parameters; refresh them once the mirror changed.
                 KnightMusicShortcuts.updateParameters()
+                if let database = self.database {
+                    Task.detached(priority: .utility) { await SpotlightIndexer.reindex(database: database) }
+                }
             }
             return ok
         }
@@ -309,6 +312,7 @@ final class AppModel {
         accounts.remove(id)
         addressResolver.forget(accountId: id)
         LibraryDatabase.deleteFiles(for: id)
+        Task { await SpotlightIndexer.removeAll(accountId: id) }
         guard wasActive else { return }
         if let next = accounts.active {
             do {

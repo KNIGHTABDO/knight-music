@@ -58,6 +58,7 @@ struct PlaylistDetailView: View {
         .observing(playlistQuery)
         .observing(songsQuery)
         .observing(playlists)
+        .libraryActivity("playlist", id: playlistId, title: playlistQuery.value?.name)
     }
 
     // MARK: - Playlist Content
