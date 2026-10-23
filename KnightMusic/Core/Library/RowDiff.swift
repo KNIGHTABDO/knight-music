@@ -62,6 +62,8 @@ func sameAlbum(_ a: Album, _ b: Album) -> Bool {
         && a.userRating == b.userRating
         && a.sortName == b.sortName
         && a.isCompilation == b.isCompilation
+        && a.recordLabels == b.recordLabels
+        && a.releaseDate == b.releaseDate
 }
 
 func sameSong(_ a: Song, _ b: Song) -> Bool {
@@ -93,6 +95,8 @@ func sameSong(_ a: Song, _ b: Song) -> Bool {
         && a.sortName == b.sortName
         && a.displayComposer == b.displayComposer
         && sameReplayGain(a.replayGain, b.replayGain)
+        && a.bitDepth == b.bitDepth
+        && a.channelCount == b.channelCount
 }
 
 func samePlaylist(_ a: Playlist, _ b: Playlist) -> Bool {

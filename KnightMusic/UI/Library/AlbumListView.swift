@@ -66,6 +66,10 @@ struct AlbumListView: View {
             return library.homeList(.random)
         case .favorites:
             return library.favoriteAlbums()
+        case .rediscover:
+            return library.rediscover(limit: nil)
+        case .listenAgain:
+            return library.listenAgain()
         }
     }
 
@@ -81,6 +85,10 @@ struct AlbumListView: View {
             return ("No Albums", "shuffle", "No albums found in your library.")
         case .favorites:
             return ("No Favorite Albums", "heart.slash", "Favorite albums to see them here.")
+        case .rediscover:
+            return ("Nothing to Rediscover", "sparkles", "Favorite albums you haven’t played in six months appear here.")
+        case .listenAgain:
+            return ("Nothing to Listen Again", "repeat", "Albums you played in the last two months appear here.")
         }
     }
 }

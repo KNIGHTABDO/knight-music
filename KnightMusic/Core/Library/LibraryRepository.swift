@@ -50,7 +50,7 @@ final class LibraryRepository {
 
     // MARK: - Query cache
 
-    private func query<V: Sendable & Equatable>(
+    func query<V: Sendable & Equatable>(
         _ key: String,
         initial: V,
         isSearch: Bool = false,
@@ -344,6 +344,8 @@ final class LibraryRepository {
         do {
             try await database.pool.write { db in
                 try db.execute(sql: "UPDATE song SET played = ?, playCount = COALESCE(playCount, 0) + 1 WHERE id = ?", arguments: [date, songId])
+                // Local listening history feeds Knight Replay and the "On This Day" shelf.
+                try db.execute(sql: "INSERT INTO playEvent(songId, playedAt) VALUES (?, ?)", arguments: [songId, date])
                 try db.execute(
                     sql: "UPDATE album SET played = ?, playCount = COALESCE(playCount, 0) + 1 WHERE id = (SELECT albumId FROM song WHERE id = ?)",
                     arguments: [date, songId]

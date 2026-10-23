@@ -136,6 +136,8 @@ struct SongListView: View {
             return library.downloadedSongs()
         case .recentlyAdded:
             return library.recentlyAddedSongs()
+        case .recentlyPlayed:
+            return library.recentlyPlayedSongs(limit: 200)
         }
     }
 
@@ -147,6 +149,8 @@ struct SongListView: View {
             return ("No Downloads", "arrow.down.circle", "Download albums or songs to listen offline.")
         case .recentlyAdded:
             return ("No Recently Added Songs", "clock", "Recently added songs will appear here.")
+        case .recentlyPlayed:
+            return ("Nothing Played Yet", "play.circle", "Songs you play will appear here.")
         }
     }
 }

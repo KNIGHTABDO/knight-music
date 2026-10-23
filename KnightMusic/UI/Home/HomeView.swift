@@ -9,6 +9,8 @@ struct HomeView: View {
     @Environment(UIState.self) private var ui: UIState?
     @Environment(HermesService.self) private var hermes: HermesService?
 
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
     var body: some View {
         let recent = library.homeList(.recent)
         let newest = library.homeList(.newest)
@@ -17,6 +19,13 @@ struct HomeView: View {
         let random = library.homeList(.random)
         let playlists = library.playlists()
         let counts = library.counts()
+        let continueListening = library.recentlyPlayedSongs(limit: 24)
+        let topPicks = library.topPicks()
+        let listenAgain = library.listenAgain()
+        let rediscover = library.rediscover()
+        let onThisDay = library.onThisDay()
+        let newArtists = library.recentlyAddedArtists()
+        let genres = library.topGenres()
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
@@ -29,18 +38,46 @@ struct HomeView: View {
                 } else if counts.isLoaded && counts.value.albums == 0 && counts.value.songs == 0 && !app.syncStatus.isSyncing {
                     emptyLibraryState
                 } else {
+                    if !topPicks.value.isEmpty {
+                        topPicksShelf(topPicks.value)
+                    }
+
                     upNextShelf
+
+                    if !continueListening.value.isEmpty {
+                        SongColumnsShelf(title: "Continue Listening", songs: continueListening.value, route: .songList(.recentlyPlayed))
+                    }
 
                     if !recent.value.isEmpty {
                         albumShelf(title: "Recently Played", items: recent.value, route: .albumList(.recentlyPlayed))
+                    }
+
+                    if !listenAgain.value.isEmpty {
+                        albumShelf(title: "Listen Again", items: listenAgain.value, route: .albumList(.listenAgain))
                     }
 
                     if !newest.value.isEmpty {
                         albumShelf(title: "Recently Added", items: newest.value, route: .albumList(.recentlyAdded))
                     }
 
+                    if !onThisDay.value.isEmpty {
+                        albumShelf(title: "On This Day", subtitle: "Played or added on \(Date().formatted(.dateTime.month(.wide).day())) in years past", items: onThisDay.value, route: nil)
+                    }
+
+                    if !rediscover.value.isEmpty {
+                        albumShelf(title: "Rediscover", subtitle: "Favorites you haven’t played in a while", items: rediscover.value, route: .albumList(.rediscover))
+                    }
+
                     if !frequent.value.isEmpty {
                         albumShelf(title: "Most Played", items: frequent.value, route: .albumList(.frequentlyPlayed))
+                    }
+
+                    if !newArtists.value.isEmpty {
+                        artistsShelf(newArtists.value)
+                    }
+
+                    ForEach(genres.value) { genre in
+                        GenreShelf(genre: genre.value)
                     }
 
                     if !starred.value.isEmpty {
@@ -66,6 +103,11 @@ struct HomeView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 toolbarMenu
             }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            ToolbarItem(placement: .topBarTrailing) {
+                AccountAvatarMenu()
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
         .refreshable {
             await app.pullToRefresh()
@@ -78,6 +120,13 @@ struct HomeView: View {
         .observing(random)
         .observing(playlists)
         .observing(counts)
+        .observing(continueListening)
+        .observing(topPicks)
+        .observing(listenAgain)
+        .observing(rediscover)
+        .observing(onThisDay)
+        .observing(newArtists)
+        .observing(genres)
     }
 
     // MARK: - Sync Banner
@@ -86,49 +135,58 @@ struct HomeView: View {
         app.syncStatus.isSyncing && (app.syncStatus.isInitialSync || (counts.isLoaded && counts.value.albums == 0 && counts.value.songs == 0))
     }
 
-    @ViewBuilder
     private var syncBanner: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(app.syncStatus.phase.isEmpty ? "Syncing library..." : app.syncStatus.phase)
-                    .font(.kmTileSubtitle)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(app.syncStatus.phase.isEmpty ? "Syncing library…" : app.syncStatus.phase)
+                    .font(.subheadline)
                     .foregroundStyle(Theme.secondaryLabel)
                     .lineLimit(1)
                 Spacer()
                 if app.syncStatus.fraction > 0 {
-                    Text("\(Int(app.syncStatus.fraction * 100))%")
-                        .font(.kmTileSubtitle.monospacedDigit())
+                    Text(app.syncStatus.fraction, format: .percent.precision(.fractionLength(0)))
+                        .font(.subheadline.monospacedDigit())
                         .foregroundStyle(Theme.tertiaryLabel)
+                        .contentTransition(.numericText())
                 }
             }
-            ProgressView(value: app.syncStatus.fraction > 0 ? app.syncStatus.fraction : nil)
-                .tint(Theme.accent)
+            if app.syncStatus.fraction > 0 {
+                ProgressView(value: app.syncStatus.fraction)
+                    .tint(Theme.accent)
+            }
         }
         .padding(.horizontal, Theme.margin)
-        .padding(.vertical, 10)
-        .background(Color(uiColor: .systemGray6).opacity(0.4))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .padding(.horizontal, Theme.margin)
+        .animation(.smooth, value: app.syncStatus.fraction)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Top Picks
+
+    private func topPicksShelf(_ albums: [Album]) -> some View {
+        let width: CGFloat = sizeClass == .regular ? 300 : 250
+        return ShelfSection(title: "Top Picks for You", items: albums, tileWidth: width) { album in
+            NavigationLink(value: Route.album(album.id)) {
+                TopPickCard(album: album, reason: topPickReason(album), width: width)
+            }
+            .buttonStyle(.plain)
+            .contextMenu { AlbumContextMenu(album: album) }
+        }
+        .scrollClipDisabled()
+    }
+
+    private func topPickReason(_ album: Album) -> String {
+        if album.starred != nil { return "From your favorites" }
+        if let artist = album.artist { return "Because you play \(artist)" }
+        return "Picked for you"
     }
 
     // MARK: - Up Next Shelf
 
     @ViewBuilder
     private var upNextShelf: some View {
-        if player.upcoming.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Up Next", action: {
-                    ui?.playerPanel = .queue
-                    ui?.isPlayerPresented = true
-                })
-                .padding(.horizontal, Theme.margin)
-
-                Text("No items available...")
-                    .font(.kmTileTitle)
-                    .foregroundStyle(Theme.secondaryLabel)
-                    .padding(.horizontal, Theme.margin)
-            }
-        } else {
+        if !player.upcoming.isEmpty {
             ShelfSection(title: "Up Next", items: player.upcoming, onHeaderTap: {
                 ui?.playerPanel = .queue
                 ui?.isPlayerPresented = true
@@ -150,10 +208,10 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Album Shelf
+    // MARK: - Shelves
 
-    private func albumShelf(title: String, items: [Album], route: Route) -> some View {
-        ShelfSection(title: title, items: items, onHeaderTap: {}) { album in
+    private func albumShelf(title: String, subtitle: String? = nil, items: [Album], route: Route?) -> some View {
+        ShelfSection(title: title, subtitle: subtitle, items: items, headerRoute: route) { album in
             NavigationLink(value: Route.album(album.id)) {
                 AlbumTile(album: album)
             }
@@ -163,38 +221,26 @@ struct HomeView: View {
             }
         }
         .scrollClipDisabled()
-        .overlay(alignment: .top) {
-            NavigationLink(value: route) {
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title)
-        }
     }
 
-    // MARK: - Playlists Shelf
+    private func artistsShelf(_ artists: [Artist]) -> some View {
+        ShelfSection(title: "Recently Added Artists", items: artists, headerRoute: .artists, tileWidth: sizeClass == .regular ? 160 : 120) { artist in
+            NavigationLink(value: Route.artist(artist.id)) {
+                AlbumTile(coverArt: artist.coverArt, title: artist.name, isCircle: true)
+            }
+            .buttonStyle(.plain)
+        }
+        .scrollClipDisabled()
+    }
 
     private func playlistsShelf(playlists: [Playlist]) -> some View {
-        ShelfSection(title: "Playlists", items: playlists, onHeaderTap: {}) { playlist in
+        ShelfSection(title: "Playlists", items: playlists, headerRoute: .playlists) { playlist in
             NavigationLink(value: Route.playlist(playlist.id)) {
                 PlaylistTile(playlist: playlist)
             }
             .buttonStyle(.plain)
         }
         .scrollClipDisabled()
-        .overlay(alignment: .top) {
-            NavigationLink(value: Route.playlists) {
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Playlists")
-        }
     }
 
     // MARK: - Loading & Empty States
@@ -202,13 +248,6 @@ struct HomeView: View {
     @ViewBuilder
     private var loadingSkeletons: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SectionHeader(title: "Up Next")
-                .padding(.horizontal, Theme.margin)
-            Text("No items available...")
-                .font(.kmTileTitle)
-                .foregroundStyle(Theme.secondaryLabel)
-                .padding(.horizontal, Theme.margin)
-
             SectionHeader(title: "Recently Added")
                 .padding(.horizontal, Theme.margin)
             SkeletonTileGrid(count: 4)
@@ -255,9 +294,7 @@ struct HomeView: View {
                 Label("Refresh Library", systemImage: "arrow.clockwise")
             }
         } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.system(size: 20))
-                .foregroundStyle(Theme.label)
+            Image(systemName: "ellipsis")
         }
     }
 

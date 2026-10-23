@@ -47,6 +47,7 @@ struct AdaptiveAlbumGrid<Item: Identifiable, Content: View>: View {
     var content: (Item) -> Content
 
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.displayScale) private var displayScale
 
     init(items: [Item], spacing: CGFloat = 16, @ViewBuilder content: @escaping (Item) -> Content) {
         self.items = items
@@ -57,7 +58,12 @@ struct AdaptiveAlbumGrid<Item: Identifiable, Content: View>: View {
     var body: some View {
         let minimum: CGFloat = sizeClass == .regular ? 190 : 160
         LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: spacing, alignment: .top)], alignment: .leading, spacing: 20) {
-            ForEach(items) { item in content(item) }
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                content(item)
+                    .onAppear {
+                        ArtworkPrefetch.ahead(of: index, in: items, pointSize: 200, scale: displayScale)
+                    }
+            }
         }
         .padding(.horizontal, Theme.margin)
     }
@@ -66,28 +72,54 @@ struct AdaptiveAlbumGrid<Item: Identifiable, Content: View>: View {
 /// "Recently Played ›" header + horizontally snapping shelf of tiles (150pt iPhone / 200pt iPad).
 struct ShelfSection<Item: Identifiable, Content: View>: View {
     var title: String
+    var subtitle: String?
     var items: [Item]
+    var headerRoute: Route?
     var onHeaderTap: (() -> Void)?
+    var tileWidth: CGFloat?
     var content: (Item) -> Content
 
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.displayScale) private var displayScale
 
-    init(title: String, items: [Item], onHeaderTap: (() -> Void)? = nil, @ViewBuilder content: @escaping (Item) -> Content) {
+    init(
+        title: String,
+        subtitle: String? = nil,
+        items: [Item],
+        headerRoute: Route? = nil,
+        onHeaderTap: (() -> Void)? = nil,
+        tileWidth: CGFloat? = nil,
+        @ViewBuilder content: @escaping (Item) -> Content
+    ) {
         self.title = title
+        self.subtitle = subtitle
         self.items = items
+        self.headerRoute = headerRoute
         self.onHeaderTap = onHeaderTap
+        self.tileWidth = tileWidth
         self.content = content
     }
 
     var body: some View {
-        let tileWidth: CGFloat = sizeClass == .regular ? 200 : 150
+        let width: CGFloat = tileWidth ?? (sizeClass == .regular ? 200 : 150)
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: title, action: onHeaderTap)
-                .padding(.horizontal, Theme.margin)
+            VStack(alignment: .leading, spacing: 2) {
+                SectionHeader(title: title, route: headerRoute, action: onHeaderTap)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.kmTileSubtitle)
+                        .foregroundStyle(Theme.secondaryLabel)
+                }
+            }
+            .padding(.horizontal, Theme.margin)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) {
-                    ForEach(items) { item in
-                        content(item).frame(width: tileWidth)
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        content(item)
+                            .frame(width: width)
+                            .onAppear {
+                                ArtworkPrefetch.ahead(of: index, in: items, pointSize: width, scale: displayScale)
+                            }
                     }
                 }
                 .scrollTargetLayout()
@@ -101,15 +133,20 @@ struct ShelfSection<Item: Identifiable, Content: View>: View {
 /// 22pt bold title, with a chevron when tappable.
 struct SectionHeader: View {
     var title: String
+    var route: Route?
     var action: (() -> Void)?
 
-    init(title: String, action: (() -> Void)? = nil) {
+    init(title: String, route: Route? = nil, action: (() -> Void)? = nil) {
         self.title = title
+        self.route = route
         self.action = action
     }
 
     var body: some View {
-        if let action {
+        if let route {
+            NavigationLink(value: route) { label(showsChevron: true) }
+                .buttonStyle(.plain)
+        } else if let action {
             Button(action: action) { label(showsChevron: true) }
                 .buttonStyle(.plain)
         } else {

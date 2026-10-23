@@ -22,10 +22,12 @@ enum Route: Hashable {
 
 /// Album grids reachable from the sidebar / home shelves ("Recently Played ›").
 enum AlbumListKind: String, Hashable, CaseIterable {
-    case recentlyPlayed, recentlyAdded, frequentlyPlayed, random, favorites
+    case recentlyPlayed, recentlyAdded, frequentlyPlayed, random, favorites, rediscover, listenAgain
 
     var title: String {
         switch self {
+        case .rediscover: "Rediscover"
+        case .listenAgain: "Listen Again"
         case .recentlyPlayed: "Recently Played"
         case .recentlyAdded: "Recently Added"
         case .frequentlyPlayed: "Frequently Played"
@@ -36,10 +38,11 @@ enum AlbumListKind: String, Hashable, CaseIterable {
 }
 
 enum SongListKind: String, Hashable, CaseIterable {
-    case favorites, downloaded, recentlyAdded
+    case favorites, downloaded, recentlyAdded, recentlyPlayed
 
     var title: String {
         switch self {
+        case .recentlyPlayed: "Continue Listening"
         case .favorites: "Favorite Songs"
         case .downloaded: "Downloaded Songs"
         case .recentlyAdded: "Recently Added Songs"

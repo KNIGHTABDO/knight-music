@@ -34,6 +34,25 @@ struct Album: Codable, Hashable, Identifiable, FetchableRecord, PersistableRecor
     var userRating: Int?
     var sortName: String?
     var isCompilation: Bool?
+    var recordLabels: [RecordLabel]?
+    var releaseDate: ItemDate?
+}
+
+/// OpenSubsonic `recordLabels` entry.
+struct RecordLabel: Codable, Hashable, Sendable {
+    var name: String
+}
+
+/// OpenSubsonic `ItemDate` (any part may be missing).
+struct ItemDate: Codable, Hashable, Sendable {
+    var year: Int?
+    var month: Int?
+    var day: Int?
+
+    var date: Date? {
+        guard let year else { return nil }
+        return Calendar(identifier: .gregorian).date(from: DateComponents(year: year, month: month ?? 1, day: day ?? 1))
+    }
 }
 
 struct Song: Codable, Hashable, Identifiable, FetchableRecord, PersistableRecord {
@@ -66,6 +85,8 @@ struct Song: Codable, Hashable, Identifiable, FetchableRecord, PersistableRecord
     var sortName: String?
     var displayComposer: String?
     var replayGain: ReplayGain?
+    var bitDepth: Int?
+    var channelCount: Int?
 
     var durationSeconds: TimeInterval { TimeInterval(duration ?? 0) }
 }

@@ -302,6 +302,25 @@ final class LibraryDatabase: @unchecked Sendable {
             END;
             """)
         }
+        migrator.registerMigration("v2-details-history") { db in
+            try db.execute(sql: """
+            ALTER TABLE song ADD COLUMN bitDepth INTEGER;
+            ALTER TABLE song ADD COLUMN channelCount INTEGER;
+            ALTER TABLE album ADD COLUMN recordLabels TEXT;
+            ALTER TABLE album ADD COLUMN releaseDate TEXT;
+            CREATE TABLE playEvent (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                songId TEXT NOT NULL,
+                playedAt DATETIME NOT NULL
+            );
+            CREATE INDEX playEvent_playedAt ON playEvent(playedAt);
+            CREATE INDEX playEvent_songId ON playEvent(songId);
+            CREATE TABLE recentSearch (
+                text TEXT PRIMARY KEY NOT NULL COLLATE NOCASE,
+                searchedAt DATETIME NOT NULL
+            );
+            """)
+        }
         return migrator
     }
 }
