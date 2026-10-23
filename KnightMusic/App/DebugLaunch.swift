@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import UIKit
 import SwiftUI
 
 /// Screenshot mode for CI (scripts/screens.sh): `-KMDemo YES -KMScreen <name>`.
@@ -7,6 +8,18 @@ import SwiftUI
 enum DebugLaunch {
     static var isDemo: Bool { UserDefaults.standard.bool(forKey: "KMDemo") }
     static var screen: String? { UserDefaults.standard.string(forKey: "KMScreen") }
+    /// `-KMOrientation landscape` rotates the window (simctl cannot rotate a simulator).
+    static var orientation: String? { UserDefaults.standard.string(forKey: "KMOrientation") }
+
+    @MainActor
+    private static func applyRequestedOrientation() {
+        guard orientation == "landscape" else { return }
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight)) { error in
+                Log.app.error("landscape request failed: \(error)")
+            }
+        }
+    }
 
     static let demoServer = URL(string: "https://demo.navidrome.org")!
     static let demoUser = "demo"
@@ -40,6 +53,7 @@ enum DebugLaunch {
         nav: TabNavigationModel,
         isRegular: Bool
     ) async {
+        applyRequestedOrientation()
         switch screen {
         case "home":
             ui.selectedTab = .home

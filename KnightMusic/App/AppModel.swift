@@ -126,6 +126,12 @@ final class AppModel {
 
     /// Entry point for BGAppRefreshTask; may run before any UI exists.
     func performBackgroundSync() async -> Bool {
+        // A background launch can fire the task before the session finished opening the library.
+        startIfNeeded()
+        for _ in 0..<50 where session != .ready {
+            if case .loggedOut = session, accounts.active == nil { return false }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
         guard session == .ready, let engine = syncEngine else { return false }
         await reresolveAddress()
         guard network.isConnected else { return false }

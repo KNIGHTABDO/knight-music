@@ -125,6 +125,7 @@ struct MainTabsView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         .defaultAdaptableTabBarPlacement(.sidebar)
+        .background(SidebarOrientationAdapter())
         .tabViewCustomization($customization)
         .tabBarMinimizeBehavior(.onScrollDown)
         .tabViewSidebarHeader {

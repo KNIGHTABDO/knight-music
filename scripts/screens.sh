@@ -7,6 +7,7 @@ set -uo pipefail
 APP="$1"; OUT="$2"; mkdir -p "$OUT"
 BUNDLE=com.knightabdo.knightmusic
 SCREENS=(home search artists albums songs playlists album artist player lyrics queue settings server downloads onboarding knight)
+LANDSCAPE=(home albums artists album player)   # iPad only, rotated by the app (-KMOrientation landscape)
 
 
 pick() { xcrun simctl list devices available -j | python3 -c "
@@ -30,6 +31,14 @@ run_device() {
     sleep 9
     xcrun simctl io "$udid" screenshot "$OUT/${label}-${s}.png" >/dev/null 2>&1 && echo "shot $label-$s"
   done
+  if [ "$label" = ipad ]; then
+    for s in "${LANDSCAPE[@]}"; do
+      xcrun simctl terminate "$udid" $BUNDLE 2>/dev/null
+      xcrun simctl launch "$udid" $BUNDLE -KMDemo YES -KMScreen "$s" -KMOrientation landscape >/dev/null
+      sleep 11
+      xcrun simctl io "$udid" screenshot "$OUT/${label}-land-${s}.png" >/dev/null 2>&1 && echo "shot $label-land-$s"
+    done
+  fi
   xcrun simctl spawn "$udid" log show --last 6m --predicate 'subsystem == "com.knightabdo.knightmusic"' --style compact > "$OUT/${label}-log.txt" 2>/dev/null || true
   xcrun simctl shutdown "$udid"
 }
