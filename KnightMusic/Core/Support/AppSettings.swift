@@ -63,6 +63,9 @@ final class AppSettings {
     /// Preset id from `Equalizer.presets`, or "custom".
     var eqPreset: String { didSet { save(eqPreset, "eqPreset") } }
     var eqGains: [Double] { didSet { save(eqGains, "eqGains") } }
+    var downloadOverCellular: Bool { didSet { save(downloadOverCellular, "downloadOverCellular") } }
+    var autoDownloadFavorites: Bool { didSet { save(autoDownloadFavorites, "autoDownloadFavorites") } }
+    var autoDownloadPlaylistIds: [String] { didSet { save(autoDownloadPlaylistIds, "autoDownloadPlaylistIds") } }
 
     init() {
         let d = UserDefaults.standard
@@ -95,6 +98,9 @@ final class AppSettings {
         eqEnabled = bool("eqEnabled", false)
         eqPreset = string("eqPreset", "flat")
         let storedGains = d.array(forKey: "eqGains") as? [Double] ?? []
+        downloadOverCellular = bool("downloadOverCellular", true)
+        autoDownloadFavorites = bool("autoDownloadFavorites", false)
+        autoDownloadPlaylistIds = d.stringArray(forKey: "autoDownloadPlaylistIds") ?? []
         eqGains = storedGains.count == Equalizer.frequencies.count ? storedGains : Equalizer.flat
     }
 

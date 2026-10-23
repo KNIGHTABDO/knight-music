@@ -24,6 +24,7 @@ final class AppModel {
     let hermes = HermesService()
     let updates = UpdateChecker()
     @ObservationIgnored private var autoMixShowcase: AutoMixShowcase?
+    let autoDownloader = AutoDownloader()
 
     private(set) var session: SessionState = .loggedOut
 

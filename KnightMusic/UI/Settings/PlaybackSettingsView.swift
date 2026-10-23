@@ -50,6 +50,12 @@ struct PlaybackSettingsView: View {
                         Text(formatTitle(format)).tag(format)
                     }
                 }
+
+                Toggle("Download over Cellular", isOn: $settings.downloadOverCellular)
+                    .tint(Theme.accent)
+
+                Toggle("Download Favourite Songs", isOn: $settings.autoDownloadFavorites)
+                    .tint(Theme.accent)
             }
 
             Section {

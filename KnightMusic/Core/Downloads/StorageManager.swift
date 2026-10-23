@@ -5,6 +5,7 @@ struct AlbumStorage: Identifiable, Hashable {
     var albumId: String
     var albumName: String?
     var artist: String?
+    var coverArt: String?
     var songCount: Int
     var bytes: Int
     var id: String { albumId }
@@ -43,7 +44,7 @@ final class StorageManager {
         do {
             return try await database.read { db in
                 let rows = try Row.fetchAll(db, sql: """
-                    SELECT song.albumId AS albumId, MAX(song.album) AS album, MAX(song.artist) AS artist,
+                    SELECT song.albumId AS albumId, MAX(song.album) AS album, MAX(song.artist) AS artist, MAX(song.coverArt) AS coverArt,
                            COUNT(*) AS songs, SUM(download.bytes) AS bytes
                     FROM download JOIN song ON song.id = download.songId
                     WHERE download.state = 'completed' AND song.albumId IS NOT NULL
@@ -52,7 +53,7 @@ final class StorageManager {
                 return rows.compactMap { row -> AlbumStorage? in
                     guard let albumId: String = row["albumId"] else { return nil }
                     return AlbumStorage(albumId: albumId, albumName: row["album"], artist: row["artist"],
-                                        songCount: row["songs"] ?? 0, bytes: row["bytes"] ?? 0)
+                                        coverArt: row["coverArt"], songCount: row["songs"] ?? 0, bytes: row["bytes"] ?? 0)
                 }
             }
         } catch {

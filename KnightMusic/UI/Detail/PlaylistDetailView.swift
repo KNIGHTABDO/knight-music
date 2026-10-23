@@ -17,6 +17,19 @@ struct PlaylistDetailView: View {
     @State private var newPlaylistName = ""
     @State private var showingDeleteConfirmation = false
 
+    /// Keeps this playlist downloaded, including songs added later (see `AutoDownloader`).
+    private var autoDownloadBinding: Binding<Bool> {
+        Binding(
+            get: { app.settings.autoDownloadPlaylistIds.contains(playlistId) },
+            set: { isOn in
+                app.settings.autoDownloadPlaylistIds.removeAll { $0 == playlistId }
+                if isOn { app.settings.autoDownloadPlaylistIds.append(playlistId) }
+                Haptics.selection()
+                ui.showToast(isOn ? "Playlist Will Stay Downloaded" : "Automatic Downloads Off")
+            }
+        )
+    }
+
     var body: some View {
         let playlistQuery = library.playlist(id: playlistId)
         let songsQuery = library.playlistSongs(id: playlistId)
@@ -305,6 +318,10 @@ struct PlaylistDetailView: View {
                     ui.showToast("Downloading Playlist")
                 } label: {
                     Label("Download All", systemImage: "arrow.down.circle")
+                }
+
+                Toggle(isOn: autoDownloadBinding) {
+                    Label("Download Automatically", systemImage: "arrow.down.circle.dotted")
                 }
 
                 Divider()

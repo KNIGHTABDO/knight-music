@@ -104,7 +104,9 @@ struct StorageView: View {
                         .foregroundStyle(Theme.secondaryLabel)
                 } else {
                     ForEach(albumBreakdown) { item in
-                        HStack {
+                        HStack(spacing: 12) {
+                            ArtworkView(coverArt: item.coverArt, pointSize: 44, cornerRadius: 6)
+                                .frame(width: 44, height: 44)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.albumName ?? "Unknown Album")
                                     .font(.kmRowTitle)

@@ -115,6 +115,7 @@ extension AppModel {
             s.playbackSpeed = Float(self.settings.playbackSpeed)
             s.eqEnabled = self.settings.eqEnabled
             s.eqGains = self.settings.eqGains.map { Float($0) }
+            s.downloadOnCellular = self.settings.downloadOverCellular
             return s
         }
 
@@ -157,9 +158,15 @@ extension AppModel {
                 app.lastConfiguredDatabaseId = nil
             }
             app.player.servicesDidChange()
+            app.updateAutoDownloads()
         }
 
         observeSettings()
+    }
+
+    func updateAutoDownloads() {
+        autoDownloader.update(database: database, downloads: downloads,
+                              favorites: settings.autoDownloadFavorites, playlistIds: settings.autoDownloadPlaylistIds)
     }
 
     private func observeSettings() {
@@ -183,10 +190,15 @@ extension AppModel {
             _ = settings.playbackSpeed
             _ = settings.eqEnabled
             _ = settings.eqGains
+            _ = settings.downloadOverCellular
+            _ = settings.autoDownloadFavorites
+            _ = settings.autoDownloadPlaylistIds
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.player.settingsDidChange()
+                self.downloads.networkDidChange()
+                self.updateAutoDownloads()
                 self.observeSettings()
             }
         }
