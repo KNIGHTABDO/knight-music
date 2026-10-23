@@ -144,18 +144,25 @@ final class NowPlayingCenter {
     /// Nonisolated so the request handler carries no main-actor isolation: MediaPlayer calls it on a background
     /// queue (CarPlay, lock screen), where an inherited isolation check traps.
     private nonisolated static func makeArtwork(image: UIImage) -> MPMediaItemArtwork {
-        MPMediaItemArtwork(boundsSize: image.size) { requestedSize in
+        let source = standardBitmap(image, size: image.size)
+        return MPMediaItemArtwork(boundsSize: source.size) { requestedSize in
             Log.artwork.info("Now Playing artwork requested at \(requestedSize.width)x\(requestedSize.height)")
-            guard requestedSize.width > 0, requestedSize.height > 0 else { return image }
-            if requestedSize.width >= image.size.width && requestedSize.height >= image.size.height {
-                return image
-            }
-            let format = UIGraphicsImageRendererFormat.default()
-            format.scale = image.scale
-            let renderer = UIGraphicsImageRenderer(size: requestedSize, format: format)
-            return renderer.image { _ in
-                image.draw(in: CGRect(origin: .zero, size: requestedSize))
-            }
+            guard requestedSize.width > 0, requestedSize.height > 0,
+                  requestedSize.width < source.size.width || requestedSize.height < source.size.height else { return source }
+            return standardBitmap(source, size: requestedSize)
+        }
+    }
+
+    /// Redraws into an 8-bit sRGB bitmap at scale 1. Decoded covers can be wide-gamut or extended-range, which
+    /// the Now Playing XPC transfer to CarPlay and the lock screen does not always carry.
+    private nonisolated static func standardBitmap(_ image: UIImage, size: CGSize) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        format.preferredRange = .standard
+        let pixels = CGSize(width: (size.width * image.scale).rounded(), height: (size.height * image.scale).rounded())
+        return UIGraphicsImageRenderer(size: pixels, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: pixels))
         }
     }
 }
