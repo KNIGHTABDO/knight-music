@@ -13,15 +13,27 @@ struct SearchView: View {
     @State private var searchResults: SearchResults? = nil
     @State private var isSearching = false
     @State private var recentSearches: [String] = []
+    @State private var scope: SearchScope = .top
+
+    enum SearchScope: String, CaseIterable, Identifiable {
+        case top = "Top Results"
+        case artists = "Artists"
+        case albums = "Albums"
+        case songs = "Songs"
+        case playlists = "Playlists"
+        var id: String { rawValue }
+    }
 
     var body: some View {
+        let playlistsQuery = library.playlists()
+        let matchedPlaylists = matchingPlaylists(playlistsQuery.value)
         ScrollView {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
             if trimmed.isEmpty {
                 emptyQueryView
             } else if let results = searchResults {
-                if results.isEmpty && !isSearching {
+                if isEmpty(results, playlists: matchedPlaylists) && !isSearching {
                     VStack(spacing: 24) {
                         EmptyStateView(
                             title: "No Results",
@@ -35,7 +47,7 @@ struct SearchView: View {
                     }
                     .padding(.top, 80)
                 } else {
-                    resultsView(results: results)
+                    resultsView(results: results, playlists: matchedPlaylists)
                 }
             } else {
                 SkeletonRowList(count: 6)
@@ -47,7 +59,14 @@ struct SearchView: View {
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, prompt: "Search library...")
+        .searchable(text: $query, prompt: "Artists, Albums, Songs and More")
+        .searchScopes($scope, activation: .onSearchPresentation) {
+            ForEach(SearchScope.allCases) { scope in
+                Text(scope.rawValue).tag(scope)
+            }
+        }
+        .sensoryFeedback(.selection, trigger: scope)
+        .observing(playlistsQuery)
         .onSubmit(of: .search) {
             addRecentSearch(query)
         }
@@ -103,14 +122,7 @@ struct SearchView: View {
 
     @ViewBuilder
     private var emptyQueryView: some View {
-        VStack(spacing: 24) {
-            EmptyStateView(
-                title: "Search Library",
-                systemImage: "magnifyingglass",
-                message: "Search for artists, albums, or songs in your library."
-            )
-            .padding(.top, recentSearches.isEmpty ? 80 : 20)
-
+        VStack(alignment: .leading, spacing: 28) {
             if !recentSearches.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
@@ -129,6 +141,7 @@ struct SearchView: View {
                     VStack(spacing: 0) {
                         ForEach(recentSearches, id: \.self) { term in
                             Button {
+                                Haptics.selection()
                                 query = term
                             } label: {
                                 HStack(spacing: 12) {
@@ -149,35 +162,71 @@ struct SearchView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    removeRecentSearch(term)
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
+                            }
 
                             Divider().padding(.leading, Theme.margin + 28)
                         }
                     }
                 }
-                .padding(.top, 10)
             }
+
+            GenreBrowseGrid()
         }
+        .padding(.vertical, 16)
     }
 
     // MARK: - Results View
 
+    private func isEmpty(_ results: SearchResults, playlists: [Playlist]) -> Bool {
+        switch scope {
+        case .top: results.isEmpty && playlists.isEmpty
+        case .artists: results.artists.isEmpty
+        case .albums: results.albums.isEmpty
+        case .songs: results.songs.isEmpty
+        case .playlists: playlists.isEmpty
+        }
+    }
+
+    private func matchingPlaylists(_ all: [Playlist]) -> [Playlist] {
+        let q = debouncedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return all.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
     @ViewBuilder
-    private func resultsView(results: SearchResults) -> some View {
+    private func resultsView(results: SearchResults, playlists: [Playlist]) -> some View {
         LazyVStack(alignment: .leading, spacing: 28) {
-            if let hit = topHit {
-                topHitSection(hit)
-            }
-
-            if !displayArtists.isEmpty {
-                artistsSection(displayArtists)
-            }
-
-            if !displayAlbums.isEmpty {
-                albumsSection(displayAlbums)
-            }
-
-            if !results.songs.isEmpty {
-                songsSection(results.songs)
+            switch scope {
+            case .top:
+                if let hit = topHit {
+                    topHitSection(hit)
+                }
+                if !displayArtists.isEmpty {
+                    artistsSection(displayArtists)
+                }
+                if !displayAlbums.isEmpty {
+                    albumsSection(displayAlbums)
+                }
+                if !results.songs.isEmpty {
+                    songsSection(Array(results.songs.prefix(10)), title: "Songs", showsMore: results.songs.count > 10)
+                }
+                if !playlists.isEmpty {
+                    playlistsList(Array(playlists.prefix(5)))
+                }
+            case .artists:
+                artistsList(results.artists)
+            case .albums:
+                albumsGrid(results.albums)
+            case .songs:
+                songsSection(results.songs, title: nil, showsMore: false)
+            case .playlists:
+                playlistsList(playlists)
             }
 
             if hermes?.settings.isConfigured == true {
@@ -186,6 +235,67 @@ struct SearchView: View {
             }
         }
         .padding(.vertical, 16)
+        .animation(.smooth(duration: 0.2), value: scope)
+    }
+
+    // MARK: - Scoped Lists
+
+    @ViewBuilder
+    private func artistsList(_ artists: [Artist]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(artists) { artist in
+                NavigationLink(value: Route.artist(artist.id)) {
+                    ArtistRow(artist: artist)
+                        .padding(.horizontal, Theme.margin)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { addRecentSearch(debouncedQuery) })
+                Divider().padding(.leading, Theme.margin + 68)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func albumsGrid(_ albums: [Album]) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 210), spacing: 16)], spacing: 20) {
+            ForEach(albums) { album in
+                NavigationLink(value: Route.album(album.id)) {
+                    AlbumTile(album: album)
+                }
+                .buttonStyle(.plain)
+                .contextMenu { AlbumContextMenu(album: album) }
+                .simultaneousGesture(TapGesture().onEnded { addRecentSearch(debouncedQuery) })
+            }
+        }
+        .padding(.horizontal, Theme.margin)
+    }
+
+    @ViewBuilder
+    private func playlistsList(_ playlists: [Playlist]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if scope == .top {
+                SectionHeader(title: "Playlists", action: { scope = .playlists })
+                    .padding(.horizontal, Theme.margin)
+                    .padding(.bottom, 6)
+            }
+            ForEach(playlists) { playlist in
+                NavigationLink(value: Route.playlist(playlist.id)) {
+                    PlaylistRow(
+                        name: playlist.name,
+                        coverArts: [playlist.coverArt],
+                        songCount: playlist.songCount ?? 0,
+                        duration: TimeInterval(playlist.duration ?? 0)
+                    )
+                    .padding(.horizontal, Theme.margin)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { addRecentSearch(debouncedQuery) })
+            }
+        }
     }
 
     // MARK: - Top Hit Logic
@@ -375,11 +485,13 @@ struct SearchView: View {
     // MARK: - Songs Section
 
     @ViewBuilder
-    private func songsSection(_ songs: [Song]) -> some View {
+    private func songsSection(_ songs: [Song], title: String?, showsMore: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            SectionHeader(title: "Songs")
-                .padding(.horizontal, Theme.margin)
-                .padding(.bottom, 6)
+            if let title {
+                SectionHeader(title: title, action: showsMore ? { scope = .songs } : nil)
+                    .padding(.horizontal, Theme.margin)
+                    .padding(.bottom, 6)
+            }
 
             ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                 Button {
@@ -427,6 +539,11 @@ struct SearchView: View {
         }
         recentSearches = current
         UserDefaults.standard.set(current, forKey: "recent_searches")
+    }
+
+    private func removeRecentSearch(_ term: String) {
+        recentSearches.removeAll { $0 == term }
+        UserDefaults.standard.set(recentSearches, forKey: "recent_searches")
     }
 
     private func clearRecentSearches() {
