@@ -57,6 +57,12 @@ final class AppSettings {
     var syncPlayQueueWithServer: Bool { didSet { save(syncPlayQueueWithServer, "syncPlayQueueWithServer") } }
     var showRatings: Bool { didSet { save(showRatings, "showRatings") } }
     var saveAheadMode: SaveAheadMode { didSet { save(saveAheadMode.rawValue, "saveAheadMode") } }
+    var crossfadeSeconds: Int { didSet { save(crossfadeSeconds, "crossfadeSeconds") } }
+    var playbackSpeed: Double { didSet { save(playbackSpeed, "playbackSpeed") } }
+    var eqEnabled: Bool { didSet { save(eqEnabled, "eqEnabled") } }
+    /// Preset id from `Equalizer.presets`, or "custom".
+    var eqPreset: String { didSet { save(eqPreset, "eqPreset") } }
+    var eqGains: [Double] { didSet { save(eqGains, "eqGains") } }
 
     init() {
         let d = UserDefaults.standard
@@ -84,6 +90,12 @@ final class AppSettings {
         syncPlayQueueWithServer = bool("syncPlayQueueWithServer", true)
         showRatings = bool("showRatings", true)
         saveAheadMode = SaveAheadMode(rawValue: string("saveAheadMode", "")) ?? .off
+        crossfadeSeconds = int("crossfadeSeconds", 0)
+        playbackSpeed = d.object(forKey: "playbackSpeed") as? Double ?? 1
+        eqEnabled = bool("eqEnabled", false)
+        eqPreset = string("eqPreset", "flat")
+        let storedGains = d.array(forKey: "eqGains") as? [Double] ?? []
+        eqGains = storedGains.count == Equalizer.frequencies.count ? storedGains : Equalizer.flat
     }
 
     /// Parameters for `SubsonicClient.streamURL` given the current network class.

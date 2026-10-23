@@ -111,6 +111,10 @@ extension AppModel {
             s.streamCacheLimitMB = self.settings.streamCacheLimitMB
             s.serverQueueSyncEnabled = self.settings.syncPlayQueueWithServer
             s.saveAheadMode = SaveAheadMode(rawValue: self.settings.saveAheadMode.rawValue) ?? .off
+            s.crossfadeSeconds = self.settings.crossfadeSeconds
+            s.playbackSpeed = Float(self.settings.playbackSpeed)
+            s.eqEnabled = self.settings.eqEnabled
+            s.eqGains = self.settings.eqGains.map { Float($0) }
             return s
         }
 
@@ -175,6 +179,10 @@ extension AppModel {
             _ = settings.scrobblingEnabled
             _ = settings.syncPlayQueueWithServer
             _ = settings.saveAheadMode
+            _ = settings.crossfadeSeconds
+            _ = settings.playbackSpeed
+            _ = settings.eqEnabled
+            _ = settings.eqGains
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }

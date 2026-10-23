@@ -83,6 +83,8 @@ struct PlaybackSettingsSheet: View {
                     Text("Beat-matched transitions between songs, like a DJ.")
                 }
 
+                AudioEffectsSection()
+
                 Section {
                     Toggle("Gapless Playback", isOn: gaplessBinding)
 

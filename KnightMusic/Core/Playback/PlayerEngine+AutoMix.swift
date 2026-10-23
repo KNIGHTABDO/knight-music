@@ -73,7 +73,11 @@ extension PlayerEngine {
         autoMixPlanTask?.cancel()
         plannedMix = nil
         autoMixNote = nil
-        guard settings.autoMix, let tracked, !tracked.isRadio, currentRadio == nil else { return }
+        guard settings.autoMix || settings.crossfadeSeconds > 0, let tracked, !tracked.isRadio, currentRadio == nil else { return }
+        guard !settings.speedChanged else {
+            autoMixNote = "Transitions are off while the playback speed is changed"
+            return
+        }
         guard repeatMode != .one, !endOfSongArmed else {
             autoMixNote = repeatMode == .one ? "Repeat One is on" : "Sleep timer ends after this song"
             return
@@ -82,15 +86,19 @@ extension PlayerEngine {
             autoMixNote = "AutoMix pauses while playing to AirPlay"
             return
         }
-        guard let provider = services.autoMix else {
-            autoMixNote = "Connect to your server to use AutoMix"
-            return
-        }
         guard let index = naturalNextIndex(), order.indices.contains(index), order[index].id != tracked.entry.id else {
             autoMixNote = "Nothing up next"
             return
         }
         let target = order[index]
+        guard settings.autoMix else {
+            installPlan(crossfadePlan(from: tracked, seconds: Double(settings.crossfadeSeconds)), trackedEntry: tracked.entry.id, target: target)
+            return
+        }
+        guard let provider = services.autoMix else {
+            autoMixNote = "Connect to your server to use AutoMix"
+            return
+        }
         let fromId = tracked.entry.song.id, toId = target.song.id
         let trackedEntry = tracked.entry.id
         autoMixPlanTask = Task { [weak self] in
@@ -99,6 +107,21 @@ extension PlayerEngine {
             self.installPlan(plan, trackedEntry: trackedEntry, target: target)
         }
         prefetchUpcomingPlans(provider)
+    }
+
+    /// Plain equal-power crossfade over the last `seconds` of the current song (AutoMix off, crossfade on).
+    private func crossfadePlan(from outgoing: PreparedItem, seconds: Double) -> AutoMixPlan {
+        let itemDuration = outgoing.item.duration
+        let duration = itemDuration.isNumeric && itemDuration.seconds > 0 ? itemDuration.seconds : outgoing.entry.song.durationSeconds
+        guard duration > seconds * 2 + 10 else {
+            return AutoMixPlan(version: AutoMixPlan.supportedVersion, mode: .gapless, reason: "song too short to crossfade", final: true)
+        }
+        let start = duration - seconds, stop = duration - 0.05
+        let a = AutoMixPlan.Deck(start: start, handoff: start + seconds / 2, stop: stop, rate: nil,
+                                 gain: [[start, 1], [start + seconds / 2, 0.71], [stop, 0]], hpf: [], lpf: [], rateRamp: nil)
+        let b = AutoMixPlan.Deck(start: 0, handoff: nil, stop: nil, rate: nil,
+                                 gain: [[0, 0], [seconds / 2, 0.71], [seconds, 1]], hpf: [], lpf: [], rateRamp: nil)
+        return AutoMixPlan(version: AutoMixPlan.supportedVersion, mode: .crossfade, reason: "crossfade", final: true, a: a, b: b)
     }
 
     /// The next ~20 transitions of the queue, fetched once in the background (they then mix offline too).
@@ -393,6 +416,7 @@ extension PlayerEngine {
         spareDeck = tail.player
         mixTail = nil
         autoMixActive = false
+        applySpeed()
     }
 
     // MARK: Interruptions (user actions mid-transition)

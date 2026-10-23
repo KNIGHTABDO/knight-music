@@ -205,7 +205,8 @@ extension PlayerEngine {
     func makePrepared(entry: QueueEntry, resolved: ResolvedSource) -> PreparedItem {
         let item = AVPlayerItem(asset: AVURLAsset(url: resolved.url))
         let prepared = PreparedItem(item: item, entry: entry, resolved: resolved)
-        if settings.autoMix { attachTap(prepared) }
+        if settings.speedChanged { item.audioTimePitchAlgorithm = .spectral }
+        if settings.mixesTransitions || settings.eqEnabled { attachTap(prepared) }
         prepared.observations = [
             item.observe(\.status, options: [.new]) { [weak self, weak prepared] _, _ in
                 Task { @MainActor in
@@ -234,7 +235,7 @@ extension PlayerEngine {
         guard tracked != nil else { return }
         if let session = mixSession, session.phase != .planned {
             // A transition already under way keeps going as long as its song is still the one up next.
-            if settings.autoMix, repeatMode != .one, !endOfSongArmed, let index = naturalNextIndex(),
+            if settings.mixesTransitions, repeatMode != .one, !endOfSongArmed, let index = naturalNextIndex(),
                order.indices.contains(index), order[index].id == session.target.id { return }
             cancelMix(reprepare: false)
         }
@@ -262,7 +263,7 @@ extension PlayerEngine {
 
     /// A song saved ahead finished after its successor item was already queued as a stream: swap in the local file.
     func refreshGaplessNextIfCached() {
-        guard !settings.autoMix, let next = nextPrepared, next.resolved.kind == .streaming,
+        guard !settings.mixesTransitions, let next = nextPrepared, next.resolved.kind == .streaming,
               streamCache.contains(next.entry.song.id) else { return }
         prepareGaplessNext()
     }
@@ -306,13 +307,13 @@ extension PlayerEngine {
     // MARK: Cache feeding
 
     func syncCache() {
-        if settings.autoMix {
+        if settings.savesUpcomingLocally {
             guard settings.streamCacheEnabled, !services.isOffline, currentRadio == nil,
                   services.urls != nil, currentIndex < order.count else {
                 // AutoMix still needs its incoming song as a local file when the stream cache is off.
                 // With AutoMix off nothing is saved ahead: pending background downloads are cancelled.
                 let keep = plannedMix.map { Set([$0.to.id]) } ?? []
-                if !settings.autoMix || !settings.streamCacheEnabled || currentRadio != nil { streamCache.retainOnly(keep) }
+                if !settings.savesUpcomingLocally || !settings.streamCacheEnabled || currentRadio != nil { streamCache.retainOnly(keep) }
                 return
             }
             let depth = services.network == .cellular ? 2 : 3

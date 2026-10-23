@@ -66,6 +66,7 @@ private final class MixTapContext {
     var program = MixAutomation.Program()
     var gain: Float = 1
     var hp = FilterBank(), lp = FilterBank()
+    var eq = PeakingBank()
     var clock: Double = .nan            // media time of the next frame, when the source doesn't say
 
     init(automation: MixAutomation) { self.automation = automation }
@@ -78,15 +79,17 @@ private final class MixTapContext {
         channels = Int(max(format.mChannelsPerFrame, 1))
         hp = FilterBank(channels: channels)
         lp = FilterBank(channels: channels)
+        eq = PeakingBank(channels: channels)
         gain = 1
     }
 
     func process(_ list: UnsafeMutablePointer<AudioBufferList>, frames: Int, start: CMTime) {
         if let latest = automation.snapshot() { program = latest }
+        if let equalizer = Equalizer.snapshot() { eq.configure(equalizer, sampleRate: sampleRate) }
         let startTime = start.isValid && start.isNumeric ? start.seconds : clock
         if !startTime.isNaN { clock = startTime + Double(frames) / sampleRate }
         guard supported, frames > 0, !startTime.isNaN else { return }
-        if program.isIdentity && gain == 1 && hp.idle && lp.idle { return }
+        if program.isIdentity && gain == 1 && hp.idle && lp.idle && !eq.active { return }
 
         let buffers = UnsafeMutableAudioBufferListPointer(list)
         let block = 64
@@ -103,7 +106,7 @@ private final class MixTapContext {
                     let g = g0 + step * Float(f + 1)
                     for c in 0..<channels {
                         let i = (offset + f) * channels + c
-                        data[i] = lp.run(c, hp.run(c, data[i])) * g
+                        data[i] = eq.run(c, lp.run(c, hp.run(c, data[i]))) * g
                     }
                 }
             } else {
@@ -111,7 +114,7 @@ private final class MixTapContext {
                     guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
                     for f in 0..<count {
                         let i = offset + f
-                        data[i] = lp.run(c, hp.run(c, data[i])) * (g0 + step * Float(f + 1))
+                        data[i] = eq.run(c, lp.run(c, hp.run(c, data[i]))) * (g0 + step * Float(f + 1))
                     }
                 }
             }
@@ -169,6 +172,69 @@ private struct FilterBank {
 
     private mutating func reset() {
         for c in x1.indices { x1[c] = 0; x2[c] = 0; y1[c] = 0; y2[c] = 0 }
+    }
+}
+
+/// The user's graphic EQ: one RBJ peaking biquad per band and channel, about an octave wide, after a preamp that
+/// keeps boosted bands from clipping. Coefficients are recomputed only when `Equalizer.Program.revision` changes.
+private struct PeakingBank {
+    private let bands = Equalizer.frequencies.count
+    private let channels: Int
+    private var coefficients: [Float]      // b0 b1 b2 a1 a2 per band
+    private var memory: [Float]            // x1 x2 y1 y2 per channel and band
+    private var revision = -1
+    private var preamp: Float = 1
+    private(set) var active = false
+
+    init(channels: Int = 2) {
+        self.channels = channels
+        coefficients = [Float](repeating: 0, count: Equalizer.frequencies.count * 5)
+        memory = [Float](repeating: 0, count: channels * Equalizer.frequencies.count * 4)
+    }
+
+    mutating func configure(_ program: Equalizer.Program, sampleRate: Double) {
+        guard program.revision != revision else { return }
+        revision = program.revision
+        let wasActive = active
+        active = program.isActive && program.gains.count == bands
+        guard active else { return }
+        if !wasActive { for i in memory.indices { memory[i] = 0 } }
+        preamp = pow(10, program.preampDB / 20)
+        let q: Float = 1.41
+        for band in 0..<bands {
+            let k = band * 5
+            let frequency = Equalizer.frequencies[band]
+            guard frequency < Float(sampleRate) * 0.45 else {
+                coefficients[k] = 1; coefficients[k + 1] = 0; coefficients[k + 2] = 0
+                coefficients[k + 3] = 0; coefficients[k + 4] = 0
+                continue
+            }
+            let a = pow(10, program.gains[band] / 40)
+            let w = 2 * Float.pi * frequency / Float(sampleRate)
+            let alpha = sin(w) / (2 * q)
+            let cosw = cos(w)
+            let a0 = 1 + alpha / a
+            coefficients[k] = (1 + alpha * a) / a0
+            coefficients[k + 1] = -2 * cosw / a0
+            coefficients[k + 2] = (1 - alpha * a) / a0
+            coefficients[k + 3] = -2 * cosw / a0
+            coefficients[k + 4] = (1 - alpha / a) / a0
+        }
+    }
+
+    @inline(__always)
+    mutating func run(_ c: Int, _ x: Float) -> Float {
+        guard active, c < channels else { return x }
+        var v = x * preamp
+        for band in 0..<bands {
+            let k = band * 5, m = (c * bands + band) * 4
+            let y = coefficients[k] * v + coefficients[k + 1] * memory[m] + coefficients[k + 2] * memory[m + 1]
+                - coefficients[k + 3] * memory[m + 2] - coefficients[k + 4] * memory[m + 3]
+            memory[m + 1] = memory[m]; memory[m] = v
+            memory[m + 3] = memory[m + 2]; memory[m + 2] = y
+            v = y
+        }
+        return v
     }
 }
 

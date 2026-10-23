@@ -42,6 +42,18 @@ struct PlaybackSettings: Equatable, Sendable {
     var streamCacheLimitMB: Int = 2048
     var serverQueueSyncEnabled: Bool = true
     var saveAheadMode: SaveAheadMode = .off
+    /// Plain crossfade between songs when AutoMix is off (0 = off).
+    var crossfadeSeconds: Int = 0
+    var playbackSpeed: Float = 1
+    var eqEnabled: Bool = false
+    /// dB per `Equalizer.frequencies` band.
+    var eqGains: [Float] = []
+
+    /// Songs blend into each other (AutoMix or crossfade). Off while the speed is changed: mixes run at their own rates.
+    var mixesTransitions: Bool { (autoMix || crossfadeSeconds > 0) && !speedChanged }
+    var speedChanged: Bool { abs(playbackSpeed - 1) > 0.001 }
+    /// Upcoming songs must be local files: blends need them, and audio taps (EQ) only run on local files.
+    var savesUpcomingLocally: Bool { mixesTransitions || eqEnabled }
 }
 
 protocol PlaybackURLProvider: Sendable {

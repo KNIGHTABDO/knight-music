@@ -186,6 +186,7 @@ final class PlayerEngine {
         stationDatabase = database
         scrobbler.configure(services: services, database: database)
         applyVolume()
+        applyAudioEffects()
         restoreSavedQueue()
         Task { await checkServerQueue() }
     }
@@ -200,8 +201,31 @@ final class PlayerEngine {
     /// Call when settings changed (ReplayGain, gapless, quality...).
     func settingsDidChange() {
         applyVolume()
+        applyAudioEffects()
         if tracked != nil { prepareNext() }
+        applySpeed()
         syncCache()
+    }
+
+    /// Pushes the EQ to the audio taps; songs already loaded get a tap when the EQ is switched on.
+    func applyAudioEffects() {
+        Equalizer.apply(enabled: settings.eqEnabled, gains: settings.eqGains)
+        guard settings.eqEnabled else { return }
+        if let tracked { attachTap(tracked) }
+        if let nextPrepared { attachTap(nextPrepared) }
+    }
+
+    /// Playback speed (pitch kept). Transitions own the rate while they run, so it applies once they are over.
+    func applySpeed() {
+        guard mixTail == nil, mixSession.map({ $0.phase == .planned }) ?? true else { return }
+        let speed = settings.playbackSpeed
+        if settings.speedChanged { tracked?.item.audioTimePitchAlgorithm = .spectral }
+        guard abs(player.defaultRate - speed) > 0.0001 else { return }
+        player.defaultRate = speed
+        if player.rate > 0 {
+            player.rate = speed
+            nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: Double(speed))
+        }
     }
 
     /// Call when connectivity changed: re-prepares the next item and flushes pending scrobbles.
