@@ -12,6 +12,7 @@ struct ArtistDetailView: View {
     @Environment(UIState.self) private var ui
     @Environment(HermesService.self) private var hermes: HermesService?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     @State private var artistInfo: ArtistInfo?
     @State private var isBioExpanded = false
@@ -22,7 +23,6 @@ struct ArtistDetailView: View {
         let albumsQuery = library.albums(artistId: artistId)
         let allSongsQuery = library.songs(artistId: artistId)
         let allArtistsQuery = library.artists()
-        let playlists = library.playlists()
 
         Group {
             if !artistQuery.isLoaded {
@@ -56,7 +56,6 @@ struct ArtistDetailView: View {
         .observing(albumsQuery)
         .observing(allSongsQuery)
         .observing(allArtistsQuery)
-        .observing(playlists)
     }
 
     // MARK: - Artist Content
@@ -70,27 +69,41 @@ struct ArtistDetailView: View {
     ) -> some View {
         let localArtistsById = Dictionary(allArtists.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let similarArtists = (artistInfo?.similarArtist ?? []).compactMap { localArtistsById[$0.id] }
+        let byRelease = albums.sorted { Self.releaseKey($0) > Self.releaseKey($1) }
+        let fullAlbums = byRelease.filter { ($0.songCount ?? 0) > 3 }
+        let singles = byRelease.filter { ($0.songCount ?? 0) <= 3 }
 
         return ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Full-width hero image ~320pt tall with overlay
+            VStack(alignment: .leading, spacing: 0) {
                 heroHeaderView(artist: artist, topSongs: topSongs, allSongs: allSongs)
 
-                // Top Songs section (first 5 rows with artwork, "See All" pushes full list)
-                if !topSongs.isEmpty {
-                    topSongsSection(topSongs: topSongs, artistName: artist.name)
-                }
-
-                // Albums (horizontal ShelfSection sorted newest first)
-                if !albums.isEmpty {
-                    ShelfSection(title: "Albums", items: albums) { album in
-                        NavigationLink(value: Route.album(album.id)) {
-                            AlbumTile(album: album)
+                VStack(alignment: .leading, spacing: 28) {
+                    if sizeClass == .regular, let latest = byRelease.first {
+                        // iPad: Latest Release beside Top Songs, as in Apple Music
+                        HStack(alignment: .top, spacing: 28) {
+                            latestReleaseCard(latest)
+                                .frame(width: 300)
+                            if !topSongs.isEmpty {
+                                topSongsSection(topSongs: topSongs, artistName: artist.name)
+                            }
                         }
-                        .buttonStyle(.plain)
+                        .padding(.leading, Theme.margin)
+                    } else {
+                        if let latest = byRelease.first {
+                            latestReleaseCard(latest)
+                                .padding(.horizontal, Theme.margin)
+                        }
+                        if !topSongs.isEmpty {
+                            topSongsSection(topSongs: topSongs, artistName: artist.name)
+                        }
                     }
-                    .scrollClipDisabled()
-                }
+
+                    if !fullAlbums.isEmpty {
+                        albumShelf("Albums", fullAlbums)
+                    }
+                    if !singles.isEmpty {
+                        albumShelf("Singles & EPs", singles)
+                    }
 
                 // About section (biography from artistInfo, HTML stripped, 4 lines + "More")
                 if let bio = artistInfo?.plainBiography, !bio.isEmpty {
@@ -102,9 +115,13 @@ struct ArtistDetailView: View {
                     similarArtistsSection(similarArtists: similarArtists)
                 }
 
-                Spacer().frame(height: 32)
+                    Spacer().frame(height: 32)
+                }
+                .padding(.top, 20)
+                .background(Theme.background)
             }
         }
+        .ignoresSafeArea(edges: .top)
         .toolbar {
             toolbarItems(artist: artist, allSongs: allSongs)
         }
@@ -112,37 +129,19 @@ struct ArtistDetailView: View {
 
     // MARK: - Hero Header
 
-    private func heroHeaderView(artist: Artist, topSongs: [Song], allSongs: [Song]) -> some View {
-        GeometryReader { geo in
-            ZStack(alignment: .bottomLeading) {
-                // Artist image
-                Group {
-                    if let imageUrl = artistInfo?.largeImageUrl, let url = URL(string: imageUrl) {
-                        LazyImage(url: url) { state in
-                            if let image = state.image {
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } else {
-                                ArtworkView(
-                                    coverArt: artist.coverArt,
-                                    pointSize: geo.size.width,
-                                    placeholderSymbol: "person.fill",
-                                    fillsContainer: true
-                                )
-                            }
-                        }
-                    } else {
-                        ArtworkView(
-                            coverArt: artist.coverArt,
-                            pointSize: geo.size.width,
-                            placeholderSymbol: "person.fill",
-                            fillsContainer: true
-                        )
-                    }
-                }
-                .frame(width: geo.size.width, height: 320)
-                .clipped()
+    private var heroHeight: CGFloat { sizeClass == .regular ? 460 : 400 }
 
-                // Gradient fade to background at the bottom
+    /// Stretches when pulled down, drifts at half speed when scrolled up (parallax).
+    private func heroHeaderView(artist: Artist, topSongs: [Song], allSongs: [Song]) -> some View {
+        let height = heroHeight
+        return GeometryReader { geo in
+            let minY = geo.frame(in: .scrollView).minY
+            ZStack(alignment: .bottomLeading) {
+                heroImage(artist: artist, width: geo.size.width)
+                    .frame(width: geo.size.width, height: height + max(0, minY))
+                    .clipped()
+                    .offset(y: minY > 0 ? -minY : -minY * 0.5)
+
                 LinearGradient(
                     colors: [
                         Color.clear,
@@ -153,15 +152,14 @@ struct ArtistDetailView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 180)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .frame(height: 200)
 
-                // Overlaid artist name bottom-left, play button bottom-right
                 HStack(alignment: .bottom, spacing: 14) {
                     Text(artist.name)
-                        .font(.system(size: 34, weight: .heavy))
+                        .font(.system(size: sizeClass == .regular ? 44 : 34, weight: .heavy))
                         .foregroundStyle(Theme.label)
                         .lineLimit(2)
+                        .minimumScaleFactor(0.7)
                         .shadow(color: colorScheme == .dark ? .black.opacity(0.7) : .clear, radius: 6, y: 3)
 
                     Spacer(minLength: 8)
@@ -182,12 +180,90 @@ struct ArtistDetailView: View {
                     .clipShape(Circle())
                     .tint(Theme.accent)
                     .shadow(color: .black.opacity(0.4), radius: 8, y: 4)
+                    .accessibilityLabel("Play \(artist.name)")
                 }
                 .padding(.horizontal, Theme.margin)
                 .padding(.bottom, 16)
             }
+            .frame(width: geo.size.width, height: height, alignment: .bottom)
         }
-        .frame(height: 320)
+        .frame(height: height)
+    }
+
+    @ViewBuilder
+    private func heroImage(artist: Artist, width: CGFloat) -> some View {
+        if let imageUrl = artistInfo?.largeImageUrl, let url = URL(string: imageUrl) {
+            LazyImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.3))) { state in
+                if let image = state.image {
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    ArtworkView(coverArt: artist.coverArt, pointSize: width, cornerRadius: 0, placeholderSymbol: "person.fill")
+                        .scaledToFill()
+                }
+            }
+        } else {
+            ArtworkView(coverArt: artist.coverArt, pointSize: width, cornerRadius: 0, placeholderSymbol: "person.fill")
+        }
+    }
+
+    // MARK: - Latest Release & Albums
+
+    /// Newest release first: tagged release date, then year, then when it was added.
+    private static func releaseKey(_ album: Album) -> String {
+        let release = album.releaseDate
+        let year = release?.year ?? album.year ?? 0
+        let date = String(format: "%04d-%02d-%02d", year, release?.month ?? 0, release?.day ?? 0)
+        return date + (album.created?.ISO8601Format() ?? "")
+    }
+
+    private func latestReleaseCard(_ album: Album) -> some View {
+        NavigationLink(value: Route.album(album.id)) {
+            HStack(spacing: 14) {
+                ArtworkView(coverArt: album.coverArt, pointSize: 96)
+                    .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("LATEST RELEASE")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.secondaryLabel)
+                    if let when = latestReleaseDate(album) {
+                        Text(when)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.secondaryLabel)
+                    }
+                    Text(album.name)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.label)
+                        .lineLimit(2)
+                    if let count = album.songCount {
+                        Text(KMFormat.songCount(count))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.secondaryLabel)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu { AlbumContextMenu(album: album) }
+    }
+
+    private func latestReleaseDate(_ album: Album) -> String? {
+        if let release = album.releaseDate, let date = release.date, release.month != nil, release.day != nil {
+            return date.formatted(date: .abbreviated, time: .omitted).uppercased()
+        }
+        return album.year.map(String.init)
+    }
+
+    private func albumShelf(_ title: String, _ albums: [Album]) -> some View {
+        ShelfSection(title: title, items: albums) { album in
+            NavigationLink(value: Route.album(album.id)) {
+                AlbumTile(coverArt: album.coverArt, title: album.name, subtitle: album.year.map(String.init))
+            }
+            .buttonStyle(.plain)
+            .contextMenu { AlbumContextMenu(album: album) }
+        }
+        .scrollClipDisabled()
     }
 
     // MARK: - Top Songs Section
@@ -312,11 +388,7 @@ struct ArtistDetailView: View {
             Button {
                 Haptics.impact(.light)
                 Task {
-                    do {
-                        try await library.toggleStar(.artist, id: artist.id, currentlyStarred: isStarred)
-                    } catch {
-                        Log.sync.error("Toggle star artist failed for \(artist.id): \(error)")
-                    }
+                    try? await library.toggleStar(.artist, id: artist.id, currentlyStarred: isStarred)
                 }
             } label: {
                 Image(systemName: isStarred ? "heart.fill" : "heart")
@@ -336,6 +408,14 @@ struct ArtistDetailView: View {
                     ui.showToast("Playing Next")
                 } label: {
                     Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                }
+
+                if let seed = allSongs.randomElement() {
+                    Button {
+                        Task { await player.startStation(from: seed) }
+                    } label: {
+                        Label("Start Station", systemImage: "dot.radiowaves.left.and.right")
+                    }
                 }
 
                 Button {
