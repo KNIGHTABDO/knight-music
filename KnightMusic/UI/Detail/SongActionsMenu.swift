@@ -126,13 +126,17 @@ struct SongActionsMenu: View {
         Divider()
 
         if let albumId = song.albumId, !albumId.isEmpty {
-            NavigationLink(value: Route.album(albumId)) {
+            Button {
+                ui.open(.album(albumId))
+            } label: {
                 Label("Go to Album", systemImage: "record.circle")
             }
         }
 
         if let artistId = song.artistId, !artistId.isEmpty {
-            NavigationLink(value: Route.artist(artistId)) {
+            Button {
+                ui.open(.artist(artistId))
+            } label: {
                 Label("Go to Artist", systemImage: "person.crop.circle")
             }
         }

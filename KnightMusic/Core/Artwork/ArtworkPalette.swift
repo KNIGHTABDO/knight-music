@@ -29,7 +29,17 @@ struct ArtworkPalette: Sendable, Equatable {
         guard let image = await ArtworkLoader.shared.image(coverArt: id, size: 120) else { return .fallback }
         let result = await Task.detached(priority: .utility) { ArtworkPalette.extract(from: image) }.value
         await cache.put(result, for: id)
+        await MainActor.run { recent[id] = result }
         return result
+    }
+
+    /// Main-thread copy of palettes already extracted, so a view can draw its first frame with the
+    /// right colours instead of fading in from the fallback.
+    @MainActor private static var recent: [String: ArtworkPalette] = [:]
+
+    @MainActor static func cachedPalette(for coverArt: String?) -> ArtworkPalette? {
+        guard let id = coverArt else { return nil }
+        return recent[id]
     }
 
     // MARK: Extraction (k-means over a 40x40 downsample)

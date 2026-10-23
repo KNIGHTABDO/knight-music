@@ -92,6 +92,20 @@ struct RootView: View {
                 library.lastError = nil
             }
         }
+        .onChange(of: ui.pendingRoute) { _, route in
+            guard let route else { return }
+            ui.pendingRoute = nil
+            if ui.isPlayerPresented {
+                ui.isPlayerPresented = false
+                Task {
+                    // Let the zoom dismissal finish so the push animates on the visible stack.
+                    try? await Task.sleep(for: .milliseconds(450))
+                    nav.open(route, in: ui)
+                }
+            } else {
+                nav.open(route, in: ui)
+            }
+        }
         .onChange(of: player.lastError) { _, newError in
             if let newError {
                 withAnimation(.smooth) {
@@ -102,6 +116,12 @@ struct RootView: View {
         }
         .task {
             await applyDebugRoutingIfNeeded()
+        }
+        .task(id: player.currentSong?.id) {
+            // Extract the current and next palettes before the player opens, so its first frame
+            // already has the right colours.
+            _ = await ArtworkPalette.palette(for: player.currentSong?.coverArt)
+            _ = await ArtworkPalette.palette(for: player.upcoming.first?.song.coverArt)
         }
         .onChange(of: app.debugScreen) { _, _ in
             Task { await applyDebugRoutingIfNeeded() }

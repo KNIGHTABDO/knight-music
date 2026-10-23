@@ -7,6 +7,7 @@ final class TabNavigationModel {
     var search = NavigationPath()
     var settings = NavigationPath()
     var library = NavigationPath()
+    var knight = NavigationPath()
 
     // Section tabs on iPad (UIState.Tab.section(route))
     var artists = NavigationPath()
@@ -64,6 +65,19 @@ final class TabNavigationModel {
             return Binding(get: { self.playlists }, set: { self.playlists = $0 })
         default:
             return Binding(get: { self.library }, set: { self.library = $0 })
+        }
+    }
+
+    /// Pushes `route` onto the stack of the tab the user is looking at.
+    func open(_ route: Route, in ui: UIState) {
+        switch ui.selectedTab {
+        case .home: home.append(route)
+        case .search: search.append(route)
+        case .settings: settings.append(route)
+        case .library: library.append(route)
+        case .knight: knight.append(route)
+        case .section(let section):
+            binding(for: section).wrappedValue.append(route)
         }
     }
 }

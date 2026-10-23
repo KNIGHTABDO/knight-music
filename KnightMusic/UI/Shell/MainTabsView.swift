@@ -11,8 +11,6 @@ struct MainTabsView: View {
     @Environment(TabNavigationModel.self) private var nav
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    @State private var knightPath = NavigationPath()
-
 
     private struct LibraryTabItem: Identifiable {
         let id: Route
@@ -92,8 +90,8 @@ struct MainTabsView: View {
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab("Knight", systemImage: "sparkles", value: UIState.Tab.knight) {
-                NavigationStack(path: $knightPath) {
-                    KnightView(path: $knightPath)
+                NavigationStack(path: $nav.knight) {
+                    KnightView(path: $nav.knight)
                         .withAppRoutes()
                 }
             }
@@ -166,8 +164,8 @@ struct MainTabsView: View {
             .customizationBehavior(.disabled, for: .sidebar, .tabBar)
 
             Tab("Knight", systemImage: "sparkles", value: UIState.Tab.knight) {
-                NavigationStack(path: $knightPath) {
-                    KnightView(path: $knightPath)
+                NavigationStack(path: $nav.knight) {
+                    KnightView(path: $nav.knight)
                         .withAppRoutes()
                 }
             }

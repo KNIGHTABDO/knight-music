@@ -17,6 +17,11 @@ final class UIState {
     var toast: String?
     /// Draft prompt to pre-fill when switching to Knight tab.
     var knightDraft: String?
+    /// Set from anywhere (including the full player, which has no NavigationStack); the shell
+    /// dismisses the player and pushes it onto the visible tab.
+    var pendingRoute: Route?
+
+    func open(_ route: Route) { pendingRoute = route }
 
     func showToast(_ message: String) { toast = message }
 
