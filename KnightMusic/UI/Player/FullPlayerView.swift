@@ -1,47 +1,66 @@
 import SwiftUI
 
-/// Full-screen player presented by the shell:
-/// - Hero background: Full-bleed animated artwork if available; dynamic ArtworkPalette gradient otherwise
-/// - Interactive swipe-down and chevron dismiss with rubber-band physics
-/// - iPhone portrait: Big square artwork (width - 48, 12pt radius, 85% scale when paused)
-///   Panels: Artwork / Lyrics / Queue with matched geometry animation on the artwork thumbnail
-/// - iPad / Landscape: Two-column layout with artwork card on the left and controls/panels on the right
-/// - Custom Scrubber with buffered fraction track, haptic boundaries, format description, and elapsed/remaining
-/// - Transport controls with symbol bounce effects and replace transitions
-/// - System volume slider row (iPhone only)
-/// - Floating glass bottom bar (GlassEffectContainer) with circular glass controls
+/// Full-screen player presented by the shell (zoom transition from the mini player; swipe-down
+/// dismiss is the native interactive one of that transition):
+/// - Hero background: full-bleed animated artwork if available, animated palette mesh otherwise
+/// - iPhone portrait: big square artwork that shrinks when paused and swipes to change tracks;
+///   panels Artwork / Lyrics / Queue
+/// - iPad: big artwork beside the controls; lyrics and queue open beside the artwork
+/// - Landscape iPhone: two columns, the left one switches between artwork and panels
+/// - Lyrics: the controls fade away after a few idle seconds; a tap brings them back
 struct FullPlayerView: View {
     @Environment(UIState.self) private var ui
     @Environment(PlayerEngine.self) private var player
     @Environment(LibraryRepository.self) private var library
+    @Environment(AppSettings.self) private var settings
     @Environment(AnimatedArtworkService.self) private var artworkService: AnimatedArtworkService?
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
     @Namespace private var playerNamespace
-    @State private var dragOffset: CGFloat = 0
     @State private var currentRating: Int = 0
     @State private var animatedArtwork: AnimatedArtwork?
     @State private var animatedAlbumId: String?
     @State private var isShowingSettings = false
+    @State private var controlsHidden = false
+    @State private var controlsActivity = 0
 
     private var hasAnimatedArtwork: Bool {
         animatedArtwork != nil
     }
 
+    /// Rating changes are written to the server only when the user taps a star.
+    private var ratingBinding: Binding<Int> {
+        Binding(
+            get: { currentRating },
+            set: { newRating in
+                guard let song = player.currentSong, newRating != currentRating else { return }
+                currentRating = newRating
+                Task {
+                    do {
+                        try await library.setRating(.song, id: song.id, rating: newRating)
+                    } catch {
+                        Log.sync.error("Set rating failed for song \(song.id): \(error)")
+                        ui.showToast("Couldn't save the rating")
+                    }
+                }
+            }
+        )
+    }
+
     var body: some View {
         GeometryReader { geo in
             let isLandscape = geo.size.width > geo.size.height
-            let isTwoColumn = (hSizeClass == .regular) || isLandscape
+            let isRegular = hSizeClass == .regular
 
             Group {
                 if let song = player.currentSong {
                     VStack(spacing: 0) {
-                        // Top drag grabber indicator
                         grabberHandle
-                            .gesture(dismissDragGesture)
 
-                        if isTwoColumn {
-                            twoColumnLayout(song: song, geo: geo)
+                        if isRegular {
+                            regularLayout(song: song, geo: geo, isLandscape: isLandscape)
+                        } else if isLandscape {
+                            compactLandscapeLayout(song: song, geo: geo)
                         } else {
                             singleColumnLayout(song: song, geo: geo)
                         }
@@ -54,7 +73,7 @@ struct FullPlayerView: View {
                     // .background so it can never resize the controls laid out on top of it.
                     .background {
                         ZStack {
-                            PlayerBackgroundView(song: song, isTall: !isTwoColumn)
+                            PlayerBackgroundView(song: song, isTall: !isRegular && !isLandscape)
 
                             // Legibility veil for Lyrics and Queue so text stays crisp over bright covers
                             if ui.playerPanel != .artwork {
@@ -71,9 +90,7 @@ struct FullPlayerView: View {
                         .frame(width: geo.size.width, height: geo.size.height)
                 }
             }
-            .offset(y: max(0, dragOffset))
-            // Apply full-screen dismiss gesture when in artwork mode
-            .gesture(ui.playerPanel == .artwork ? dismissDragGesture : nil)
+            .simultaneousGesture(TapGesture().onEnded { revealControls() })
             .sheet(isPresented: $isShowingSettings) {
                 PlaybackSettingsSheet()
             }
@@ -94,47 +111,33 @@ struct FullPlayerView: View {
                     animatedArtwork = nil
                 }
             }
-            .onChange(of: currentRating) { _, newRating in
-                guard let song = player.currentSong else { return }
-                Task {
-                    do {
-                        try await library.setRating(.song, id: song.id, rating: newRating)
-                    } catch {
-                        Log.sync.error("Set rating failed for song \(song.id): \(error)")
-                    }
-                }
+            .task(id: "\(controlsActivity)|\(ui.playerPanel == .lyrics)|\(player.isPlaying)") {
+                await autoHideControls()
             }
         }
     }
 
-    // MARK: - Dismiss gesture
+    // MARK: - Auto-hiding controls (lyrics)
 
-    private var dismissDragGesture: some Gesture {
-        DragGesture(minimumDistance: 15)
-            .onChanged { value in
-                // Only engage if movement is predominantly downwards (direction-lock against horizontal scrub)
-                guard value.translation.height > abs(value.translation.width) * 1.2 else { return }
-                if value.translation.height > 0 {
-                    dragOffset = value.translation.height
-                } else {
-                    dragOffset = value.translation.height * 0.15
-                }
-            }
-            .onEnded { value in
-                let shouldDismiss = value.translation.height > 120 || value.predictedEndTranslation.height > 350
-                if shouldDismiss {
-                    withAnimation(.smooth(duration: 0.3)) {
-                        ui.isPlayerPresented = false
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        dragOffset = 0
-                    }
-                } else {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        dragOffset = 0
-                    }
-                }
-            }
+    private var shouldAutoHide: Bool {
+        ui.playerPanel == .lyrics && player.isPlaying
+    }
+
+    private func revealControls() {
+        controlsActivity += 1
+        if controlsHidden {
+            withAnimation(.smooth(duration: 0.3)) { controlsHidden = false }
+        }
+    }
+
+    private func autoHideControls() async {
+        guard shouldAutoHide else {
+            if controlsHidden { withAnimation(.smooth(duration: 0.3)) { controlsHidden = false } }
+            return
+        }
+        do { try await Task.sleep(for: .seconds(4)) } catch { return }
+        guard shouldAutoHide else { return }
+        withAnimation(.smooth(duration: 0.5)) { controlsHidden = true }
     }
 
     // MARK: - Grabber Handle
@@ -144,7 +147,7 @@ struct FullPlayerView: View {
             .fill(Color.white.opacity(0.32))
             .frame(width: 36, height: 5)
             .padding(.vertical, 8)
-            .contentShape(Rectangle().inset(by: -10))
+            .opacity(controlsHidden ? 0 : 1)
             .accessibilityHidden(true)
     }
 
@@ -158,7 +161,10 @@ struct FullPlayerView: View {
                 artworkPanel(song: song, geo: geo)
 
             case .lyrics:
-                panelTopHeader(song: song)
+                if !controlsHidden {
+                    panelTopHeader(song: song)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 LyricsView(song: song)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -168,21 +174,23 @@ struct FullPlayerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            // Fixed bottom player controls (Scrubber + Transport + Volume + Bottom Bar)
-            VStack(spacing: 14) {
-                PlayerScrubberView()
-                    .padding(.horizontal, Theme.margin + 4)
+            if !controlsHidden {
+                VStack(spacing: 14) {
+                    PlayerScrubberView()
+                        .padding(.horizontal, Theme.margin + 4)
 
-                PlayerTransportBar()
+                    PlayerTransportBar()
 
-                if ui.playerPanel == .artwork {
-                    PlayerVolumeRow()
+                    if ui.playerPanel == .artwork {
+                        PlayerVolumeRow()
+                    }
+
+                    PlayerBottomBar(isShowingSettings: $isShowingSettings)
+                        .padding(.bottom, 4)
                 }
-
-                PlayerBottomBar(isShowingSettings: $isShowingSettings)
-                    .padding(.bottom, 4)
+                .padding(.top, 10)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .padding(.top, 10)
         }
     }
 
@@ -193,80 +201,32 @@ struct FullPlayerView: View {
         let artworkSize = min(geo.size.width - 48, geo.size.height * 0.40)
 
         VStack(spacing: 14) {
-            // When NO animated artwork: big square artwork (width - 48, 12pt radius, scales to 85% when paused)
-            // With animated artwork full-bleed: video plays in background across the upper screen
             if !hasAnimatedArtwork {
                 Spacer(minLength: 8)
 
-                ArtworkView(coverArt: song.coverArt, pointSize: artworkSize, cornerRadius: 12)
+                PlayerArtworkStage(song: song, side: artworkSize)
                     .matchedGeometryEffect(id: "albumArtwork", in: playerNamespace)
-                    .frame(width: artworkSize, height: artworkSize)
-                    .scaleEffect(player.isPlaying ? 1.0 : 0.85)
-                    .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
-                    .shadow(color: .black.opacity(0.38), radius: 24, x: 0, y: 12)
 
                 Spacer(minLength: 8)
             } else {
-                // Keep the top ~50% clear for full-bleed video visibility
-                Spacer()
-
-                // Minimal anchor for matched geometry transition to panel top header
+                // The full-bleed video shows through the upper half; it still swipes to change tracks.
                 Color.clear
-                    .frame(width: 1, height: 1)
-                    .matchedGeometryEffect(id: "albumArtwork", in: playerNamespace)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .modifier(SkipSwipeModifier(movesContent: false))
+                    .overlay(alignment: .bottom) {
+                        // Anchor for the matched geometry transition to the panel header.
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                            .matchedGeometryEffect(id: "albumArtwork", in: playerNamespace)
+                    }
             }
 
-            // Song Title & Artist: cleanly anchored in the lower 40%
-            VStack(alignment: .leading, spacing: 4) {
-                Text(song.title)
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            PlayerSongTitles(song: song)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Theme.margin + 4)
 
-                Text(song.artist ?? "")
-                    .font(.system(size: 17))
-                    .foregroundStyle(Color.white.opacity(0.75))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Theme.margin + 4)
-
-            // Song actions row: Heart toggle · 5-star rating · ••• context menu
-            HStack {
-                Button {
-                    Haptics.impact(.medium)
-                    player.toggleStarCurrent()
-                } label: {
-                    Image(systemName: song.starred != nil ? "heart.fill" : "heart")
-                        .font(.system(size: 20))
-                        .foregroundStyle(song.starred != nil ? Theme.accent : Color.white.opacity(0.75))
-                        .contentTransition(.symbolEffect(.replace))
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(song.starred != nil ? "Unfavorite" : "Favorite")
-
-                Spacer()
-
-                StarRatingView(rating: $currentRating, starSize: 18, spacing: 6)
-
-                Spacer()
-
-                Menu {
-                    SongActionsMenu(song: song)
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color.white.opacity(0.75))
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Song Actions")
-            }
-            .padding(.horizontal, Theme.margin + 4)
+            PlayerSongActionsRow(song: song, rating: ratingBinding, showsRating: settings.showRatings)
+                .padding(.horizontal, Theme.margin + 4)
         }
     }
 
@@ -280,77 +240,107 @@ struct FullPlayerView: View {
                 .frame(width: 52, height: 52)
                 .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(song.title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
+            PlayerSongTitles(song: song, titleSize: 17, artistSize: 14)
 
-                Text(song.artist ?? "")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.white.opacity(0.75))
-                    .lineLimit(1)
-            }
+            Spacer(minLength: 4)
 
-            Spacer()
-
-            Button {
-                Haptics.impact(.medium)
-                player.toggleStarCurrent()
-            } label: {
-                Image(systemName: song.starred != nil ? "heart.fill" : "heart")
-                    .font(.system(size: 19))
-                    .foregroundStyle(song.starred != nil ? Theme.accent : Color.white.opacity(0.75))
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Menu {
-                SongActionsMenu(song: song)
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 19))
-                    .foregroundStyle(Color.white.opacity(0.75))
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
-            }
+            PlayerSongActionsRow(song: song, rating: ratingBinding, showsRating: false)
+                .fixedSize()
         }
         .padding(.horizontal, Theme.margin + 4)
         .padding(.vertical, 8)
     }
 
-    // MARK: - iPad / Landscape (Two Columns)
+    // MARK: - iPad
+
+    /// Artwork panel: huge artwork on the left, controls on the right.
+    /// Lyrics / Queue: artwork and controls stack on the left, the panel takes the right half.
+    @ViewBuilder
+    private func regularLayout(song: Song, geo: GeometryProxy, isLandscape: Bool) -> some View {
+        let horizontalPadding: CGFloat = isLandscape ? 64 : 48
+
+        if ui.playerPanel == .artwork {
+            if isLandscape {
+                let side = min(geo.size.width * 0.46, geo.size.height * 0.78)
+                HStack(spacing: 64) {
+                    PlayerArtworkStage(song: song, side: side, animatedVideoURL: animatedArtwork?.squareVideoURL)
+                        .frame(maxWidth: .infinity)
+
+                    regularControls(song: song, titleSize: 28, artistSize: 20)
+                        .frame(maxWidth: 520)
+                        .frame(maxHeight: .infinity, alignment: .center)
+                }
+                .padding(.horizontal, horizontalPadding)
+            } else {
+                // iPad portrait: artwork on top, wide controls underneath (Apple Music layout).
+                let side = min(geo.size.width - horizontalPadding * 2, geo.size.height * 0.5)
+                VStack(spacing: 36) {
+                    Spacer(minLength: 12)
+                    PlayerArtworkStage(song: song, side: side, animatedVideoURL: animatedArtwork?.squareVideoURL)
+                    Spacer(minLength: 12)
+                    regularControls(song: song, titleSize: 28, artistSize: 20)
+                        .frame(maxWidth: 640)
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.bottom, 12)
+            }
+        } else {
+            let side = min(geo.size.width * 0.3, geo.size.height * 0.36)
+            HStack(alignment: .center, spacing: 48) {
+                if !controlsHidden {
+                    VStack(spacing: 24) {
+                        Spacer(minLength: 0)
+                        PlayerArtworkStage(song: song, side: side, animatedVideoURL: animatedArtwork?.squareVideoURL)
+                        regularControls(song: song, titleSize: 22, artistSize: 17)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: max(side, min(geo.size.width * 0.4, 440)))
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+
+                Group {
+                    if ui.playerPanel == .lyrics {
+                        LyricsView(song: song)
+                    } else {
+                        QueueView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(.horizontal, horizontalPadding)
+        }
+    }
+
+    private func regularControls(song: Song, titleSize: CGFloat, artistSize: CGFloat) -> some View {
+        VStack(spacing: 24) {
+            VStack(spacing: 10) {
+                PlayerSongTitles(song: song, titleSize: titleSize, artistSize: artistSize)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                PlayerSongActionsRow(song: song, rating: ratingBinding, starSize: 20, showsRating: settings.showRatings)
+            }
+
+            PlayerScrubberView()
+
+            PlayerTransportBar()
+
+            PlayerVolumeRow()
+
+            PlayerBottomBar(isShowingSettings: $isShowingSettings)
+        }
+    }
+
+    // MARK: - Landscape iPhone (Two Columns)
 
     @ViewBuilder
-    private func twoColumnLayout(song: Song, geo: GeometryProxy) -> some View {
+    private func compactLandscapeLayout(song: Song, geo: GeometryProxy) -> some View {
         let side = min(geo.size.width * 0.42, geo.size.height * 0.72)
 
-        HStack(spacing: 48) {
-            // Left Column: Artwork (or Lyrics/Queue panel when active)
+        HStack(spacing: 40) {
             Group {
                 switch ui.playerPanel {
                 case .artwork:
-                    VStack {
-                        Spacer()
-
-                        if let animated = animatedArtwork {
-                            AnimatedArtworkView(url: animated.squareVideoURL)
-                                .frame(width: side, height: side)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
-                        } else {
-                            ArtworkView(coverArt: song.coverArt, pointSize: side, cornerRadius: 12)
-                                .frame(width: side, height: side)
-                                .scaleEffect(player.isPlaying ? 1.0 : 0.85)
-                                .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
-                                .shadow(color: .black.opacity(0.4), radius: 28, x: 0, y: 14)
-                        }
-
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
+                    PlayerArtworkStage(song: song, side: side, animatedVideoURL: animatedArtwork?.squareVideoURL)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 case .lyrics:
                     LyricsView(song: song)
@@ -362,68 +352,30 @@ struct FullPlayerView: View {
                 }
             }
 
-            // Right Column: Controls Column (Vertically centered, max width 480)
-            VStack(spacing: 28) {
-                // Header row: title/artist + heart/stars/••• (plus shrunk artwork thumbnail if panel is open)
-                HStack(alignment: .center, spacing: 14) {
+            VStack(spacing: 18) {
+                HStack(spacing: 14) {
                     if ui.playerPanel != .artwork {
-                        ArtworkView(coverArt: song.coverArt, pointSize: 56, cornerRadius: 8)
-                            .frame(width: 56, height: 56)
+                        ArtworkView(coverArt: song.coverArt, pointSize: 52, cornerRadius: 8)
+                            .frame(width: 52, height: 52)
                             .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
                     }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(song.title)
-                            .font(.system(size: ui.playerPanel == .artwork ? 24 : 20, weight: .bold))
-                            .foregroundStyle(Color.white)
-                            .lineLimit(1)
-
-                        Text(song.artist ?? "")
-                            .font(.system(size: ui.playerPanel == .artwork ? 18 : 15))
-                            .foregroundStyle(Theme.secondaryLabel)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    Button {
-                        Haptics.impact(.medium)
-                        player.toggleStarCurrent()
-                    } label: {
-                        Image(systemName: song.starred != nil ? "heart.fill" : "heart")
-                            .font(.system(size: 20))
-                            .foregroundStyle(song.starred != nil ? Theme.accent : Theme.secondaryLabel)
-                            .contentTransition(.symbolEffect(.replace))
-                            .frame(width: 36, height: 36)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    StarRatingView(rating: $currentRating, starSize: 18, spacing: 5)
-
-                    Menu {
-                        SongActionsMenu(song: song)
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 20))
-                            .foregroundStyle(Theme.secondaryLabel)
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
-                    }
+                    PlayerSongTitles(song: song, titleSize: 20, artistSize: 15)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                PlayerSongActionsRow(song: song, rating: ratingBinding, showsRating: settings.showRatings)
 
                 PlayerScrubberView()
 
                 PlayerTransportBar()
 
-                PlayerVolumeRow()
-
                 PlayerBottomBar(isShowingSettings: $isShowingSettings)
             }
-            .frame(maxWidth: 480)
+            .frame(maxWidth: 440)
             .frame(maxHeight: .infinity, alignment: .center)
+            .opacity(controlsHidden ? 0 : 1)
         }
-        .padding(.horizontal, 56)
+        .padding(.horizontal, 40)
     }
 
     // MARK: - Empty State View
@@ -432,28 +384,15 @@ struct FullPlayerView: View {
         VStack(spacing: 24) {
             grabberHandle
 
-            Spacer()
-
-            Image(systemName: "music.note")
-                .font(.system(size: 64))
-                .foregroundStyle(Theme.tertiaryLabel)
-
-            Text("Not Playing")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(Color.white)
-
-            Text("Select a song from your library to start playing.")
-                .font(.system(size: 15))
-                .foregroundStyle(Theme.secondaryLabel)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-
-            Spacer()
+            ContentUnavailableView {
+                Label("Not Playing", systemImage: "music.note")
+            } description: {
+                Text("Pick a song from your library to start playing.")
+            }
+            .frame(maxHeight: .infinity)
 
             Button {
-                withAnimation(.smooth) {
-                    ui.isPlayerPresented = false
-                }
+                ui.isPlayerPresented = false
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 18, weight: .semibold))
@@ -463,6 +402,7 @@ struct FullPlayerView: View {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Close Player")
             .padding(.bottom, 24)
         }
         .background(Color.black.ignoresSafeArea())

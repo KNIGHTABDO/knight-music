@@ -3,14 +3,14 @@ import UIKit
 
 /// Synced and unsynced lyrics viewer:
 /// - Fetches lyrics via `library.lyrics(songId:)`, preferring synced lyrics
-/// - Synced: 28pt semibold (iPad 34pt), active line in white, others white 35% with progressive blur
+/// - Synced: 28pt bold (iPad 34pt), active line glows (word by word for enhanced LRC), others dimmed and blurred
 /// - Smooth auto-scroll keeps the active line at ~1/3 screen height
 /// - Tap a line to seek directly to its timestamp (outside sync mode)
 /// - Per-song sync adjuster panel with +/− controls and plain-language hint
 /// - Tap-to-sync: in sync mode, tapping a line offsets lyrics so that line becomes current NOW
 /// - Subtle offset badge when non-zero
 /// - User scrolling pauses auto-scroll tracking for 3 seconds
-/// - Unsynced: scrollable text; None: "No lyrics available"; Loading: ProgressView
+/// - Unsynced: bold centred text; None: "No lyrics available"; Loading: ProgressView
 struct LyricsView: View {
     let song: Song
 
@@ -125,12 +125,26 @@ struct LyricsView: View {
                                 handleLineTap(index: index, line: line, lyrics: lyrics, proxy: proxy)
                             } label: {
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                    Text(line.value.isEmpty ? " " : line.value)
-                                        .font(.system(size: fontSize, weight: .semibold))
-                                        .foregroundStyle(Color.white.opacity(opacity))
-                                        .blur(radius: blurRadius)
-                                        .multilineTextAlignment(.leading)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Group {
+                                        if isActive && !item.words.isEmpty {
+                                            KaraokeLineText(
+                                                words: item.words,
+                                                lineEndMs: lineEnd(after: index),
+                                                offsetMs: offsetStore.effectiveOffset(serverOffset: lyrics.offset, songId: song.id)
+                                            )
+                                        } else {
+                                            Text(item.text.isEmpty ? " " : item.text)
+                                                .foregroundStyle(Color.white.opacity(opacity))
+                                        }
+                                    }
+                                    .font(.system(size: fontSize, weight: .bold))
+                                    // Soft glow on the line being sung.
+                                    .shadow(color: .white.opacity(isActive ? 0.45 : 0), radius: isActive ? 12 : 0)
+                                    .scaleEffect(isActive ? 1.0 : 0.97, anchor: .leading)
+                                    .blur(radius: blurRadius)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .animation(.smooth(duration: 0.35), value: isActive)
 
                                     if syncedLineIndex == index && showSyncedToast {
                                         syncedInlineBadge
@@ -410,17 +424,17 @@ struct LyricsView: View {
     @ViewBuilder
     private func unsyncedLyricsView(_ lyrics: StructuredLyrics) -> some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(spacing: isIPad ? 22 : 16) {
                 ForEach(identifiedLines) { item in
-                    Text(item.line.value.isEmpty ? " " : item.line.value)
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.85))
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(item.text.isEmpty ? " " : item.text)
+                        .font(.system(size: isIPad ? 34 : 28, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
             .padding(.horizontal, Theme.margin + 8)
-            .padding(.vertical, 24)
+            .padding(.vertical, 40)
         }
         .mask(
             LinearGradient(
@@ -434,6 +448,14 @@ struct LyricsView: View {
                 endPoint: .bottom
             )
         )
+    }
+
+    /// Raw lyric time (ms) at which line `index` stops being sung.
+    private func lineEnd(after index: Int) -> Int {
+        if index + 1 < identifiedLines.count, let next = identifiedLines[index + 1].start {
+            return next
+        }
+        return (identifiedLines[index].words.last?.start ?? identifiedLines[index].start ?? 0) + 1500
     }
 
     private func pauseAutoScroll(proxy: ScrollViewProxy) {
@@ -487,5 +509,37 @@ private struct LyricsTimeTracker: View {
         if activeIndex != newIndex {
             activeIndex = newIndex
         }
+    }
+}
+
+/// The active line of enhanced-LRC lyrics: each word brightens as it is sung. Time is
+/// interpolated between the player's 4 Hz time updates so the fill moves smoothly.
+private struct KaraokeLineText: View {
+    let words: [LyricWord]
+    /// Raw lyric time at which the last word ends.
+    let lineEndMs: Int
+    let offsetMs: Int
+
+    @Environment(PlayerEngine.self) private var player
+    @State private var anchorTime: TimeInterval = 0
+    @State private var anchorDate = Date()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !player.isPlaying)) { context in
+            let elapsed = player.isPlaying ? min(max(context.date.timeIntervalSince(anchorDate), 0), 0.5) : 0
+            let nowRawMs = Int((anchorTime + elapsed) * 1000) + offsetMs
+            words.indices.reduce(Text(verbatim: "")) { text, i in
+                let start = words[i].start
+                let end = i + 1 < words.count ? words[i + 1].start : lineEndMs
+                let progress = min(max(Double(nowRawMs - start) / Double(max(end - start, 1)), 0), 1)
+                return text + Text(verbatim: words[i].text)
+                    .foregroundStyle(Color.white.opacity(0.4 + 0.6 * progress))
+            }
+        }
+        .onChange(of: player.currentTime, initial: true) { _, time in
+            anchorTime = time
+            anchorDate = .now
+        }
+        .accessibilityLabel(words.map(\.text).joined())
     }
 }
