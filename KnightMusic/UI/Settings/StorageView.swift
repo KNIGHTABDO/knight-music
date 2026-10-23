@@ -145,6 +145,7 @@ struct StorageView: View {
             Button("Clear Stream Cache", role: .destructive) {
                 storageManager?.clearCache()
                 refreshSizes()
+                Haptics.success()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -158,6 +159,7 @@ struct StorageView: View {
             Button("Clear Artwork Cache", role: .destructive) {
                 clearArtworkCaches()
                 refreshSizes()
+                Haptics.success()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -170,6 +172,7 @@ struct StorageView: View {
         ) {
             Button("Delete All Downloads", role: .destructive) {
                 downloads.deleteAll()
+                Haptics.success()
                 storageManager?.refresh()
                 refreshSizes()
                 Task {

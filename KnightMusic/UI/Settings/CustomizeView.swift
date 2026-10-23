@@ -139,7 +139,7 @@ struct CustomizeView: View {
     }
 
     private func selectSwatch(_ swatch: Swatch) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Haptics.selection()
         settings.accentColorHex = swatch.hex
         UserDefaults.standard.set(swatch.hex, forKey: "accentHex")
     }

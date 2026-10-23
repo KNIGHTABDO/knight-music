@@ -138,7 +138,17 @@ struct PlaylistsView: View {
                             let name = newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines)
                             showCreateSheet = false
                             newPlaylistName = ""
-                            Task { _ = try? await library.createPlaylist(name: name) }
+                            Task {
+                                do {
+                                    _ = try await library.createPlaylist(name: name)
+                                    Haptics.success()
+                                    ui.showToast("Playlist Created")
+                                } catch {
+                                    Log.sync.error("Create playlist failed: \(error)")
+                                    Haptics.error()
+                                    ui.showToast("Couldn't Create Playlist")
+                                }
+                            }
                         }
                         .disabled(newPlaylistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
@@ -159,8 +169,12 @@ struct PlaylistsView: View {
                 Task {
                     do {
                         try await library.deletePlaylist(id: playlist.id)
+                        Haptics.success()
+                        ui.showToast("Playlist Deleted")
                     } catch {
                         Log.sync.error("Delete playlist failed: \(error)")
+                        Haptics.error()
+                        ui.showToast("Couldn't Delete Playlist")
                     }
                 }
             }

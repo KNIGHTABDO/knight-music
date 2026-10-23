@@ -229,8 +229,10 @@ struct LoginView: View {
                     username: username.trimmingCharacters(in: .whitespaces),
                     password: password
                 )
+                Haptics.success()
             } catch {
                 errorMessage = error.localizedDescription
+                Haptics.error()
             }
             isConnecting = false
         }
