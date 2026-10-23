@@ -109,7 +109,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
         let prompt = CPListTemplate(title: "Knight Music", sections: [])
         prompt.emptyViewTitleVariants = ["Sign in on your iPhone"]
         prompt.emptyViewSubtitleVariants = ["Open Knight Music on your iPhone to connect to your server."]
-        interfaceController?.setRootTemplate(prompt, animated: false, completion: nil)
+        interfaceController?.setRootTemplate(prompt, animated: false, completion: Self.reportFailure("set sign-in root"))
     }
 
     private func showTabBar() {
@@ -134,7 +134,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
 
         let tabBar = CPTabBarTemplate(templates: [tab1.template, tab2.template, tab3.template, tab4.template])
         tabBarTemplate = tabBar
-        interfaceController?.setRootTemplate(tabBar, animated: true, completion: nil)
+        interfaceController?.setRootTemplate(tabBar, animated: true, completion: Self.reportFailure("set tab bar root"))
     }
 
     // MARK: - Navigation
@@ -144,31 +144,41 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
             Log.app.warning("CarPlay cannot push beyond depth 4")
             return
         }
-        interfaceController?.pushTemplate(template, animated: animated, completion: nil)
+        interfaceController?.pushTemplate(template, animated: animated, completion: Self.reportFailure("push"))
     }
 
     func pop(animated: Bool = true) {
-        interfaceController?.popTemplate(animated: animated, completion: nil)
+        guard let interfaceController, interfaceController.templates.count > 1 else { return }
+        interfaceController.popTemplate(animated: animated, completion: Self.reportFailure("pop"))
     }
 
     func popToRoot(animated: Bool = true) {
-        interfaceController?.popToRootTemplate(animated: animated, completion: nil)
+        guard let interfaceController, interfaceController.templates.count > 1 else { return }
+        interfaceController.popToRootTemplate(animated: animated, completion: Self.reportFailure("pop to root"))
+    }
+
+    /// CPInterfaceController raises an exception (crashing the app) when a navigation call fails and its
+    /// completion is nil, so every call passes one that logs instead.
+    nonisolated static func reportFailure(_ action: String) -> @Sendable (Bool, (any Error)?) -> Void {
+        { _, error in
+            if let error { Log.ui.error("CarPlay \(action) failed: \(error.localizedDescription)") }
+        }
     }
 
     func pushNowPlayingIfNeeded(animated: Bool = true) {
         guard let interfaceController else { return }
         if interfaceController.topTemplate !== CPNowPlayingTemplate.shared {
-            interfaceController.pushTemplate(CPNowPlayingTemplate.shared, animated: animated, completion: nil)
+            interfaceController.pushTemplate(CPNowPlayingTemplate.shared, animated: animated, completion: Self.reportFailure("push Now Playing"))
         }
     }
 
     func showAlert(message: String) {
         guard let interfaceController else { return }
         let okAction = CPAlertAction(title: "OK", style: .default) { [weak self] _ in
-            self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
+            self?.interfaceController?.dismissTemplate(animated: true, completion: CarPlayCoordinator.reportFailure("dismiss alert"))
         }
         let alert = CPAlertTemplate(titleVariants: [message], actions: [okAction])
-        interfaceController.presentTemplate(alert, animated: true, completion: nil)
+        interfaceController.presentTemplate(alert, animated: true, completion: Self.reportFailure("present alert"))
     }
 
     // MARK: - Playback Actions

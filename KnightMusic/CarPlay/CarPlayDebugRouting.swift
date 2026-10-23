@@ -41,7 +41,7 @@ enum CarPlayDebugRouting {
         guard let coordinator = activeCoordinator,
               let name = try? String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
               !name.isEmpty else { return }
-        coordinator.interfaceController?.popToRootTemplate(animated: false, completion: nil)
+        coordinator.popToRoot(animated: false)
         open(name, coordinator: coordinator)
     }
 
