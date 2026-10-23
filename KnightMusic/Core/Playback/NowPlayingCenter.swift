@@ -145,7 +145,7 @@ final class NowPlayingCenter {
     /// queue (CarPlay, lock screen), where an inherited isolation check traps.
     private nonisolated static func makeArtwork(image: UIImage) -> MPMediaItemArtwork {
         MPMediaItemArtwork(boundsSize: image.size) { requestedSize in
-            Log.artwork.debug("Now Playing artwork requested at \(requestedSize.width)x\(requestedSize.height)")
+            Log.artwork.info("Now Playing artwork requested at \(requestedSize.width)x\(requestedSize.height)")
             guard requestedSize.width > 0, requestedSize.height > 0 else { return image }
             if requestedSize.width >= image.size.width && requestedSize.height >= image.size.height {
                 return image
