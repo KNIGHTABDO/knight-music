@@ -156,6 +156,7 @@ extension PlayerEngine {
         nowPlaying.setSong(song, isLive: p.isRadio, duration: duration, elapsed: startAt, rate: rate,
                            queueIndex: currentIndex, queueCount: order.count)
         remote?.refresh()
+        refillStationIfNeeded()
     }
 
     func stopPlayer() {

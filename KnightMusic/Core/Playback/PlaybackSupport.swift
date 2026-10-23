@@ -63,6 +63,8 @@ protocol PlaybackServerActions: Sendable {
     func getPlayQueue() async throws -> ServerPlayQueue?
     /// Stars/unstars on the server. The conformer should also update the local mirror.
     func setStarred(songId: String, starred: Bool) async throws
+    /// Songs that fit after `song` for a station: similar songs, then the artist's similar songs.
+    func similarSongs(to song: Song, count: Int) async throws -> [Song]
 }
 
 protocol AutoMixPlanProvider: Sendable {

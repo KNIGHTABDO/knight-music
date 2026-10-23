@@ -31,6 +31,13 @@ struct SongActionsMenu: View {
             Label("Add to Queue", systemImage: "text.append")
         }
 
+        Button {
+            Haptics.impact(.light)
+            Task { await player.startStation(from: song) }
+        } label: {
+            Label("Start Station", systemImage: "dot.radiowaves.left.and.right")
+        }
+
         Divider()
 
         Menu {
@@ -44,7 +51,7 @@ struct SongActionsMenu: View {
                                 try await library.addToPlaylist(id: pl.id, songIds: [song.id])
                                 ui.showToast("Added to \(pl.name)")
                             } catch {
-                                Log.sync.error("Add to playlist failed: \(error)")
+                                library.report(error, "Couldn’t add to \(pl.name)")
                             }
                         }
                     }
@@ -80,7 +87,7 @@ struct SongActionsMenu: View {
                 do {
                     try await library.setStarred(.song, id: song.id, !isStarred)
                 } catch {
-                    Log.sync.error("Set starred failed for \(song.id): \(error)")
+                    library.report(error, "Couldn’t update favorite")
                 }
             }
         } label: {
@@ -94,7 +101,7 @@ struct SongActionsMenu: View {
                         do {
                             try await library.setRating(.song, id: song.id, rating: rating)
                         } catch {
-                            Log.sync.error("Set rating failed for \(song.id): \(error)")
+                            library.report(error, "Couldn’t rate song")
                         }
                     }
                 } label: {
@@ -112,7 +119,7 @@ struct SongActionsMenu: View {
                         do {
                             try await library.setRating(.song, id: song.id, rating: 0)
                         } catch {
-                            Log.sync.error("Clear rating failed for \(song.id): \(error)")
+                            library.report(error, "Couldn’t clear rating")
                         }
                     }
                 } label: {
@@ -139,6 +146,12 @@ struct SongActionsMenu: View {
             } label: {
                 Label("Go to Artist", systemImage: "person.crop.circle")
             }
+        }
+
+        Button {
+            ui.songInfo = song
+        } label: {
+            Label("Song Info", systemImage: "info.circle")
         }
 
         Divider()

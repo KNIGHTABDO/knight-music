@@ -37,6 +37,13 @@ struct SubsonicServerActions: PlaybackServerActions {
             try await client.unstar(id: songId)
         }
     }
+
+    func similarSongs(to song: Song, count: Int) async throws -> [Song] {
+        let direct = try await client.getSimilarSongs(id: song.id, count: count)
+        if !direct.isEmpty { return direct }
+        guard let artistId = song.artistId else { return [] }
+        return try await client.getSimilarSongs2(id: artistId, count: count)
+    }
 }
 
 // MARK: - ArtworkBridge

@@ -20,6 +20,8 @@ final class UIState {
     /// Set from anywhere (including the full player, which has no NavigationStack); the shell
     /// dismisses the player and pushes it onto the visible tab.
     var pendingRoute: Route?
+    /// Song whose info sheet is showing (see `SongInfoPresenter`).
+    var songInfo: Song?
 
     func open(_ route: Route) { pendingRoute = route }
 

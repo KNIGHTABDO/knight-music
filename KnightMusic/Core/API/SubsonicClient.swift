@@ -242,6 +242,15 @@ actor SubsonicClient {
         return (r.similarSongs2?.song ?? []).map(\.cleaned)
     }
 
+    /// Songs similar to a song, album or artist (Navidrome uses its metadata agents).
+    func getSimilarSongs(id: String, count: Int = 50) async throws -> [Song] {
+        var p = QueryParams()
+        p.add("id", id)
+        p.add("count", count)
+        let r: SimilarSongsV1Payload = try await perform("getSimilarSongs", p)
+        return (r.similarSongs?.song ?? []).map(\.cleaned)
+    }
+
     func getInternetRadioStations() async throws -> [RadioStation] {
         let r: RadioPayload = try await perform("getInternetRadioStations")
         return r.internetRadioStations?.internetRadioStation ?? []
@@ -581,6 +590,7 @@ private struct TopSongsPayload: Decodable { let topSongs: SongList? }
 private struct RandomSongsPayload: Decodable { let randomSongs: SongList? }
 private struct SongsByGenrePayload: Decodable { let songsByGenre: SongList? }
 private struct SimilarSongsPayload: Decodable { let similarSongs2: SongList? }
+private struct SimilarSongsV1Payload: Decodable { let similarSongs: SongList? }
 
 private struct AlbumListPayload: Decodable {
     let albumList2: Wrapper?

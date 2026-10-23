@@ -67,8 +67,10 @@ struct RootView: View {
                 .zIndex(100)
             }
         }
+        .modifier(SongInfoPresenter(insidePlayer: false))
         .fullScreenCover(isPresented: $ui.isPlayerPresented) {
             FullPlayerView()
+                .modifier(SongInfoPresenter(insidePlayer: true))
                 .preferredColorScheme(.dark)
                 .environment(\.colorScheme, .dark)
                 .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))

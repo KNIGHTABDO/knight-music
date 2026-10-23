@@ -73,6 +73,8 @@ final class PlayerEngine {
     /// The next AutoMix transition (for the preview), and why there is none when AutoMix is on but idle.
     var plannedMix: PlannedMix?
     var autoMixNote: String?
+    /// The song a running station (endless similar-songs queue) was started from.
+    var stationSeed: Song?
     /// True from the moment the next song comes in until the previous one has faded out.
     var autoMixActive = false
     /// Songs being saved for playback right now (stream cache), for the transfers indicator.
@@ -151,6 +153,8 @@ final class PlayerEngine {
     @ObservationIgnored var trackedNetworkChangeCount = 0
     @ObservationIgnored var trackedBaseURL: URL?
     @ObservationIgnored var isRetryingHandoff = false
+    @ObservationIgnored var stationRefillTask: Task<Void, Never>?
+    @ObservationIgnored var stationDatabase: DatabaseWriter?
 
     var settings: PlaybackSettings { services.settings }
 
@@ -179,6 +183,7 @@ final class PlayerEngine {
         self.downloads = downloads
         nowPlaying.artwork = services.artwork
         streamCache.configure(database: database)
+        stationDatabase = database
         scrobbler.configure(services: services, database: database)
         applyVolume()
         restoreSavedQueue()
@@ -226,6 +231,7 @@ final class PlayerEngine {
     func play(_ songs: [Song], startAt: Int? = nil, shuffle: Bool = false) {
         guard !songs.isEmpty else { return }
         let entries = songs.map(QueueEntry.init)
+        endStation()
         currentRadio = nil
         failedEntryIds = []
         retriedFromStream = []
@@ -253,6 +259,7 @@ final class PlayerEngine {
             report("Invalid radio stream address for \(station.name).")
             return
         }
+        endStation()
         if services.isOffline {
             report("Radio isn't available offline.")
             return
