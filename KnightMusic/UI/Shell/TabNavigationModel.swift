@@ -48,6 +48,8 @@ final class TabNavigationModel {
                 return Binding(get: { self.frequentlyPlayed }, set: { self.frequentlyPlayed = $0 })
             case .random:
                 return Binding(get: { self.random }, set: { self.random = $0 })
+            default:
+                return Binding(get: { self.library }, set: { self.library = $0 })
             }
         case .songList(let kind):
             switch kind {
@@ -57,6 +59,8 @@ final class TabNavigationModel {
                 return Binding(get: { self.downloaded }, set: { self.downloaded = $0 })
             case .recentlyAdded:
                 return Binding(get: { self.songs }, set: { self.songs = $0 })
+            default:
+                return Binding(get: { self.library }, set: { self.library = $0 })
             }
         case .radioStations:
             return Binding(get: { self.radioStations }, set: { self.radioStations = $0 })
