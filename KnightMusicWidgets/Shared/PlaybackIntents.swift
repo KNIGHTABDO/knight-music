@@ -8,6 +8,7 @@ public protocol IntentPlaybackHandling: AnyObject {
     func previousTrack()
     func shuffleLibrary() async
     func playFavorites() async
+    func playFavorites(startingAt songId: String) async
 }
 
 public enum IntentPlaybackBridge {
@@ -80,6 +81,28 @@ public struct PlayFavoritesIntent: AudioPlaybackIntent {
     @MainActor
     public func perform() async throws -> some IntentResult {
         await IntentPlaybackBridge.handler?.playFavorites()
+        return .result()
+    }
+}
+
+public struct PlayFavoriteSongIntent: AudioPlaybackIntent {
+    public static var title: LocalizedStringResource = "Play Favorite Song"
+    public static var description = IntentDescription("Plays your favorite songs in Knight Music, starting with this one.")
+    public static var openAppWhenRun: Bool = false
+    public static var isDiscoverable: Bool = false
+
+    @Parameter(title: "Song ID")
+    public var songId: String
+
+    public init() {}
+
+    public init(songId: String) {
+        self.songId = songId
+    }
+
+    @MainActor
+    public func perform() async throws -> some IntentResult {
+        await IntentPlaybackBridge.handler?.playFavorites(startingAt: songId)
         return .result()
     }
 }

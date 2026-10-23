@@ -10,18 +10,39 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     public var nowPlaying: WidgetNowPlaying?
     public var recentAlbums: [WidgetAlbum]
     public var newestAlbums: [WidgetAlbum]
+    public var favorites: [WidgetSong]
+    public var favoriteCount: Int
     public var updatedAt: Date
 
     public init(
         nowPlaying: WidgetNowPlaying? = nil,
         recentAlbums: [WidgetAlbum] = [],
         newestAlbums: [WidgetAlbum] = [],
+        favorites: [WidgetSong] = [],
+        favoriteCount: Int = 0,
         updatedAt: Date = Date()
     ) {
         self.nowPlaying = nowPlaying
         self.recentAlbums = recentAlbums
         self.newestAlbums = newestAlbums
+        self.favorites = favorites
+        self.favoriteCount = favoriteCount
         self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case nowPlaying, recentAlbums, newestAlbums, favorites, favoriteCount, updatedAt
+    }
+
+    /// Snapshots written by older builds have no favourites; decode them instead of dropping the whole file.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        nowPlaying = try c.decodeIfPresent(WidgetNowPlaying.self, forKey: .nowPlaying)
+        recentAlbums = try c.decodeIfPresent([WidgetAlbum].self, forKey: .recentAlbums) ?? []
+        newestAlbums = try c.decodeIfPresent([WidgetAlbum].self, forKey: .newestAlbums) ?? []
+        favorites = try c.decodeIfPresent([WidgetSong].self, forKey: .favorites) ?? []
+        favoriteCount = try c.decodeIfPresent(Int.self, forKey: .favoriteCount) ?? 0
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
     }
 
     public static let empty = WidgetSnapshot(
@@ -32,6 +53,7 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     )
 
     public func isContentEqual(to other: WidgetSnapshot) -> Bool {
+        guard favorites == other.favorites, favoriteCount == other.favoriteCount else { return false }
         guard let np1 = nowPlaying, let np2 = other.nowPlaying else {
             return nowPlaying == nil && other.nowPlaying == nil &&
                    recentAlbums == other.recentAlbums &&
@@ -127,6 +149,20 @@ public struct WidgetAlbum: Codable, Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.name = name
+        self.artist = artist
+        self.artworkFilename = artworkFilename
+    }
+}
+
+public struct WidgetSong: Codable, Identifiable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var artist: String?
+    public var artworkFilename: String?
+
+    public init(id: String, title: String, artist: String? = nil, artworkFilename: String? = nil) {
+        self.id = id
+        self.title = title
         self.artist = artist
         self.artworkFilename = artworkFilename
     }

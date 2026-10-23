@@ -83,4 +83,21 @@ final class AppPlaybackHandler: IntentPlaybackHandling {
             Log.app.error("PlayFavorites intent failed: \(error.localizedDescription)")
         }
     }
+
+    func playFavorites(startingAt songId: String) async {
+        guard let (app, db) = await waitForReady() else {
+            Log.app.error("PlayFavoriteSong intent failed: app not ready or not signed in")
+            return
+        }
+        do {
+            let songs = try await db.pool.read { db in
+                try LibraryQueries.favoriteSongs(db)
+            }
+            guard !songs.isEmpty else { return }
+            let index = songs.firstIndex { $0.id == songId } ?? 0
+            app.player.play(songs, startAt: index, shuffle: false)
+        } catch {
+            Log.app.error("PlayFavoriteSong intent failed: \(error.localizedDescription)")
+        }
+    }
 }

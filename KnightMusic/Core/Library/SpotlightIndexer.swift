@@ -40,6 +40,7 @@ enum SpotlightIndexer {
     }
 
     static func route(for identifier: String) -> Route? {
+        if identifier == "favorites:" { return .songList(.favorites) }
         let parts = identifier.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2, !parts[1].isEmpty else { return nil }
         switch parts[0] {

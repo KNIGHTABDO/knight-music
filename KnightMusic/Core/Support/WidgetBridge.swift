@@ -13,6 +13,7 @@ final class WidgetBridge {
     private var updateTask: Task<Void, Never>?
     private var recentQuery: LiveQuery<[Album]>?
     private var newestQuery: LiveQuery<[Album]>?
+    private var favoritesQuery: LiveQuery<[Song]>?
     private var queryTasks: [Task<Void, Never>] = []
     private var loggedMissingAppGroup = false
     private let log = Logger(subsystem: "com.knightabdo.knightmusic", category: "widgetbridge")
@@ -57,20 +58,25 @@ final class WidgetBridge {
         guard let library = app?.library, app?.database != nil else { return }
         let recent = library.homeList(.recent)
         let newest = library.homeList(.newest)
+        let favorites = library.favoriteSongs()
         recentQuery = recent
         newestQuery = newest
+        favoritesQuery = favorites
 
         queryTasks.append(Task { await recent.run() })
         queryTasks.append(Task { await newest.run() })
+        queryTasks.append(Task { await favorites.run() })
 
         observeLibrary()
     }
 
     private func observeLibrary() {
         guard let recent = recentQuery, let newest = newestQuery else { return }
+        let favorites = favoritesQuery
         withObservationTracking {
             _ = recent.value
             _ = newest.value
+            _ = favorites?.value
         } onChange: {
             Task { @MainActor [weak self] in
                 self?.scheduleUpdate()
@@ -203,11 +209,39 @@ final class WidgetBridge {
             widgetNewest.append(WidgetAlbum(id: album.id, name: album.name, artist: album.artist, artworkFilename: artworkFilename))
         }
 
-        // 3. Build snapshot & skip if content is identical
+        // 3. Favourite songs (newest first, as the Favorites list shows them)
+        let favoriteSongs = favoritesQuery?.value ?? []
+        var widgetFavorites: [WidgetSong] = []
+        for song in favoriteSongs.prefix(8) {
+            var artworkFilename: String?
+            if let coverArt = song.coverArt ?? song.albumId {
+                let filename = "album_\(safeFilename(for: coverArt)).jpg"
+                let fileURL = artworkDir.appendingPathComponent(filename)
+                if !FileManager.default.fileExists(atPath: fileURL.path) {
+                    if let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300),
+                       let data = image.jpegData(compressionQuality: 0.85) {
+                        do {
+                            try data.write(to: fileURL, options: .atomic)
+                        } catch {
+                            Log.app.warning("Widget favourite artwork write failed for \(song.id): \(error)")
+                        }
+                    }
+                }
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    artworkFilename = filename
+                    referencedFiles.insert(filename)
+                }
+            }
+            widgetFavorites.append(WidgetSong(id: song.id, title: song.title, artist: song.artist, artworkFilename: artworkFilename))
+        }
+
+        // 4. Build snapshot & skip if content is identical
         let newSnapshot = WidgetSnapshot(
             nowPlaying: nowPlayingSnapshot,
             recentAlbums: widgetRecent,
             newestAlbums: widgetNewest,
+            favorites: widgetFavorites,
+            favoriteCount: favoriteSongs.count,
             updatedAt: Date()
         )
 
