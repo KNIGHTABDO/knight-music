@@ -250,6 +250,7 @@ struct AlbumDetailView: View {
             SongActionsMenu(song: song)
         }
         .songSwipeActions(song)
+        .songDraggable(song)
         .listRowInsets(EdgeInsets(top: 8, leading: Theme.margin, bottom: 8, trailing: Theme.margin))
         .listRowBackground(Color.clear)
         .listRowSeparatorTint(Theme.hairline)

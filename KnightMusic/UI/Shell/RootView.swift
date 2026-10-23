@@ -47,6 +47,7 @@ struct RootView: View {
             }
         }
         .animation(.smooth, value: updates.showsBanner)
+        .focusedSceneValue(\.windowUIState, ui)
         .overlay(alignment: .top) {
             if let toast = ui.toast {
                 HStack(spacing: 8) {

@@ -90,6 +90,10 @@ struct QueueView: View {
             .scrollContentBackground(.hidden)
             .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
         }
+        .libraryDropDestination { songs in
+            player.enqueue(songs)
+            ui?.showToast(songs.count == 1 ? "Added to Queue" : "Added \(songs.count) Songs to Queue")
+        }
     }
 
     private var header: some View {

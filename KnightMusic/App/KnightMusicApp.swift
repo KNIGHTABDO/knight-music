@@ -67,6 +67,7 @@ struct KnightMusicApp: App {
 
                 .task { app.startIfNeeded() }
         }
+        .commands { PlaybackCommands(player: app.player) }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active: app.handleForeground()

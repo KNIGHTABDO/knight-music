@@ -62,6 +62,11 @@ targets:
             CFBundleURLSchemes:
               - knightmusic
         ITSAppUsesNonExemptEncryption: false
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.knightabdo.knightmusic.item
+            UTTypeDescription: Knight Music Item
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {}
         LSRequiresIPhoneOS: true
         UILaunchScreen:
           UIColorName: ""

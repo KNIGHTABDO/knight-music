@@ -49,6 +49,10 @@ struct MiniPlayerView: View {
             .contextMenu {
                 SongActionsMenu(song: song)
             }
+            .libraryDropDestination { songs in
+                player.enqueue(songs, next: true)
+                ui.showToast(songs.count == 1 ? "Playing Next" : "Playing \(songs.count) Songs Next")
+            }
             .accessibilityElement(children: .contain)
             .accessibilityAction(named: "Open Player") { ui.isPlayerPresented = true }
         }

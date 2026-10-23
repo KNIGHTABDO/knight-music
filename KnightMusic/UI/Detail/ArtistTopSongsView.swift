@@ -75,6 +75,7 @@ struct SongCollectionList: View {
                     SongActionsMenu(song: song)
                 }
                 .songSwipeActions(song)
+                .songDraggable(song)
                 .listRowInsets(EdgeInsets(top: 6, leading: Theme.margin, bottom: 6, trailing: Theme.margin))
                 .listRowBackground(Color.clear)
                 .listRowSeparatorTint(Theme.hairline)

@@ -91,6 +91,7 @@ struct SongListView: View {
                             }
                             .listRowBackground(Color.clear)
                             .songSwipeActions(song)
+                            .songDraggable(song)
                         }
                     }
                 }

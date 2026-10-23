@@ -7,6 +7,8 @@ struct AlbumTile: View {
     var subtitle: String?
     var artworkPointSize: CGFloat = 200
     var isCircle: Bool = false
+    /// Set for real albums so the tile can be dragged onto the queue or a playlist.
+    var albumId: String?
 
     init(coverArt: String?, title: String, subtitle: String? = nil, artworkPointSize: CGFloat = 200, isCircle: Bool = false) {
         self.coverArt = coverArt
@@ -18,11 +20,13 @@ struct AlbumTile: View {
 
     init(album: Album, artworkPointSize: CGFloat = 200) {
         self.init(coverArt: album.coverArt, title: album.name, subtitle: album.artist, artworkPointSize: artworkPointSize)
+        albumId = album.id
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ArtworkView(coverArt: coverArt, pointSize: artworkPointSize, isCircle: isCircle, fillsContainer: true)
+                .hoverEffect(.lift)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.kmTileTitle)
@@ -37,6 +41,21 @@ struct AlbumTile: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .modifier(AlbumTileDrag(albumId: albumId, title: title, coverArt: coverArt))
+    }
+}
+
+private struct AlbumTileDrag: ViewModifier {
+    var albumId: String?
+    var title: String
+    var coverArt: String?
+
+    func body(content: Content) -> some View {
+        if let albumId {
+            content.albumDraggable(id: albumId, title: title, coverArt: coverArt)
+        } else {
+            content
+        }
     }
 }
 

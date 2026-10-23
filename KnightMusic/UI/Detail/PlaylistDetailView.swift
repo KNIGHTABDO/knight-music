@@ -115,6 +115,15 @@ struct PlaylistDetailView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.background.ignoresSafeArea())
         .environment(\.editMode, $editMode)
+        .libraryDropDestination { dropped in
+            do {
+                try await library.addToPlaylist(id: playlistId, songIds: dropped.map(\.id))
+                ui.showToast(dropped.count == 1 ? "Added to Playlist" : "Added \(dropped.count) Songs to Playlist")
+            } catch {
+                Log.sync.error("Add dropped songs to playlist failed: \(error)")
+                ui.showToast("Couldn't Add to Playlist")
+            }
+        }
         .toolbar {
             toolbarItems(playlist: playlist, songs: songs)
         }
