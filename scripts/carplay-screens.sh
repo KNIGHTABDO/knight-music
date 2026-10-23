@@ -42,8 +42,13 @@ swiftc -O "$OUT/.click.swift" -o "$CLICK" && rm "$OUT/.click.swift"
 # size inside a 27pt bezel, below a title bar (measured from carplay-desktop-before.png).
 tap() {
   local geo; geo=$(osascript -e 'tell application "Simulator" to activate' \
-    -e 'tell application "System Events" to tell process "Simulator" to get {position, size} of (first window whose name contains "CarPlay")')
+    -e 'tell application "System Events" to tell process "Simulator"' \
+    -e 'set w to first window whose name contains "CarPlay"' \
+    -e 'perform action "AXRaise" of w' \
+    -e 'get {position, size} of w' -e 'end tell')
   local wx wy ww; IFS=', ' read -r wx wy ww _ <<<"$geo"
+  # A click on a window that isn't key only focuses it; click the title bar first so the real tap lands.
+  "$CLICK" "$(echo "$wx + $ww / 2" | bc -l)" "$((wy + 12))"; sleep 0.5
   local s cx cy
   s=$(echo "($ww - 54) / 800" | bc -l)
   cx=$(echo "$wx + 27 + $1 * $s" | bc -l); cy=$(echo "$wy + 60 + $2 * $s" | bc -l)
