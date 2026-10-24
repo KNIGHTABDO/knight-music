@@ -37,14 +37,7 @@ struct SearchView: View {
         ScrollView {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            Picker("Source", selection: $source) {
-                ForEach(SearchSource.allCases) { source in
-                    Text(source.rawValue).tag(source)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, Theme.margin)
-            .padding(.top, 8)
+            SearchFilterBar(source: $source, scope: $scope, showsScopes: !trimmed.isEmpty)
 
             if trimmed.isEmpty {
                 emptyQueryView
@@ -78,11 +71,6 @@ struct SearchView: View {
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, prompt: source == .youTube ? "Search YouTube Music" : "Artists, Albums, Songs and More")
-        .searchScopes($scope, activation: .onSearchPresentation) {
-            ForEach(SearchScope.allCases) { scope in
-                Text(scope.rawValue).tag(scope)
-            }
-        }
         .sensoryFeedback(.selection, trigger: scope)
         .sensoryFeedback(.selection, trigger: source)
         .observing(playlistsQuery)
@@ -104,6 +92,7 @@ struct SearchView: View {
             try? await Task.sleep(nanoseconds: 200_000_000)
             guard !Task.isCancelled else { return }
 
+            if debouncedQuery != trimmed { scope = .top }
             debouncedQuery = trimmed
             isSearching = true
 

@@ -39,6 +39,11 @@ final class PreparedItem {
     var tapRequested = false
     var tapAttached = false
     var isRadio: Bool { resolved.kind == .radio }
+    /// Set when the item is an AutoMix incoming song with its blend tempo baked in (item time ≠ song time).
+    var warp: TimeWarp?
+
+    func songTime(_ itemTime: Double) -> Double { warp?.songTime(itemTime) ?? itemTime }
+    func itemTime(_ songTime: Double) -> Double { warp?.itemTime(songTime) ?? songTime }
 
     init(item: AVPlayerItem, entry: QueueEntry, resolved: ResolvedSource) {
         self.item = item
@@ -149,6 +154,8 @@ final class PlayerEngine {
     @ObservationIgnored var autoMixPlanTask: Task<Void, Never>?
     @ObservationIgnored var lastPrefetchSignature = ""
     @ObservationIgnored var volumeAutomation: Timer?
+    /// Keeps transitions moving when the outgoing deck stalls (its time observer then stops firing).
+    @ObservationIgnored var mixClock: Timer?
     @ObservationIgnored var lastSavedQueueSignature: QueueSignature?
     @ObservationIgnored var isInterrupted = false
     @ObservationIgnored var streamRetryHistory: [UUID: [TimeInterval]] = [:]
@@ -416,7 +423,7 @@ final class PlayerEngine {
         let generation = seekGeneration
         seekTarget = target
         currentTime = target
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600),
+        player.seek(to: CMTime(seconds: tracked.itemTime(target), preferredTimescale: 600_000),
                     toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
             Task { @MainActor in
                 guard let self, self.seekGeneration == generation else { return }
@@ -542,6 +549,6 @@ final class PlayerEngine {
 
     func elapsedNow() -> TimeInterval {
         let t = player.currentTime().seconds
-        return t.isFinite && t >= 0 ? t : currentTime
+        return t.isFinite && t >= 0 ? (tracked?.songTime(t) ?? t) : currentTime
     }
 }

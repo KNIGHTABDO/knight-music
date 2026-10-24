@@ -222,7 +222,7 @@ extension PlayerEngine {
     }
 
     /// `asset` reuses an already loaded asset (a retempo twin); `tap: false` leaves the tap to the caller.
-    func makePrepared(entry: QueueEntry, resolved: ResolvedSource, asset: AVURLAsset? = nil, tap: Bool = true) -> PreparedItem {
+    func makePrepared(entry: QueueEntry, resolved: ResolvedSource, asset: AVAsset? = nil, tap: Bool = true) -> PreparedItem {
         let item = AVPlayerItem(asset: asset ?? makeAsset(for: resolved))
         let prepared = PreparedItem(item: item, entry: entry, resolved: resolved)
         if settings.speedChanged { item.audioTimePitchAlgorithm = .spectral }
@@ -271,6 +271,12 @@ extension PlayerEngine {
 
     func prepareGaplessNext() {
         guard let tracked else { return }
+        // The player may already have moved on to the queued item before its KVO change was delivered:
+        // replacing it now would leave the new song playing while the old one stays "current".
+        if let next = nextPrepared, player.currentItem === next.item {
+            promoteNext()
+            return
+        }
         for item in player.items() where item !== tracked.item { player.remove(item) }
         nextPrepared?.observations.removeAll()
         nextPrepared = nil
@@ -305,6 +311,11 @@ extension PlayerEngine {
 
     func advanceAfterEnd() {
         guard tracked != nil else { return }
+        // The outgoing song ended before its planned handoff: the incoming deck is already playing, keep it.
+        if let session = mixSession, session.phase == .scheduled || session.phase == .mixing, session.incoming != nil {
+            settleAutoMix(keepIncoming: true)
+            return
+        }
         cancelMix(reprepare: false)
         if endOfSongArmed {
             endOfSongArmed = false
@@ -482,7 +493,7 @@ extension PlayerEngine {
         let delta = min(max(now - lastTickUptime, 0), 1)
         lastTickUptime = now
         guard !isScrubbing, seekTarget == nil else { return }
-        let t = time.seconds
+        let t = tracked?.songTime(time.seconds) ?? time.seconds
         guard t.isFinite, t >= 0 else { return }
         currentTime = t
 
@@ -554,7 +565,7 @@ extension PlayerEngine {
 
     func itemMetricsChanged(_ p: PreparedItem) {
         guard p === tracked else { return }
-        let d = p.item.duration.seconds
+        let d = p.songTime(p.item.duration.seconds)
         if !p.isRadio, d.isFinite, d > 0, abs(d - duration) > 0.5 {
             duration = d
             nowPlaying.updateDuration(d)
@@ -575,7 +586,8 @@ extension PlayerEngine {
     // MARK: - Failures and Handoff
 
     func checkNextPreparedAddress() {
-        guard let next = nextPrepared, next.resolved.kind == .streaming,
+        // YouTube streams don't go through the server address.
+        guard let next = nextPrepared, next.resolved.kind == .streaming, !next.entry.song.isYouTube,
               let curBase = services.currentBaseURL?() else { return }
         if !next.resolved.url.absoluteString.hasPrefix(curBase.absoluteString) {
             PlaybackLog.logger.info("Re-preparing nextPrepared (\(next.entry.song.title)) because URL points to old address")
