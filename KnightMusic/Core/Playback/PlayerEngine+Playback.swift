@@ -29,7 +29,7 @@ extension PlayerEngine {
 
     func streamURL(for song: Song, quality: StreamQuality) -> URL? {
         if let videoId = song.youTubeVideoId { return YouTubeResourceLoader.url(videoId: videoId) }
-        services.urls?.streamURL(songId: song.id, maxBitRate: quality.maxBitRate,
+        return services.urls?.streamURL(songId: song.id, maxBitRate: quality.maxBitRate,
                                  format: quality.format ?? (quality.maxBitRate == nil ? "raw" : nil),
                                  timeOffset: nil)
     }
