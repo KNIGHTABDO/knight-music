@@ -7,11 +7,23 @@ struct RouteRootView: View {
     var body: some View {
         switch route {
         case .album(let id):
-            AlbumDetailView(albumId: id)
+            if let browseId = id.youTubeBrowseId {
+                YTAlbumView(browseId: browseId)
+            } else {
+                AlbumDetailView(albumId: id)
+            }
         case .artist(let id):
-            ArtistDetailView(artistId: id)
+            if let browseId = id.youTubeBrowseId {
+                YTArtistView(browseId: browseId)
+            } else {
+                ArtistDetailView(artistId: id)
+            }
         case .playlist(let id):
-            PlaylistDetailView(playlistId: id)
+            if let browseId = id.youTubeBrowseId {
+                YTPlaylistView(browseId: browseId)
+            } else {
+                PlaylistDetailView(playlistId: id)
+            }
         case .genre(let name):
             GenreDetailView(genre: name)
         case .albumList(let kind):
@@ -36,6 +48,10 @@ struct RouteRootView: View {
             ReplayView()
         case .knightChat(let id, let draft):
             KnightChatView(conversationId: id, initialDraft: draft)
+        case .youTubeGrid(let browseId, let params, let title):
+            YTGridView(target: YTBrowseTarget(browseId: browseId, params: params), title: title)
+        case .youTubeSongs(let browseId, let params, let title):
+            YTSongsView(target: YTBrowseTarget(browseId: browseId, params: params), title: title)
         }
     }
 }

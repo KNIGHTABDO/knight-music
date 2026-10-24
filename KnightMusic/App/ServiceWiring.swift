@@ -12,11 +12,15 @@ struct SubsonicServerActions: PlaybackServerActions {
     let client: SubsonicClient
 
     func scrobble(songId: String, time: Date, submission: Bool) async throws {
+        guard !songId.hasPrefix(Song.youTubePrefix) else { return }
         try await client.scrobble(id: songId, time: time, submission: submission)
     }
 
     func savePlayQueue(songIds: [String], currentSongId: String?, positionMs: Int) async throws {
-        try await client.savePlayQueue(ids: songIds, current: currentSongId, positionMs: positionMs)
+        // The server only knows library songs; YouTube songs stay in the local queue.
+        let ids = songIds.filter { !$0.hasPrefix(Song.youTubePrefix) }
+        let current = currentSongId.flatMap { $0.hasPrefix(Song.youTubePrefix) ? nil : $0 }
+        try await client.savePlayQueue(ids: ids, current: current, positionMs: current == nil ? 0 : positionMs)
     }
 
     func getPlayQueue() async throws -> ServerPlayQueue? {
@@ -31,6 +35,7 @@ struct SubsonicServerActions: PlaybackServerActions {
     }
 
     func setStarred(songId: String, starred: Bool) async throws {
+        guard !songId.hasPrefix(Song.youTubePrefix) else { return }
         if starred {
             try await client.star(id: songId)
         } else {
@@ -39,6 +44,7 @@ struct SubsonicServerActions: PlaybackServerActions {
     }
 
     func similarSongs(to song: Song, count: Int) async throws -> [Song] {
+        if let videoId = song.youTubeVideoId { return try await YouTubeMusic.shared.radio(videoId: videoId).map(\.song) }
         let direct = try await client.getSimilarSongs(id: song.id, count: count)
         if !direct.isEmpty { return direct }
         guard let artistId = song.artistId else { return [] }
@@ -142,6 +148,8 @@ extension AppModel {
 
         addSessionObserver { app in
             ArtworkLoader.configure(provider: app.client)
+            let youTubeServer: (@Sendable (String) -> URL?)? = app.client.map { client in { path in client.autoMixURL(path: path) } }
+            Task { await YouTubeConfigStore.shared.setServer(youTubeServer) }
             app.playbackServices.urls = app.client
             app.playbackServices.server = app.client.map(SubsonicServerActions.init)
             app.playbackServices.autoMix = app.client.map { client in

@@ -386,6 +386,7 @@ final class LibraryRepository {
 
     /// Optimistic: the heart flips immediately, and flips back if the server rejects it.
     func setStarred(_ kind: StarKind, id: String, _ on: Bool) async throws {
+        guard !id.hasPrefix(Song.youTubePrefix) else { return }
         let client = try requireClient()
         let database = try requireDatabase()
         let table = table(for: kind)
@@ -432,7 +433,7 @@ final class LibraryRepository {
 
     /// Rating 0...5 (0 clears). Songs and albums.
     func setRating(_ kind: StarKind, id: String, rating: Int) async throws {
-        guard kind != .artist else { return }
+        guard kind != .artist, !id.hasPrefix(Song.youTubePrefix) else { return }
         let client = try requireClient()
         let database = try requireDatabase()
         let table = table(for: kind)

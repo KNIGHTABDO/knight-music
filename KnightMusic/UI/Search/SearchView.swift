@@ -14,6 +14,13 @@ struct SearchView: View {
     @State private var isSearching = false
     @State private var recentSearches: [String] = []
     @State private var scope: SearchScope = .top
+    @AppStorage("search_source") private var source: SearchSource = .library
+
+    enum SearchSource: String, CaseIterable, Identifiable {
+        case library = "Library"
+        case youTube = "YouTube Music"
+        var id: String { rawValue }
+    }
 
     enum SearchScope: String, CaseIterable, Identifiable {
         case top = "Top Results"
@@ -30,8 +37,19 @@ struct SearchView: View {
         ScrollView {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
+            Picker("Source", selection: $source) {
+                ForEach(SearchSource.allCases) { source in
+                    Text(source.rawValue).tag(source)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, Theme.margin)
+            .padding(.top, 8)
+
             if trimmed.isEmpty {
                 emptyQueryView
+            } else if source == .youTube {
+                YouTubeSearchResultsView(query: debouncedQuery, scope: $scope)
             } else if let results = searchResults {
                 if isEmpty(results, playlists: matchedPlaylists) && !isSearching {
                     VStack(spacing: 24) {
@@ -59,13 +77,14 @@ struct SearchView: View {
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, prompt: "Artists, Albums, Songs and More")
+        .searchable(text: $query, prompt: source == .youTube ? "Search YouTube Music" : "Artists, Albums, Songs and More")
         .searchScopes($scope, activation: .onSearchPresentation) {
             ForEach(SearchScope.allCases) { scope in
                 Text(scope.rawValue).tag(scope)
             }
         }
         .sensoryFeedback(.selection, trigger: scope)
+        .sensoryFeedback(.selection, trigger: source)
         .observing(playlistsQuery)
         .onSubmit(of: .search) {
             addRecentSearch(query)

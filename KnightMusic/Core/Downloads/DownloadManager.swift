@@ -130,7 +130,8 @@ final class DownloadManager {
 
     func download(songs: [Song]) {
         let settings = services.settings
-        for song in songs {
+        // YouTube songs are saved with "Add to Navidrome" instead; offline copies live in the stream cache.
+        for song in songs where !song.isYouTube {
             if let state = statuses[song.id]?.state, state != .failed { continue }
             let ext = settings.downloadMaxBitRate > 0 ? (settings.downloadFormat ?? "mp3") : (song.suffix ?? "mp3")
             paths[song.id] = "\(safeFileComponent(song.id)).\(ext)"

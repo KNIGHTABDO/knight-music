@@ -99,6 +99,12 @@ extension PlayerEngine {
             return
         }
         let target = order[index]
+        // The AutoMix server only analyzes library songs: YouTube songs get a plain crossfade.
+        if settings.autoMix, tracked.entry.song.isYouTube || target.song.isYouTube {
+            let seconds = settings.crossfadeSeconds > 0 ? Double(settings.crossfadeSeconds) : 6
+            installPlan(crossfadePlan(from: tracked, seconds: seconds), trackedEntry: tracked.entry.id, target: target)
+            return
+        }
         guard settings.autoMix else {
             installPlan(crossfadePlan(from: tracked, seconds: Double(settings.crossfadeSeconds)), trackedEntry: tracked.entry.id, target: target)
             return
@@ -134,7 +140,7 @@ extension PlayerEngine {
 
     /// The next ~20 transitions of the queue, fetched once in the background (they then mix offline too).
     private func prefetchUpcomingPlans(_ provider: AutoMixPlanProvider) {
-        let upcoming = Array(order.dropFirst(currentIndex).prefix(21)).map(\.song.id)
+        let upcoming = Array(order.dropFirst(currentIndex).prefix(21)).map(\.song).filter { !$0.isYouTube }.map(\.id)
         guard upcoming.count > 2 else { return }
         let pairs = zip(upcoming, upcoming.dropFirst()).filter { $0 != $1 }.map { (from: $0, to: $1) }
         let signature = pairs.map { "\($0.from)>\($0.to)" }.joined(separator: ",")

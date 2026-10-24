@@ -18,6 +18,8 @@ enum Route: Hashable {
     case radioStations
     case replay
     case knightChat(id: String, draft: String? = nil)
+    case youTubeGrid(browseId: String, params: String?, title: String)
+    case youTubeSongs(browseId: String, params: String?, title: String)
 }
 
 
@@ -54,24 +56,7 @@ enum SongListKind: String, Hashable, CaseIterable {
 extension View {
     func withAppRoutes() -> some View {
         navigationDestination(for: Route.self) { route in
-            switch route {
-            case .album(let id): AlbumDetailView(albumId: id)
-            case .artist(let id): ArtistDetailView(artistId: id)
-            case .playlist(let id): PlaylistDetailView(playlistId: id)
-            case .genre(let name): GenreDetailView(genre: name)
-            case .albumList(let kind): AlbumListView(kind: kind)
-            case .songList(let kind): SongListView(kind: kind)
-            case .artists: ArtistsView()
-            case .favoriteArtists: FavoriteArtistsView()
-            case .albums: AlbumsView()
-            case .songs: SongsView()
-            case .playlists: PlaylistsView()
-            case .genres: GenresView()
-            case .radioStations: RadioStationsView()
-            case .replay: ReplayView()
-            case .knightChat(let id, let draft): KnightChatView(conversationId: id, initialDraft: draft)
-            }
-
+            RouteRootView(route: route)
         }
     }
 }

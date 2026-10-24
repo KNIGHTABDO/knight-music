@@ -247,6 +247,28 @@ final class StreamCache: @unchecked Sendable {
         var request = URLRequest(url: job.url)
         request.networkServiceType = job.urgent ? .responsiveData : .background
         do {
+            let tmp: URL
+            if let videoId = YouTubeResourceLoader.videoId(in: job.url) {
+                tmp = try await YouTubeAudioDownloader.download(videoId: videoId) { [weak self] fraction in
+                    self?.progress(job.songId, fraction: fraction)
+                }
+            } else {
+                let (file, response) = try await session.download(for: request,
+                                                                   delegate: TransferProgress(cache: self, songId: job.songId))
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    throw URLError(.badServerResponse)
+                }
+                let mime = http.mimeType?.lowercased() ?? ""
+                // Subsonic reports errors as HTTP 200 with a JSON/XML body.
+                if mime.contains("json") || mime.contains("xml") || mime.hasPrefix("text") {
+                    throw URLError(.cannotParseResponse)
+                }
+                tmp = file
+            }
+            try Task.checkCancellation()
+            store(tmp: tmp, job: job)
+                throw CancellationError()
+            }
             let (tmp, response) = try await session.download(for: request,
                                                               delegate: TransferProgress(cache: self, songId: job.songId))
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {

@@ -38,6 +38,53 @@ struct SongActionsMenu: View {
             Label("Start Station", systemImage: "dot.radiowaves.left.and.right")
         }
 
+        if song.isYouTube {
+            youTubeActions
+        } else {
+            libraryActions(isStarred: isStarred, isDownloaded: isDownloaded, downloadStatus: downloadStatus, playlists: playlists.value)
+        }
+    }
+
+    @ViewBuilder private var youTubeActions: some View {
+        Divider()
+
+        Button {
+            YouTubeImporter.addWithFeedback(song, ui: ui)
+        } label: {
+            Label("Add to Navidrome", systemImage: "plus.circle")
+        }
+
+        Divider()
+
+        navigationActions
+
+        if let videoId = song.youTubeVideoId, let url = URL(string: "https://music.youtube.com/watch?v=\(videoId)") {
+            ShareLink(item: url) {
+                Label("Share Song", systemImage: "square.and.arrow.up")
+            }
+        }
+    }
+
+    @ViewBuilder private var navigationActions: some View {
+        if let albumId = song.albumId, !albumId.isEmpty {
+            Button {
+                ui.open(.album(albumId))
+            } label: {
+                Label("Go to Album", systemImage: "record.circle")
+            }
+        }
+
+        if let artistId = song.artistId, !artistId.isEmpty {
+            Button {
+                ui.open(.artist(artistId))
+            } label: {
+                Label("Go to Artist", systemImage: "person.crop.circle")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func libraryActions(isStarred: Bool, isDownloaded: Bool, downloadStatus: DownloadStatus?, playlists: [Playlist]) -> some View {
         Divider()
 
         Menu {
@@ -46,9 +93,9 @@ struct SongActionsMenu: View {
             } label: {
                 Label("New Playlist…", systemImage: "plus")
             }
-            if !playlists.value.isEmpty {
+            if !playlists.isEmpty {
                 Divider()
-                ForEach(playlists.value) { pl in
+                ForEach(playlists) { pl in
                     Button(pl.name) {
                         Task {
                             if (try? await library.addToPlaylist(id: pl.id, songIds: [song.id])) != nil {
@@ -121,21 +168,7 @@ struct SongActionsMenu: View {
 
         Divider()
 
-        if let albumId = song.albumId, !albumId.isEmpty {
-            Button {
-                ui.open(.album(albumId))
-            } label: {
-                Label("Go to Album", systemImage: "record.circle")
-            }
-        }
-
-        if let artistId = song.artistId, !artistId.isEmpty {
-            Button {
-                ui.open(.artist(artistId))
-            } label: {
-                Label("Go to Artist", systemImage: "person.crop.circle")
-            }
-        }
+        navigationActions
 
         Button {
             ui.songInfo = song
