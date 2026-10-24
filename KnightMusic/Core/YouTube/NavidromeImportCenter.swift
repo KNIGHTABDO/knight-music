@@ -137,6 +137,7 @@ final class NavidromeImportCenter {
 
         var sawRun = false
         let started = Date()
+        var lastRecovery = Date()
         while true {
             try? await Task.sleep(for: .seconds(1))
             let active = hermes.isRunning && hermes.activeConversationId == conversationId
@@ -147,10 +148,20 @@ final class NavidromeImportCenter {
                 }
                 continue
             }
-            if !sawRun && Date().timeIntervalSince(started) < 5 { continue }
-
-            guard let reply = hermes.store.conversation(for: conversationId)?.messages.last(where: { $0.role == .assistant })
-            else { return finish(id, .failed("Knight didn't answer")) }
+            let reply = hermes.store.conversation(for: conversationId)?.messages.last(where: { $0.role == .assistant })
+            guard let reply else {
+                if !sawRun && Date().timeIntervalSince(started) < 30 { continue }
+                return finish(id, .failed("Knight didn't answer"))
+            }
+            // The app was in the background: the run may have finished on the server without us hearing it.
+            if reply.status == "running" {
+                update(id) { $0.stage = "Checking with Knight…" }
+                if Date().timeIntervalSince(lastRecovery) > 4 {
+                    lastRecovery = Date()
+                    await hermes.recoverRunningMessages()
+                }
+                continue
+            }
 
             if reply.status == "failed" || reply.status == "stopped" {
                 return finish(id, .failed("Knight couldn't finish the import"))
