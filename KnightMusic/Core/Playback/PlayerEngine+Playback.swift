@@ -23,7 +23,7 @@ extension PlayerEngine {
     func isPlayable(_ song: Song) -> Bool {
         if downloads?.localFileURL(for: song.id) != nil { return true }
         if streamCache.contains(song.id) { return true }
-        if song.isYouTube { return !services.isOffline }
+        if song.isYouTube { return !services.isInternetOffline }
         return !services.isOffline && services.urls != nil
     }
 
@@ -46,12 +46,13 @@ extension PlayerEngine {
             return ResolvedSource(url: url, kind: .cached, quality: q,
                                   description: AudioDescription.make(kind: .cached, song: song, quality: q))
         }
-        guard !services.isOffline else { return nil }
         if song.isYouTube {
+            guard !services.isInternetOffline else { return nil }
             guard let url = streamURL(for: song, quality: .original) else { return nil }
             return ResolvedSource(url: url, kind: .streaming, quality: .original,
                                   description: AudioDescription.make(kind: .streaming, song: song, quality: nil))
         }
+        guard !services.isOffline else { return nil }
         let q = currentQuality()
         guard let url = streamURL(for: song, quality: q) else { return nil }
         return ResolvedSource(url: url, kind: .streaming, quality: q,
@@ -111,6 +112,22 @@ extension PlayerEngine {
         }
         userWantsPlaying = false
         stopPlayer()
+        if !silent, services.isOffline, !services.isInternetOffline, let recheck = services.reresolveAddress {
+            // Online but the server is flagged unreachable (possibly stale): check right now instead of refusing the tap.
+            let queueIds = order.map(\.id)
+            Task { @MainActor [weak self] in
+                let reachable = await recheck() != nil
+                guard let self, self.order.map(\.id) == queueIds else { return }
+                if reachable {
+                    self.userWantsPlaying = autoplay
+                    if self.load(index: index, autoplay: autoplay, startAt: startAt, scanBackward: scanBackward, silent: true) { return }
+                    self.userWantsPlaying = false
+                }
+                self.report(reachable ? "Couldn't find a playable source for the queue."
+                                      : "Can't reach your server and none of these songs are downloaded.")
+            }
+            return false
+        }
         if !silent {
             report(services.isOffline ? "None of the songs in the queue are available offline."
                                       : "Couldn't find a playable source for the queue.")

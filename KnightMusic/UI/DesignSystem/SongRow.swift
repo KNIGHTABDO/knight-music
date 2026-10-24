@@ -62,7 +62,7 @@ struct SongRow<MenuContent: View>: View {
                     .foregroundStyle(Theme.secondaryLabel)
                     .accessibilityLabel("Downloaded")
             }
-            if let duration {
+            if let duration, duration > 0 {
                 Text(KMFormat.duration(duration))
                     .font(.system(size: 15).monospacedDigit())
                     .foregroundStyle(Theme.secondaryLabel)

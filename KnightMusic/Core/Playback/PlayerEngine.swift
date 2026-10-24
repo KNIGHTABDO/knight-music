@@ -294,7 +294,7 @@ final class PlayerEngine {
             return
         }
         endStation()
-        if services.isOffline {
+        if services.isInternetOffline {
             report("Radio isn't available offline.")
             return
         }

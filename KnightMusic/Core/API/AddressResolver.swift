@@ -28,11 +28,11 @@ final class AddressResolver {
 
     /// Probes all addresses concurrently but honours preference order: the winner is the earliest address
     /// that answers, once every address before it has failed. Returns nil if none answers.
-    func resolve(account: ServerAccount, password: String) async -> URL? {
+    func resolve(account: ServerAccount, password: String, timeout: TimeInterval? = nil) async -> URL? {
         guard !account.addresses.isEmpty else { return nil }
         isResolving = true
         defer { isResolving = false }
-        let timeout = probeTimeout
+        let timeout = timeout ?? probeTimeout
         let addresses = account.addresses
         let username = account.username
 
