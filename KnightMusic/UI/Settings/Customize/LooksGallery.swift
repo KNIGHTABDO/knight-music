@@ -130,11 +130,11 @@ struct LookActionsRow: View {
                                 .buttonStyle(.glassProminent)
                         }
                         if looks.hasUnsavedChanges {
-                            Button("Save as New", systemImage: "square.and.arrow.down") {
-                                name = looks.isBuiltIn ? "My \(looks.current.name)" : looks.current.name
-                                asksName = true
+                            if looks.isSaved {
+                                saveAsNewButton.buttonStyle(.glass)
+                            } else {
+                                saveAsNewButton.buttonStyle(.glassProminent)
                             }
-                            .buttonStyle(looks.isSaved ? .glass : .glassProminent)
                             Button("Revert", systemImage: "arrow.uturn.backward") { looks.revert() }
                                 .buttonStyle(.glass)
                         }
@@ -163,6 +163,13 @@ struct LookActionsRow: View {
         }
     }
 
+    private var saveAsNewButton: some View {
+        Button("Save as New", systemImage: "square.and.arrow.down") {
+            name = looks.isBuiltIn ? "My \(looks.current.name)" : looks.current.name
+            asksName = true
+        }
+    }
+
     private func lookFromCover(_ song: Song) {
         Task {
             let palette = await ArtworkPalette.palette(for: song.coverArt)
@@ -177,7 +184,7 @@ struct LookActionsRow: View {
 }
 
 /// A look exported as JSON with a `.knightlook` file name.
-struct LookFile: Transferable {
+struct LookFile: Transferable, Sendable {
     let look: Look
 
     static var transferRepresentation: some TransferRepresentation {
