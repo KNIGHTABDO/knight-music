@@ -9,7 +9,6 @@ struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
     @Environment(PlayerEngine.self) private var player
-    @Environment(AppSettings.self) private var settings
     @Environment(UpdateChecker.self) private var updates
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
