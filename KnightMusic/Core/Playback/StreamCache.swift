@@ -267,20 +267,6 @@ final class StreamCache: @unchecked Sendable {
             }
             try Task.checkCancellation()
             store(tmp: tmp, job: job)
-                throw CancellationError()
-            }
-            let (tmp, response) = try await session.download(for: request,
-                                                              delegate: TransferProgress(cache: self, songId: job.songId))
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                throw URLError(.badServerResponse)
-            }
-            let mime = http.mimeType?.lowercased() ?? ""
-            // Subsonic reports errors as HTTP 200 with a JSON/XML body.
-            if mime.contains("json") || mime.contains("xml") || mime.hasPrefix("text") {
-                throw URLError(.cannotParseResponse)
-            }
-            try Task.checkCancellation()
-            store(tmp: tmp, job: job)
         } catch is CancellationError {
         } catch let error as URLError where error.code == .cancelled {
         } catch {
