@@ -37,6 +37,16 @@ extension PlayerEngine {
 
     private func stationSongs(after song: Song, excluding known: Set<String>) async -> [Song] {
         var picks: [Song] = []
+        if let videoId = song.youTubeVideoId {
+            guard !services.isOffline else { return [] }
+            do {
+                picks = try await YouTubeMusic.shared.radio(videoId: videoId).map(\.song)
+            } catch {
+                PlaybackLog.logger.error("YouTube radio failed: \(error.localizedDescription, privacy: .public)")
+            }
+            var seen = Set<String>()
+            return Array(picks.filter { !known.contains($0.id) && seen.insert($0.id).inserted }.prefix(Self.stationBatch))
+        }
         if !services.isOffline, let server = services.server {
             do {
                 picks = try await server.similarSongs(to: song, count: Self.stationBatch * 2)

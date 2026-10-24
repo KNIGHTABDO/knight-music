@@ -19,6 +19,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import planner, showcase
+from .youtube import VIDEO_ID, YouTube
 from .analyze import ANALYSIS_VERSION
 
 log = logging.getLogger("automix")
@@ -221,7 +222,7 @@ def batch_token() -> str | None:
         return None
 
 
-def make_handler(store: Store, worker: Worker, auth: Auth):
+def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
     class Handler(BaseHTTPRequestHandler):
         server_version = "KnightAutoMix/1"
 
@@ -254,6 +255,42 @@ def make_handler(store: Store, worker: Worker, auth: Auth):
             if len(parts) < 6 or parts[3] != "batch" or not token or parts[4] != token:
                 return None
             return parts[5], (parts[6] if len(parts) > 6 else "")
+
+        def _yt_audio(self, video_id: str):
+            if not VIDEO_ID.match(video_id):
+                return self._send(400, {"error": "bad video id"})
+            try:
+                file_path = yt.audio_path(video_id)
+            except Exception as exc:
+                return self._send(502, {"error": str(exc)[-300:]})
+            size = os.path.getsize(file_path)
+            start, end = 0, size - 1
+            ranged = self.headers.get("Range", "")
+            if ranged.startswith("bytes="):
+                first, _, last = ranged[6:].split(",")[0].partition("-")
+                if first:
+                    start = int(first)
+                    end = min(int(last), size - 1) if last else size - 1
+                elif last:
+                    start = max(0, size - int(last))
+                if start > end:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.end_headers()
+                    return
+            self.send_response(206 if ranged else 200)
+            self.send_header("Content-Type", "audio/mp4")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(end - start + 1))
+            if ranged:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                left = end - start + 1
+                while left > 0 and (chunk := f.read(min(1 << 20, left))):
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
 
         def do_GET(self):
             url = urllib.parse.urlparse(self.path)
@@ -324,6 +361,16 @@ def make_handler(store: Store, worker: Worker, auth: Auth):
                         found.append((stretch, b_id, result["reason"]))
                 found.sort()
                 return self._send(200, {"matches": [{"id": i, "reason": r} for _, i, r in found[:limit]]})
+            if path == "/automix/v1/yt/clients":
+                try:
+                    return self._send(200, yt.client_table())
+                except Exception as exc:
+                    return self._send(503, {"error": str(exc)[-300:]})
+            if path.startswith("/automix/v1/yt/audio/"):
+                return self._yt_audio(path.rsplit("/", 1)[-1])
+            if path.startswith("/automix/v1/yt/import/"):
+                job = yt.import_status(path.rsplit("/", 1)[-1])
+                return self._send(200, job) if job else self._send(404, {"error": "no such import"})
             if path.startswith("/automix/v1/analysis/"):
                 data = store.get(path.rsplit("/", 1)[-1])
                 return self._send(200, data) if data else self._send(404, {"error": "not analysed"})
@@ -351,6 +398,19 @@ def make_handler(store: Store, worker: Worker, auth: Auth):
                 log.info("imported external analysis %s (%.1f BPM): %s", job[1], data.get("bpm") or 0,
                          os.path.basename(t["path"]))
                 return self._send(200, {"ok": True})
+            if url.path.rstrip("/") == "/automix/v1/yt/import":
+                if not auth.check(query):
+                    return self._send(401, {"error": "invalid credentials"})
+                try:
+                    length = min(int(self.headers.get("Content-Length", "0")), 1 << 16)
+                    body = json.loads(self.rfile.read(length) or b"{}")
+                except ValueError:
+                    return self._send(400, {"error": "bad body"})
+                video_id = str(body.get("videoId", ""))
+                if not VIDEO_ID.match(video_id):
+                    return self._send(400, {"error": "bad video id"})
+                meta = {k: str(body[k]) for k in ("title", "artist", "album", "year") if body.get(k)}
+                return self._send(200, yt.start_import(video_id, meta, query))
             if url.path.rstrip("/") != "/automix/v1/plans":
                 return self._send(404, {"error": "not found"})
             if not auth.check(query):
@@ -377,7 +437,9 @@ def main():
     worker.rescan()
     worker.start()
     Scanner(worker).start()
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), make_handler(store, worker, Auth()))
+    yt = YouTube()
+    yt.start()
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), make_handler(store, worker, Auth(), yt))
     log.info("AutoMix listening on :%d, %d tracks, %d queued", PORT, len(worker.meta), len(worker.pending))
     server.serve_forever()
 

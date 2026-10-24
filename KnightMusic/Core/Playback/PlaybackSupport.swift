@@ -158,6 +158,7 @@ enum AudioDescription {
         case .cached: prefix = "Cached"
         default: prefix = "Streaming"
         }
+        if song.isYouTube { return [prefix, "YouTube Music", "AAC"].joined(separator: " \u{2022} ") }
         var format: String?
         var bitrate: Int?
         if kind == .downloaded {

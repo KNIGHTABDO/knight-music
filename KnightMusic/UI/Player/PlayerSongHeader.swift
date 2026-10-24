@@ -46,27 +46,30 @@ struct PlayerSongActionsRow: View {
     var showsRating = true
 
     @Environment(PlayerEngine.self) private var player
+    @Environment(UIState.self) private var ui
 
     var body: some View {
         HStack {
-            Button {
-                Haptics.impact(.medium)
-                player.toggleStarCurrent()
-            } label: {
-                Image(systemName: song.starred != nil ? "heart.fill" : "heart")
-                    .font(.system(size: 20))
-                    .foregroundStyle(song.starred != nil ? Theme.accent : Color.white.opacity(0.75))
-                    .contentTransition(.symbolEffect(.replace))
-                    .frame(width: 36, height: 36)
-                    .contentShape(Rectangle())
+            if song.isYouTube {
+                Button {
+                    Haptics.impact(.medium)
+                    YouTubeImporter.addWithFeedback(song, ui: ui)
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color.white.opacity(0.75))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add to Navidrome")
+            } else {
+                favoriteButton
             }
-            .buttonStyle(.plain)
-            .sensoryFeedback(.impact(weight: .medium), trigger: song.starred != nil)
-            .accessibilityLabel(song.starred != nil ? "Unfavorite" : "Favorite")
 
             Spacer()
 
-            if showsRating {
+            if showsRating && !song.isYouTube {
                 StarRatingView(rating: $rating, starSize: starSize, spacing: 6)
                     .sensoryFeedback(.selection, trigger: rating)
                 Spacer()
@@ -83,5 +86,22 @@ struct PlayerSongActionsRow: View {
             }
             .accessibilityLabel("Song Actions")
         }
+    }
+
+    private var favoriteButton: some View {
+        Button {
+            Haptics.impact(.medium)
+            player.toggleStarCurrent()
+        } label: {
+            Image(systemName: song.starred != nil ? "heart.fill" : "heart")
+                .font(.system(size: 20))
+                .foregroundStyle(song.starred != nil ? Theme.accent : Color.white.opacity(0.75))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.impact(weight: .medium), trigger: song.starred != nil)
+        .accessibilityLabel(song.starred != nil ? "Unfavorite" : "Favorite")
     }
 }

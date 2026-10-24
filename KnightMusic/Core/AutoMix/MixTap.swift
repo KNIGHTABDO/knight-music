@@ -37,14 +37,31 @@ final class MixAutomation: @unchecked Sendable {
         var gain: Curve?
         var hpf: Curve?
         var lpf: Curve?
-        var isIdentity: Bool { gain == nil && hpf == nil && lpf == nil }
+        /// Short crossover envelope while a deck hands over to its twin at another tempo (see Retempo).
+        var fade: Curve?
+        var isIdentity: Bool { gain == nil && hpf == nil && lpf == nil && fade == nil }
     }
 
     private let state = OSAllocatedUnfairLock(initialState: Program())
 
     func set(deck: AutoMixPlan.Deck) {
-        let program = Program(gain: Curve(deck.gain), hpf: Curve(deck.hpf), lpf: Curve(deck.lpf))
-        state.withLock { $0 = program }
+        let gain = Curve(deck.gain), hpf = Curve(deck.hpf), lpf = Curve(deck.lpf)
+        state.withLock { $0 = Program(gain: gain, hpf: hpf, lpf: lpf, fade: $0.fade) }
+    }
+
+    /// Takes over another deck's curves (a twin of the same item continues its automation).
+    func adopt(_ other: MixAutomation) {
+        let program = other.state.withLock { $0 }
+        state.withLock { $0 = Program(gain: program.gain, hpf: program.hpf, lpf: program.lpf, fade: $0.fade) }
+    }
+
+    func setFade(_ frames: [[Double]]) {
+        let fade = Curve(frames)
+        state.withLock { $0.fade = fade }
+    }
+
+    func clearFade() {
+        state.withLock { $0.fade = nil }
     }
 
     func clear() {
@@ -65,6 +82,9 @@ private final class MixTapContext {
     var channels = 2
     var program = MixAutomation.Program()
     var gain: Float = 1
+    /// False until the first buffer: the gain then starts at its target instead of gliding from 1 (a twin deck
+    /// starting under a fade-in would otherwise blip at full level).
+    var primed = false
     var hp = FilterBank(), lp = FilterBank()
     var eq = PeakingBank()
     var clock: Double = .nan            // media time of the next frame, when the source doesn't say
@@ -81,6 +101,7 @@ private final class MixTapContext {
         lp = FilterBank(channels: channels)
         eq = PeakingBank(channels: channels)
         gain = 1
+        primed = false
     }
 
     func process(_ list: UnsafeMutablePointer<AudioBufferList>, frames: Int, start: CMTime) {
@@ -89,7 +110,10 @@ private final class MixTapContext {
         let startTime = start.isValid && start.isNumeric ? start.seconds : clock
         if !startTime.isNaN { clock = startTime + Double(frames) / sampleRate }
         guard supported, frames > 0, !startTime.isNaN else { return }
-        if program.isIdentity && gain == 1 && hp.idle && lp.idle && !eq.active { return }
+        if program.isIdentity && gain == 1 && hp.idle && lp.idle && !eq.active {
+            primed = true
+            return
+        }
 
         let buffers = UnsafeMutableAudioBufferListPointer(list)
         let block = 64
@@ -97,7 +121,11 @@ private final class MixTapContext {
         while offset < frames {
             let count = min(block, frames - offset)
             let t = startTime + Double(offset + count / 2) / sampleRate
-            let targetGain = program.gain?.value(at: t) ?? 1
+            let targetGain = (program.gain?.value(at: t) ?? 1) * (program.fade?.value(at: t) ?? 1)
+            if !primed {
+                gain = targetGain
+                primed = true
+            }
             hp.configure(highPass: true, cutoff: program.hpf?.value(at: t, logarithmic: true), sampleRate: sampleRate)
             lp.configure(highPass: false, cutoff: program.lpf?.value(at: t, logarithmic: true), sampleRate: sampleRate)
             let g0 = gain, step = (targetGain - gain) / Float(count)

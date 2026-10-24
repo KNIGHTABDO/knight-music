@@ -14,6 +14,7 @@ extension PlayerEngine {
     }
 
     func cacheExtension(for song: Song, quality: StreamQuality) -> String {
+        if song.isYouTube { return "m4a" }
         if quality.maxBitRate != nil { return quality.format ?? "mp3" }
         return song.suffix ?? "mp3"
     }
@@ -22,11 +23,13 @@ extension PlayerEngine {
     func isPlayable(_ song: Song) -> Bool {
         if downloads?.localFileURL(for: song.id) != nil { return true }
         if streamCache.contains(song.id) { return true }
+        if song.isYouTube { return !services.isOffline }
         return !services.isOffline && services.urls != nil
     }
 
     func streamURL(for song: Song, quality: StreamQuality) -> URL? {
-        services.urls?.streamURL(songId: song.id, maxBitRate: quality.maxBitRate,
+        if let videoId = song.youTubeVideoId { return YouTubeResourceLoader.url(videoId: videoId) }
+        return services.urls?.streamURL(songId: song.id, maxBitRate: quality.maxBitRate,
                                  format: quality.format ?? (quality.maxBitRate == nil ? "raw" : nil),
                                  timeOffset: nil)
     }
@@ -44,6 +47,11 @@ extension PlayerEngine {
                                   description: AudioDescription.make(kind: .cached, song: song, quality: q))
         }
         guard !services.isOffline else { return nil }
+        if song.isYouTube {
+            guard let url = streamURL(for: song, quality: .original) else { return nil }
+            return ResolvedSource(url: url, kind: .streaming, quality: .original,
+                                  description: AudioDescription.make(kind: .streaming, song: song, quality: nil))
+        }
         let q = currentQuality()
         guard let url = streamURL(for: song, quality: q) else { return nil }
         return ResolvedSource(url: url, kind: .streaming, quality: q,
@@ -160,6 +168,7 @@ extension PlayerEngine {
     }
 
     func stopPlayer() {
+        settleRetempo()
         settleAutoMix(keepIncoming: false)
         tracked?.observations.removeAll()
         nextPrepared?.observations.removeAll()
@@ -202,11 +211,22 @@ extension PlayerEngine {
 
     // MARK: Gapless preparation
 
-    func makePrepared(entry: QueueEntry, resolved: ResolvedSource) -> PreparedItem {
-        let item = AVPlayerItem(asset: AVURLAsset(url: resolved.url))
+    func makeAsset(for resolved: ResolvedSource) -> AVURLAsset {
+        if YouTubeResourceLoader.videoId(in: resolved.url) != nil {
+            let asset = AVURLAsset(url: resolved.url)
+            asset.resourceLoader.setDelegate(YouTubeResourceLoader.shared, queue: YouTubeResourceLoader.shared.queue)
+            return asset
+        }
+        guard let headers = resolved.headers, !headers.isEmpty else { return AVURLAsset(url: resolved.url) }
+        return AVURLAsset(url: resolved.url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+    }
+
+    /// `asset` reuses an already loaded asset (a retempo twin); `tap: false` leaves the tap to the caller.
+    func makePrepared(entry: QueueEntry, resolved: ResolvedSource, asset: AVURLAsset? = nil, tap: Bool = true) -> PreparedItem {
+        let item = AVPlayerItem(asset: asset ?? makeAsset(for: resolved))
         let prepared = PreparedItem(item: item, entry: entry, resolved: resolved)
         if settings.speedChanged { item.audioTimePitchAlgorithm = .spectral }
-        if settings.mixesTransitions || settings.eqEnabled { attachTap(prepared) }
+        if tap, settings.mixesTransitions || settings.eqEnabled { attachTap(prepared) }
         prepared.observations = [
             item.observe(\.status, options: [.new]) { [weak self, weak prepared] _, _ in
                 Task { @MainActor in
@@ -617,6 +637,9 @@ extension PlayerEngine {
             return
         }
         guard p === tracked else { return }
+        if let videoId = p.entry.song.youTubeVideoId {
+            Task { await YouTubeMusic.shared.invalidate(videoId: videoId) }
+        }
         if p.resolved.kind == .cached, !retriedFromStream.contains(p.entry.id) {
             retriedFromStream.insert(p.entry.id)
             streamCache.remove(songId: p.entry.song.id)

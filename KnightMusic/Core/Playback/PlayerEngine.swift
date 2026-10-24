@@ -23,6 +23,8 @@ struct ResolvedSource {
     var kind: AudioSource
     var quality: StreamQuality?
     var description: String
+    /// Request headers the source requires (YouTube stream URLs are bound to the client's User-Agent).
+    var headers: [String: String]? = nil
 }
 
 /// An AVPlayerItem prepared for one queue entry, plus the observers watching it.
@@ -143,6 +145,7 @@ final class PlayerEngine {
     @ObservationIgnored var spareDeck = AVQueuePlayer()
     @ObservationIgnored var mixSession: MixSession?
     @ObservationIgnored var mixTail: MixTail?
+    @ObservationIgnored var retempoJob: RetempoJob?
     @ObservationIgnored var autoMixPlanTask: Task<Void, Never>?
     @ObservationIgnored var lastPrefetchSignature = ""
     @ObservationIgnored var volumeAutomation: Timer?
@@ -310,6 +313,7 @@ final class PlayerEngine {
     func pause() {
         userWantsPlaying = false
         remote?.cancelSeeking()
+        settleRetempo()
         player.pause()
         pauseAutoMixDecks()
         isPlaying = false
@@ -401,8 +405,9 @@ final class PlayerEngine {
 
     func seek(to time: TimeInterval) {
         guard let tracked, !tracked.isRadio else { return }
+        settleRetempo()
         if mixTail != nil { settleAutoMix(keepIncoming: true) }
-        if let session = mixSession, session.phase != .planned || session.aRampIndex > 0 {
+        if let session = mixSession, session.phase != .planned || session.aTempo != .pending {
             cancelMix(reprepare: false)     // also restores A's own tempo if it had started easing
             prepareNext()                   // re-plans: the blend happens again when the song gets there
         }

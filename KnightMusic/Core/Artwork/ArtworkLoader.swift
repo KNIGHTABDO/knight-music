@@ -73,7 +73,8 @@ final class ArtworkLoader: @unchecked Sendable {
 
     /// Un-cached URL straight from the provider (original size when `size` is nil). Used by the animated fallback.
     func coverArtURL(id: String, size: Int?) -> URL? {
-        currentProvider?.coverArtURL(id: id, size: size)
+        if YouTubeArtwork.isRemote(id) { return YouTubeArtwork.url(id, size: size ?? 1200) }
+        return currentProvider?.coverArtURL(id: id, size: size)
     }
 
     func request(coverArt: String?, pointSize: CGFloat, scale: CGFloat = 3) -> ImageRequest? {
@@ -82,8 +83,17 @@ final class ArtworkLoader: @unchecked Sendable {
     }
 
     func request(coverArt id: String, pixels: Int) -> ImageRequest? {
-        guard let provider = currentProvider else { return nil }
         let bucket = Self.bucket(forPixels: pixels)
+        // YouTube Music artwork is a remote URL that encodes its own size.
+        if YouTubeArtwork.isRemote(id) {
+            guard let url = YouTubeArtwork.url(id, size: bucket) else { return nil }
+            return ImageRequest(
+                url: url,
+                processors: [ImageProcessors.Resize(size: CGSize(width: bucket, height: bucket), unit: .pixels, contentMode: .aspectFill, crop: true, upscale: false)],
+                userInfo: [.imageIdKey: "yt-\(YouTubeArtwork.normalized(id))-\(bucket)"]
+            )
+        }
+        guard let provider = currentProvider else { return nil }
         let url = provider.coverArtURL(id: id, size: bucket)
         return ImageRequest(
             url: url,

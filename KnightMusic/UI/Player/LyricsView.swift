@@ -90,7 +90,7 @@ struct LyricsView: View {
             showSyncedToast = false
             syncedLineIndex = nil
             activeIndex = nil
-            lyricsList = await library.lyrics(songId: song.id)
+            lyricsList = song.isYouTube ? await YouTubeLyrics.shared.lyrics(for: song) : await library.lyrics(songId: song.id)
             rebuildLyricsState()
             isLoading = false
         }
