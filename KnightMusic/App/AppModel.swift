@@ -34,7 +34,9 @@ final class AppModel {
     private(set) var database: LibraryDatabase?
     private(set) var activeAccount: ServerAccount?
     /// False when the last reachability check (ping on any address) failed.
-    private(set) var serverReachable = true
+    private(set) var serverReachable = true {
+        didSet { serverReachable ? stopReachabilityRecovery() : startReachabilityRecovery() }
+    }
     /// Bumps on every client/database change; observe it from views that must rebuild on account switch.
     private(set) var sessionRevision = 0
     /// Screen requested via `-KMScreen` in screenshot mode; the shell routes on it.
@@ -49,6 +51,7 @@ final class AppModel {
     @ObservationIgnored private var networkTask: Task<Void, Never>?
     @ObservationIgnored private var recheckTask: Task<Void, Never>?
     @ObservationIgnored private var lastRecheck = Date.distantPast
+    @ObservationIgnored private var recoveryTask: Task<Void, Never>?
     @ObservationIgnored private var started = false
 
     init() {
@@ -247,6 +250,31 @@ final class AppModel {
         }
     }
 
+    /// The server can drop (home internet blip) while this device's network stays the same, so nothing else would
+    /// re-check it: keep pinging with backoff until it answers, then catch the library up.
+    private func startReachabilityRecovery() {
+        guard recoveryTask == nil, session == .ready else { return }
+        recoveryTask = Task { [weak self] in
+            var delay = 5
+            while true {
+                try? await Task.sleep(for: .seconds(delay))
+                delay = min(delay + 5, 30)
+                guard !Task.isCancelled, let self else { return }
+                guard self.network.isConnected else { continue }
+                if await self.reresolveAddress() != nil {
+                    Log.api.info("Server reachable again")
+                    await self.refresh()
+                    return
+                }
+            }
+        }
+    }
+
+    private func stopReachabilityRecovery() {
+        recoveryTask?.cancel()
+        recoveryTask = nil
+    }
+
     // MARK: - Accounts
 
     /// Validates the server (pings each address in order), stores the account and starts the first sync.
@@ -389,6 +417,7 @@ final class AppModel {
 
     private func teardownSession() {
         networkTask?.cancel()
+        stopReachabilityRecovery()
         recheckTask?.cancel()
         recheckTask = nil
         syncTask?.cancel()
