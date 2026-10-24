@@ -136,6 +136,11 @@ struct KnightView: View {
         .onChange(of: ui.knightDraft) { _, _ in
             handleDraftIfNeeded()
         }
+        .onChange(of: ui.knightConversation, initial: true) { _, id in
+            guard let id else { return }
+            ui.knightConversation = nil
+            path.append(Route.knightChat(id: id, draft: nil))
+        }
     }
 
     // MARK: - Unconfigured

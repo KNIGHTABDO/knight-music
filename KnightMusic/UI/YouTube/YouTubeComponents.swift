@@ -1,21 +1,5 @@
 import SwiftUI
 
-extension YouTubeImporter {
-    @MainActor static func addWithFeedback(_ song: Song, ui: UIState) {
-        ui.showToast("Adding \u{201C}\(song.title)\u{201D} to Navidrome…")
-        Task {
-            switch await add(song) {
-            case .added:
-                Haptics.success()
-                ui.showToast("Added \u{201C}\(song.title)\u{201D} to Navidrome")
-            case .failed(let message):
-                Haptics.error()
-                ui.showToast(message)
-            }
-        }
-    }
-}
-
 extension YTItem: CoverArtProviding {
     var coverArtId: String? {
         switch self {

@@ -48,36 +48,17 @@ struct RootView: View {
         }
         .animation(.smooth, value: updates.showsBanner)
         .focusedSceneValue(\.windowUIState, ui)
-        .overlay(alignment: .top) {
-            if let toast = ui.toast {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                    Text(toast)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.label)
-                        .lineLimit(2)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .glassEffect(.regular, in: .capsule)
-                .padding(.top, 12)
-                .padding(.horizontal, 20)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(100)
-            }
-        }
         .modifier(SongInfoPresenter(insidePlayer: false))
+        .modifier(ShellBannersPresenter(insidePlayer: false))
         .fullScreenCover(isPresented: $ui.isPlayerPresented) {
             FullPlayerView()
                 .modifier(SongInfoPresenter(insidePlayer: true))
+                .modifier(ShellBannersPresenter(insidePlayer: true))
                 .preferredColorScheme(.dark)
                 .environment(\.colorScheme, .dark)
                 .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
         }
         .tint(settings.accentColor)
-        .animation(.smooth, value: ui.toast != nil)
         .environment(ui)
         .environment(nav)
         .task(id: ui.toast) {

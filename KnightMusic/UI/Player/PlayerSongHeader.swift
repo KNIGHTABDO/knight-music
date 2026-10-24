@@ -47,21 +47,29 @@ struct PlayerSongActionsRow: View {
 
     @Environment(PlayerEngine.self) private var player
     @Environment(UIState.self) private var ui
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         HStack {
             if song.isYouTube {
                 Button {
                     Haptics.impact(.medium)
-                    YouTubeImporter.addWithFeedback(song, ui: ui)
+                    NavidromeImportCenter.shared.add(song, app: app, ui: ui)
                 } label: {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 20))
-                        .foregroundStyle(Color.white.opacity(0.75))
-                        .frame(width: 36, height: 36)
+                    Group {
+                        if NavidromeImportCenter.shared.isBusy(song) {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 20))
+                                .foregroundStyle(Color.white.opacity(0.75))
+                        }
+                    }
+                    .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(NavidromeImportCenter.shared.isBusy(song))
                 .accessibilityLabel("Add to Navidrome")
             } else {
                 favoriteButton

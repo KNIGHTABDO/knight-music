@@ -10,6 +10,7 @@ struct SongActionsMenu: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(DownloadManager.self) private var downloads
     @Environment(UIState.self) private var ui
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         let isStarred = song.starred != nil
@@ -49,7 +50,7 @@ struct SongActionsMenu: View {
         Divider()
 
         Button {
-            YouTubeImporter.addWithFeedback(song, ui: ui)
+            NavidromeImportCenter.shared.add(song, app: app, ui: ui)
         } label: {
             Label("Add to Navidrome", systemImage: "plus.circle")
         }
