@@ -51,6 +51,8 @@ struct PlaybackSettings: Equatable, Sendable {
     var eqEnabled: Bool = false
     /// dB per `Equalizer.frequencies` band.
     var eqGains: [Float] = []
+    /// The player's beat pulse wants the audio level, which only an audio tap can measure.
+    var metersLevel: Bool = false
 
     /// Songs blend into each other (AutoMix or crossfade). Off while the speed is changed: mixes run at their own rates.
     var mixesTransitions: Bool { (autoMix || crossfadeSeconds > 0) && !speedChanged }

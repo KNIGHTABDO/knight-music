@@ -71,6 +71,15 @@ final class MixAutomation: @unchecked Sendable {
     fileprivate func snapshot() -> Program? {
         state.withLockIfAvailable { $0 }
     }
+
+    private let levelState = OSAllocatedUnfairLock(initialState: Float(0))
+
+    /// RMS level (0…1) of the last buffer the tap processed; drives the player's beat pulse.
+    var level: Float { levelState.withLock { $0 } }
+
+    fileprivate func setLevel(_ value: Float) {
+        _ = levelState.withLockIfAvailable { $0 = value }
+    }
 }
 
 /// Real-time state behind one MTAudioProcessingTap: biquad filters + smoothed gain driven by `MixAutomation`.
@@ -104,12 +113,32 @@ private final class MixTapContext {
         primed = false
     }
 
+    /// Sparse RMS of the first buffer (every 8th sample is plenty for a visual meter).
+    private func measureLevel(_ list: UnsafeMutablePointer<AudioBufferList>) {
+        let buffers = UnsafeMutableAudioBufferListPointer(list)
+        guard let first = buffers.first, let data = first.mData else { return }
+        let samples = data.assumingMemoryBound(to: Float.self)
+        let count = Int(first.mDataByteSize) / MemoryLayout<Float>.size
+        guard count > 0 else { return }
+        var sum: Float = 0
+        var n = 0
+        var i = 0
+        while i < count {
+            let sample = samples[i]
+            sum += sample * sample
+            n += 1
+            i += 8
+        }
+        automation.setLevel((sum / Float(n)).squareRoot())
+    }
+
     func process(_ list: UnsafeMutablePointer<AudioBufferList>, frames: Int, start: CMTime) {
         if let latest = automation.snapshot() { program = latest }
         if let equalizer = Equalizer.snapshot() { eq.configure(equalizer, sampleRate: sampleRate) }
         let startTime = start.isValid && start.isNumeric ? start.seconds : clock
         if !startTime.isNaN { clock = startTime + Double(frames) / sampleRate }
         guard supported, frames > 0, !startTime.isNaN else { return }
+        measureLevel(list)
         if program.isIdentity && gain == 1 && hp.idle && lp.idle && !eq.active {
             primed = true
             return

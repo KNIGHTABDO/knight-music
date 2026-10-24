@@ -128,6 +128,12 @@ final class PlayerEngine {
 
     @ObservationIgnored var player = AVQueuePlayer()
     @ObservationIgnored var tracked: PreparedItem?
+
+    /// Loudness (RMS, 0…1) of the playing item, or nil when no tap measures it (streams, YouTube).
+    var audioLevel: Float? {
+        guard let tracked, tracked.tapAttached else { return nil }
+        return tracked.automation.level
+    }
     @ObservationIgnored var nextPrepared: PreparedItem?
     @ObservationIgnored var originalOrder: [QueueEntry] = []
     @ObservationIgnored var userWantsPlaying = false

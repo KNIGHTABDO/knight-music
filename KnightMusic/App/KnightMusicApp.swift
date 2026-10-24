@@ -63,7 +63,10 @@ struct KnightMusicApp: App {
                 .environment(app.syncStatus)
                 .environment(app.hermes)
                 .environment(app.updates)
-                .preferredColorScheme(app.settings.appearance.colorScheme)
+                .environment(LookStore.shared)
+                .fontDesign(LookStore.shared.current.typeface.design)
+                .fontWidth(LookStore.shared.current.typeWidth.width)
+                .preferredColorScheme(LookStore.shared.current.appearance.colorScheme)
 
                 .task { app.startIfNeeded() }
         }

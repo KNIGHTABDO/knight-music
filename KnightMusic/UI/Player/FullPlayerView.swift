@@ -12,7 +12,7 @@ struct FullPlayerView: View {
     @Environment(UIState.self) private var ui
     @Environment(PlayerEngine.self) private var player
     @Environment(LibraryRepository.self) private var library
-    @Environment(AppSettings.self) private var settings
+    @Environment(LookStore.self) private var looks
     @Environment(AnimatedArtworkService.self) private var artworkService: AnimatedArtworkService?
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
@@ -181,7 +181,7 @@ struct FullPlayerView: View {
 
                     PlayerTransportBar()
 
-                    if ui.playerPanel == .artwork {
+                    if ui.playerPanel == .artwork && looks.current.showVolume {
                         PlayerVolumeRow()
                     }
 
@@ -225,7 +225,7 @@ struct FullPlayerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.margin + 4)
 
-            PlayerSongActionsRow(song: song, rating: ratingBinding, showsRating: settings.showRatings)
+            PlayerSongActionsRow(song: song, rating: ratingBinding, showsRating: looks.current.showRatings)
                 .padding(.horizontal, Theme.margin + 4)
         }
     }
@@ -316,14 +316,16 @@ struct FullPlayerView: View {
             VStack(spacing: 10) {
                 PlayerSongTitles(song: song, titleSize: titleSize, artistSize: artistSize)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                PlayerSongActionsRow(song: song, rating: ratingBinding, starSize: 20, showsRating: settings.showRatings)
+                PlayerSongActionsRow(song: song, rating: ratingBinding, starSize: 20, showsRating: looks.current.showRatings)
             }
 
             PlayerScrubberView()
 
             PlayerTransportBar()
 
-            PlayerVolumeRow()
+            if looks.current.showVolume {
+                PlayerVolumeRow()
+            }
 
             PlayerBottomBar(isShowingSettings: $isShowingSettings)
         }
@@ -363,7 +365,7 @@ struct FullPlayerView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                PlayerSongActionsRow(song: song, rating: ratingBinding, showsRating: settings.showRatings)
+                PlayerSongActionsRow(song: song, rating: ratingBinding, showsRating: looks.current.showRatings)
 
                 PlayerScrubberView()
 

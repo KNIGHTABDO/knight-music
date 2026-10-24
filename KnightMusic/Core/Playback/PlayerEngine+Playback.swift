@@ -243,7 +243,7 @@ extension PlayerEngine {
         let item = AVPlayerItem(asset: asset ?? makeAsset(for: resolved))
         let prepared = PreparedItem(item: item, entry: entry, resolved: resolved)
         if settings.speedChanged { item.audioTimePitchAlgorithm = .spectral }
-        if tap, settings.mixesTransitions || settings.eqEnabled { attachTap(prepared) }
+        if tap, settings.mixesTransitions || settings.eqEnabled || settings.metersLevel { attachTap(prepared) }
         prepared.observations = [
             item.observe(\.status, options: [.new]) { [weak self, weak prepared] _, _ in
                 Task { @MainActor in

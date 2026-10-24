@@ -15,11 +15,8 @@ enum Theme {
     static let separator = Color(uiColor: .separator)
     static let hairline = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor.white.withAlphaComponent(0.08) : UIColor.black.withAlphaComponent(0.08) })
 
-    /// User-changeable later (Settings → Customize) via UserDefaults "accentHex"; defaults to the asset color.
-    static var accent: Color {
-        if let hex = UserDefaults.standard.string(forKey: "accentHex"), let c = Color(hex: hex) { return c }
-        return Color("AccentColor")
-    }
+    /// The active look's accent (Settings → Customize): fixed, or taken from the playing song's cover.
+    @MainActor static var accent: Color { LookStore.shared.accent }
 
     enum Spacing {
         static let xxs: CGFloat = 2

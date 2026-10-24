@@ -123,6 +123,7 @@ extension AppModel {
             s.eqEnabled = self.settings.eqEnabled
             s.eqGains = self.settings.eqGains.map { Float($0) }
             s.downloadOnCellular = self.settings.downloadOverCellular
+            s.metersLevel = LookStore.shared.current.pulse == .beat
             return s
         }
 

@@ -79,7 +79,7 @@ struct PlaybackSettingsView: View {
                 Toggle("Sync Play Queue with Server", isOn: $settings.syncPlayQueueWithServer)
                     .tint(Theme.accent)
 
-                Toggle("Show Ratings", isOn: $settings.showRatings)
+                Toggle("Show Ratings", isOn: Bindable(LookStore.shared).current.showRatings)
                     .tint(Theme.accent)
 
                 Picker("ReplayGain", selection: $settings.replayGainMode) {

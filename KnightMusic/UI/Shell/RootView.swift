@@ -58,7 +58,7 @@ struct RootView: View {
                 .environment(\.colorScheme, .dark)
                 .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
         }
-        .tint(settings.accentColor)
+        .tint(LookStore.shared.accent)
         .environment(ui)
         .environment(nav)
         .task(id: ui.toast) {
@@ -102,10 +102,13 @@ struct RootView: View {
         .task {
             await applyDebugRoutingIfNeeded()
         }
+        .modifier(LookEffects(ui: ui))
         .task(id: player.currentSong?.id) {
             // Extract the current and next palettes before the player opens, so its first frame
             // already has the right colours.
-            _ = await ArtworkPalette.palette(for: player.currentSong?.coverArt)
+            let palette = player.currentSong == nil ? nil : await ArtworkPalette.palette(for: player.currentSong?.coverArt)
+            guard !Task.isCancelled else { return }
+            LookStore.shared.updateArtwork(palette)
             _ = await ArtworkPalette.palette(for: player.upcoming.first?.song.coverArt)
         }
         .onChange(of: app.debugScreen) { _, _ in

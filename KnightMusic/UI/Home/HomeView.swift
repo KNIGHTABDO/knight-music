@@ -38,58 +38,61 @@ struct HomeView: View {
                 } else if counts.isLoaded && counts.value.albums == 0 && counts.value.songs == 0 && !app.syncStatus.isSyncing {
                     emptyLibraryState
                 } else {
-                    if !topPicks.value.isEmpty {
-                        topPicksShelf(topPicks.value)
+                    if LookStore.shared.homeGreeting {
+                        greeting
                     }
 
-                    upNextShelf
-
-                    if !continueListening.value.isEmpty {
-                        SongColumnsShelf(title: "Continue Listening", songs: continueListening.value, route: .songList(.recentlyPlayed))
-                    }
-
-                    if !recent.value.isEmpty {
-                        albumShelf(title: "Recently Played", items: recent.value, route: .albumList(.recentlyPlayed))
-                    }
-
-                    if !listenAgain.value.isEmpty {
-                        albumShelf(title: "Listen Again", items: listenAgain.value, route: .albumList(.listenAgain))
-                    }
-
-                    if !newest.value.isEmpty {
-                        albumShelf(title: "Recently Added", items: newest.value, route: .albumList(.recentlyAdded))
-                    }
-
-                    if !onThisDay.value.isEmpty {
-                        albumShelf(title: "On This Day", subtitle: "Played or added on \(Date().formatted(.dateTime.month(.wide).day())) in years past", items: onThisDay.value, route: nil)
-                    }
-
-                    if !rediscover.value.isEmpty {
-                        albumShelf(title: "Rediscover", subtitle: "Favorites you haven’t played in a while", items: rediscover.value, route: .albumList(.rediscover))
-                    }
-
-                    if !frequent.value.isEmpty {
-                        albumShelf(title: "Most Played", items: frequent.value, route: .albumList(.frequentlyPlayed))
-                    }
-
-                    if !newArtists.value.isEmpty {
-                        artistsShelf(newArtists.value)
-                    }
-
-                    ForEach(genres.value) { genre in
-                        GenreShelf(genre: genre.value)
-                    }
-
-                    if !starred.value.isEmpty {
-                        albumShelf(title: "Favorite Albums", items: starred.value, route: .albumList(.favorites))
-                    }
-
-                    if !random.value.isEmpty {
-                        albumShelf(title: "Random", items: random.value, route: .albumList(.random))
-                    }
-
-                    if !playlists.value.isEmpty {
-                        playlistsShelf(playlists: playlists.value)
+                    ForEach(LookStore.shared.visibleHomeSections) { section in
+                        switch section {
+                        case .topPicks:
+                            if !topPicks.value.isEmpty { topPicksShelf(topPicks.value) }
+                        case .upNext:
+                            upNextShelf
+                        case .continueListening:
+                            if !continueListening.value.isEmpty {
+                                SongColumnsShelf(title: "Continue Listening", songs: continueListening.value, route: .songList(.recentlyPlayed))
+                            }
+                        case .recentlyPlayed:
+                            if !recent.value.isEmpty {
+                                albumShelf(title: "Recently Played", items: recent.value, route: .albumList(.recentlyPlayed))
+                            }
+                        case .listenAgain:
+                            if !listenAgain.value.isEmpty {
+                                albumShelf(title: "Listen Again", items: listenAgain.value, route: .albumList(.listenAgain))
+                            }
+                        case .recentlyAdded:
+                            if !newest.value.isEmpty {
+                                albumShelf(title: "Recently Added", items: newest.value, route: .albumList(.recentlyAdded))
+                            }
+                        case .onThisDay:
+                            if !onThisDay.value.isEmpty {
+                                albumShelf(title: "On This Day", subtitle: "Played or added on \(Date().formatted(.dateTime.month(.wide).day())) in years past", items: onThisDay.value, route: nil)
+                            }
+                        case .rediscover:
+                            if !rediscover.value.isEmpty {
+                                albumShelf(title: "Rediscover", subtitle: "Favorites you haven’t played in a while", items: rediscover.value, route: .albumList(.rediscover))
+                            }
+                        case .mostPlayed:
+                            if !frequent.value.isEmpty {
+                                albumShelf(title: "Most Played", items: frequent.value, route: .albumList(.frequentlyPlayed))
+                            }
+                        case .newArtists:
+                            if !newArtists.value.isEmpty { artistsShelf(newArtists.value) }
+                        case .genres:
+                            ForEach(genres.value) { genre in
+                                GenreShelf(genre: genre.value)
+                            }
+                        case .favoriteAlbums:
+                            if !starred.value.isEmpty {
+                                albumShelf(title: "Favorite Albums", items: starred.value, route: .albumList(.favorites))
+                            }
+                        case .random:
+                            if !random.value.isEmpty {
+                                albumShelf(title: "Random", items: random.value, route: .albumList(.random))
+                            }
+                        case .playlists:
+                            if !playlists.value.isEmpty { playlistsShelf(playlists: playlists.value) }
+                        }
                     }
                 }
             }
@@ -133,6 +136,22 @@ struct HomeView: View {
 
     private func isFirstFullSync(counts: LiveQuery<LibraryCounts>) -> Bool {
         app.syncStatus.isSyncing && (app.syncStatus.isInitialSync || (counts.isLoaded && counts.value.albums == 0 && counts.value.songs == 0))
+    }
+
+    /// Time-of-day greeting with the signed-in username.
+    private var greeting: some View {
+        let hour = Calendar.current.component(.hour, from: .now)
+        let part = switch hour {
+        case 5..<12: "Good morning"
+        case 12..<18: "Good afternoon"
+        case 18..<23: "Good evening"
+        default: "Up late"
+        }
+        let name = app.activeAccount?.username.capitalized ?? ""
+        return Text(name.isEmpty ? part : "\(part), \(name)")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(Theme.accent)
+            .padding(.horizontal, Theme.margin)
     }
 
     private var syncBanner: some View {
