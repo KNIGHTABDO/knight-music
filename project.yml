@@ -45,6 +45,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.knightabdo.knightmusic
         PRODUCT_NAME: KnightMusic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "Icon-Neon Icon-Zellige Icon-Vinyl Icon-Emerald Icon-Chrome Icon-Synthwave Icon-Sahara Icon-Pixel Icon-Origami Icon-Cassette Icon-Golden Icon-Phantom"
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: KnightMusic/Resources/Info.plist
