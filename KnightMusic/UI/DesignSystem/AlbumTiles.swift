@@ -75,7 +75,8 @@ struct AdaptiveAlbumGrid<Item: Identifiable, Content: View>: View {
     }
 
     var body: some View {
-        let minimum: CGFloat = sizeClass == .regular ? 190 : 160
+        let density = LookStore.shared.current.gridDensity.minimum
+        let minimum: CGFloat = sizeClass == .regular ? density.regular : density.compact
         LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: spacing, alignment: .top)], alignment: .leading, spacing: 20) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 content(item)

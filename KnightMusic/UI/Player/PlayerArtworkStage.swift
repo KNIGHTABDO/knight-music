@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The player's artwork card: shrinks when paused, follows a horizontal swipe and skips past a
+/// The player's artwork (card, circle or spinning vinyl per the look): shrinks when paused, follows a horizontal swipe and skips past a
 /// threshold, and slides the next cover in from the side it came from.
 struct PlayerArtworkStage: View {
     let song: Song
@@ -8,9 +8,12 @@ struct PlayerArtworkStage: View {
     var animatedVideoURL: URL?
 
     @Environment(PlayerEngine.self) private var player
+    @Environment(LookStore.self) private var looks
     @State private var shownSongId: String?
 
     var body: some View {
+        let look = looks.current
+        let shrinks = look.shrinkWhenPaused && look.artworkShape == .card
         // The previous song is first in `upcoming` right after going back.
         let cameFromNext = shownSongId != nil && player.upcoming.first?.song.id == shownSongId
 
@@ -23,8 +26,12 @@ struct PlayerArtworkStage: View {
                 ))
         }
         .frame(width: side, height: side)
-        .scaleEffect(player.isPlaying ? 1.0 : 0.85)
+        .modifier(ArtworkPulse(mode: look.pulse, bpm: song.bpm))
+        .scaleEffect(player.isPlaying || !shrinks ? 1.0 : 0.85)
+        .shadow(color: glowColor(look), radius: player.isPlaying ? 42 : 24)
         .shadow(color: .black.opacity(player.isPlaying ? 0.4 : 0.25), radius: player.isPlaying ? 28 : 16, x: 0, y: player.isPlaying ? 14 : 8)
+        .animation(.smooth(duration: 0.5), value: look.artworkShape)
+        .animation(.smooth(duration: 0.3), value: look.artworkRadius)
         .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: song.id)
         .modifier(SkipSwipeModifier(movesContent: true))
@@ -33,15 +40,36 @@ struct PlayerArtworkStage: View {
         }
     }
 
+    private func glowColor(_ look: Look) -> Color {
+        guard look.artworkGlow else { return .clear }
+        return (looks.artworkColors.first ?? Theme.accent).opacity(player.isPlaying ? 0.75 : 0.4)
+    }
+
     @ViewBuilder
     private var card: some View {
+        let look = looks.current
+        switch look.artworkShape {
+        case .card:
+            cover(radius: look.artworkRadius, size: side)
+        case .circle:
+            cover(radius: nil, size: side)
+        case .vinyl:
+            VinylRecord(side: side) { cover(radius: nil, size: VinylRecord<EmptyView>.labelSide(for: side)) }
+        }
+    }
+
+    /// The cover (or its animated clip): rounded rectangle, or a circle when `radius` is nil.
+    @ViewBuilder
+    private func cover(radius: Double?, size: CGFloat) -> some View {
+        let shape = radius.map { AnyShape(RoundedRectangle(cornerRadius: $0, style: .continuous)) } ?? AnyShape(Circle())
         if let animatedVideoURL {
             AnimatedArtworkView(url: animatedVideoURL)
-                .frame(width: side, height: side)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .frame(width: size, height: size)
+                .clipShape(shape)
         } else {
-            ArtworkView(coverArt: song.coverArt, pointSize: side, cornerRadius: 12)
-                .frame(width: side, height: side)
+            ArtworkView(coverArt: song.coverArt, pointSize: size, cornerRadius: radius ?? 0, isCircle: false)
+                .frame(width: size, height: size)
+                .clipShape(shape)
         }
     }
 }

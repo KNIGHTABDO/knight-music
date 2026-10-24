@@ -104,8 +104,16 @@ actor YouTubeMusic {
     }
 
     func artist(_ browseId: String) async throws -> YTArtistPage {
-        guard let page = YouTubeParser.artist(try await browse(browseId), browseId: browseId) else {
+        guard var page = YouTubeParser.artist(try await browse(browseId), browseId: browseId) else {
             throw YouTubeError.invalidResponse
+        }
+        // Artist pages list plays instead of lengths; the "Top songs" playlist behind the header has them.
+        if page.topSongs.contains(where: { $0.duration == nil }), let more = page.topSongsMore,
+           let full = try? await songs(more) {
+            let lengths = Dictionary(full.compactMap { s in s.duration.map { (s.videoId, $0) } }, uniquingKeysWith: { a, _ in a })
+            for i in page.topSongs.indices where page.topSongs[i].duration == nil {
+                page.topSongs[i].duration = lengths[page.topSongs[i].videoId]
+            }
         }
         return page
     }

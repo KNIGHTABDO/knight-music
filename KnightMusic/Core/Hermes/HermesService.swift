@@ -31,6 +31,9 @@ final class HermesService {
     @ObservationIgnored private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     @ObservationIgnored private var isBackgrounded = false
     @ObservationIgnored private var isRecovering = false
+    /// Bumped whenever a stream is replaced, so a dead stream that ends late can't touch the live state.
+    @ObservationIgnored private var streamGeneration = 0
+    @ObservationIgnored private var pendingReconnect = false
     @ObservationIgnored private var notificationTokens: [NSObjectProtocol] = []
 
     init() {
@@ -108,7 +111,7 @@ final class HermesService {
     private func handleWillEnterForeground() {
         isBackgrounded = false
         Task {
-            await self.recoverRunningMessages()
+            await self.recoverRunningMessages(reconnecting: true)
         }
     }
 
@@ -298,6 +301,8 @@ final class HermesService {
         artwork: AnimatedArtworkService?,
         ui: UIState?
     ) async {
+        streamGeneration += 1
+        let generation = streamGeneration
         self.activeConversationId = conversationId
         self.isRunning = true
         self.currentStreamingText = ""
@@ -343,7 +348,8 @@ final class HermesService {
                 }
             }
 
-            // Stream completed
+            // A replaced stream that ends late must not finish the message with partial text.
+            guard generation == streamGeneration, !Task.isCancelled else { return }
             let rawText = finalFullText ?? self.currentStreamingText
             await self.handleRunCompleted(
                 conversationId: conversationId,
@@ -358,7 +364,9 @@ final class HermesService {
         } catch is CancellationError {
             // Cancelled
         } catch {
-            if self.isBackgrounded {
+            if generation != streamGeneration || Task.isCancelled {
+                return
+            } else if self.isBackgrounded {
                 Log.api.info("Hermes stream died quietly in background: \(error.localizedDescription)")
             } else {
                 if var updatedConvo = self.store.conversation(for: conversationId),
@@ -372,13 +380,17 @@ final class HermesService {
             }
         }
 
-        if self.activeConversationId == conversationId {
-            self.isRunning = false
-            self.activeConversationId = nil
-            self.currentStreamingText = ""
-            self.activeToolSteps = []
-            self.currentRunId = nil
+        if generation == streamGeneration, self.activeConversationId == conversationId {
+            clearLiveState()
         }
+    }
+
+    private func clearLiveState() {
+        isRunning = false
+        activeConversationId = nil
+        currentStreamingText = ""
+        activeToolSteps = []
+        currentRunId = nil
     }
 
     private func handleRunCompleted(
@@ -431,10 +443,24 @@ final class HermesService {
 
     // MARK: - Recovery of Running Messages
 
-    func recoverRunningMessages() async {
-        guard !isRecovering else { return }
+    /// Settles messages still marked "running" (the app was suspended or killed mid-run). With `reconnecting`,
+    /// the current stream is assumed dead (it was suspended in the background) and is replaced.
+    func recoverRunningMessages(reconnecting: Bool = false) async {
+        guard !isRecovering else {
+            if reconnecting { pendingReconnect = true }
+            return
+        }
         isRecovering = true
-        defer { isRecovering = false }
+        var reconnect = reconnecting
+        repeat {
+            pendingReconnect = false
+            await recoverPass(reconnecting: reconnect)
+            reconnect = true
+        } while pendingReconnect
+        isRecovering = false
+    }
+
+    private func recoverPass(reconnecting: Bool) async {
 
         await client.update(baseURL: settings.baseURL, apiKey: settings.apiKey)
 
@@ -462,15 +488,21 @@ final class HermesService {
         }
 
         guard !targets.isEmpty else { return }
+        // The run the chat is showing goes first, so it's reattached before any other.
+        targets.sort { a, _ in a.runId == currentRunId }
 
         for target in targets {
-            // If already actively streaming this exact run in foreground, don't interrupt it
-            if self.isRunning && self.currentRunId == target.runId && self.streamingTask != nil {
-                continue
+            let isLiveRun = currentRunId == target.runId
+            if isLiveRun && streamingTask != nil {
+                guard reconnecting else { continue }
+                streamGeneration += 1
+                streamingTask?.cancel()
+                streamingTask = nil
+                endBackgroundTask()
             }
 
             do {
-                let status = try await client.runStatus(runId: target.runId)
+                let status = try await runStatusRetrying(runId: target.runId)
                 if status.isCompleted {
                     let finalText = status.output ?? target.existingText
                     await handleRunCompleted(
@@ -491,7 +523,10 @@ final class HermesService {
                         updatedConvo.messages[msgIdx].toolSteps = target.existingSteps.map { var s = $0; s.isRunning = false; return s }
                         store.save(updatedConvo)
                     }
+                    if currentRunId == target.runId { clearLiveState() }
                 } else {
+                    // Never steal the stream of another run that's alive.
+                    if streamingTask != nil && currentRunId != target.runId { continue }
                     // Still running: reconnect to /events (replaying from start)
                     beginBackgroundTask()
                     streamingTask?.cancel()
@@ -507,11 +542,25 @@ final class HermesService {
                             ui: self.ui
                         )
                     }
-                    // Connect to one active run in UI
-                    break
                 }
             } catch {
+                // Message stays "running"; the chat and imports retry recovery until the server answers.
                 Log.api.warning("Hermes: Failed to check run status for \(target.runId): \(error.localizedDescription)")
+                if currentRunId == target.runId && streamingTask == nil { clearLiveState() }
+            }
+        }
+    }
+
+    /// Right after returning to the foreground the network often needs a moment.
+    private func runStatusRetrying(runId: String) async throws -> RunStatusResponse {
+        var attempt = 0
+        while true {
+            do {
+                return try await client.runStatus(runId: runId)
+            } catch {
+                attempt += 1
+                guard attempt < 4 else { throw error }
+                try await Task.sleep(for: .seconds(Double(attempt)))
             }
         }
     }

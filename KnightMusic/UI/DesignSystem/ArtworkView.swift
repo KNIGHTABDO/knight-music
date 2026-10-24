@@ -8,7 +8,8 @@ import NukeUI
 struct ArtworkView: View {
     var coverArt: String?
     var pointSize: CGFloat
-    var cornerRadius: CGFloat = Theme.Radius.tile
+    /// nil = the look's tile radius (Settings → Customize → Library).
+    var cornerRadius: CGFloat? = nil
     var isCircle: Bool = false
     var placeholderSymbol: String? = nil
     var fillsContainer: Bool = false
@@ -30,7 +31,12 @@ struct ArtworkView: View {
     }
 
     private var shape: AnyShape {
-        isCircle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        let look = LookStore.shared.current
+        if isCircle {
+            // Artists: circle, or a squircle when the look asks for rounded artist images.
+            return look.artistShape == .circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: pointSize * 0.24, style: .continuous))
+        }
+        return AnyShape(RoundedRectangle(cornerRadius: cornerRadius ?? look.tileRadius, style: .continuous))
     }
 
     private func content(_ request: ImageRequest?) -> some View {

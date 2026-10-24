@@ -1,0 +1,8 @@
+[Unit]
+Description=Knight Music server watchdog (Wi-Fi, Tailscale Funnel, Navidrome)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/knight-watchdog
+TimeoutStartSec=90

@@ -26,7 +26,13 @@ final class MixSession {
     /// A's rate while B plays (1 unless the tempos meet halfway).
     var aRate: Float { aHeld ? 1 : Float(a.rate ?? 1) }
     var aTempo: TempoStep = .pending
-    var aHeld = false
+    /// A always keeps its own tempo: B takes the whole ratio, baked into its item (see TimeWarp), so neither deck
+    /// ever changes rate while it sounds.
+    var aHeld = true
+    /// B's item carries its tempo as scaled edits and its deck runs at 1.
+    var warped = false
+    /// The rate B's deck actually runs at.
+    var deckRate: Float { warped ? 1 : rate }
 
     init(plan: AutoMixPlan, a: AutoMixPlan.Deck, b: AutoMixPlan.Deck, outgoing: PreparedItem, target: QueueEntry) {
         self.plan = plan
@@ -181,6 +187,7 @@ extension PlayerEngine {
     // MARK: Tick (4 Hz, from the main player's time observer)
 
     func autoMixTick() {
+        defer { updateMixClock() }
         tickTail()
         guard let session = mixSession else { return }
         let t = elapsedNow()
@@ -214,12 +221,39 @@ extension PlayerEngine {
             if isPlaying, player.rate > 0 { schedule(session) }
             else if t > session.a.start - 0.4 { cancelMix(reprepare: true) }
         case .scheduled:
-            if t >= session.a.start {
+            if t >= session.a.start || incomingElapsed(session) > 0.05 {
                 session.phase = .mixing
                 autoMixActive = true
             }
         case .mixing:
-            if t >= (session.a.handoff ?? session.a.start) { handOff(session) }
+            let handoff = session.a.handoff ?? session.a.start
+            // A stalled stream or an early end must not keep the previous song "current" while B plays.
+            let dueOnB = incomingElapsed(session) >= (handoff - session.a.start) / Double(session.aRate) + 0.5
+            let outgoingGone = player.currentItem !== session.outgoing.item
+            if t >= handoff || dueOnB || outgoingGone { handOff(session) }
+        }
+    }
+
+    /// Wall-clock seconds the incoming deck has been playing (0 before it starts).
+    private func incomingElapsed(_ session: MixSession) -> Double {
+        guard let deck = session.deck, deck.rate > 0, let incoming = session.incoming else { return 0 }
+        let t = deck.currentTime().seconds
+        guard t.isFinite else { return 0 }
+        return max(0, (t - incoming.itemTime(session.b.start)) / Double(session.deckRate))
+    }
+
+    /// A 4 Hz tick of its own while two decks are involved: the main time observer goes quiet when A stalls.
+    private func updateMixClock() {
+        let needed = mixTail != nil || mixSession.map { $0.phase == .scheduled || $0.phase == .mixing } == true
+        if needed, mixClock == nil {
+            let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.autoMixTick() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            mixClock = timer
+        } else if !needed, let mixClock {
+            mixClock.invalidate()
+            self.mixClock = nil
         }
     }
 
@@ -295,8 +329,49 @@ extension PlayerEngine {
             startVolumeAutomation(for: session.outgoing, gain: session.a.gain)
         }
 
-        let incoming = makePrepared(entry: session.target, resolved: resolved)
-        incoming.automation.set(deck: session.b)
+        Task { [weak self] in
+            let warped = await self?.makeWarpedAsset(session, resolved: resolved)
+            guard let self, self.mixSession === session, session.phase == .preparing else { return }
+            self.loadIncoming(session, resolved: resolved, warped: warped)
+        }
+    }
+
+    /// B's file as a composition with the blend tempo baked in, or nil when it plays at its own tempo
+    /// (or the composition can't be built: B's deck then takes the rate itself).
+    private func makeWarpedAsset(_ session: MixSession, resolved: ResolvedSource) async -> (AVComposition, TimeWarp)? {
+        let rate = Double(session.rate)
+        guard abs(rate - 1) > 0.0005 else { return nil }
+        let asset = AVURLAsset(url: resolved.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        guard let duration = try? await asset.load(.duration).seconds, duration.isFinite else { return nil }
+        // The plan's ramp eases B from its own blend rate; with A held, it eases from the whole ratio instead.
+        let planRate = session.b.rate ?? 1
+        let ramp = (session.b.rateRamp ?? []).map { step -> [Double] in
+            guard step.count >= 2, abs(planRate - 1) > 0.0005 else { return step }
+            return [step[0], 1 + (rate - 1) * (step[1] - 1) / (planRate - 1)]
+        }
+        guard let warp = TimeWarp(start: session.b.start, rate: rate, ramp: ramp, songDuration: duration) else { return nil }
+        do {
+            return (try await warp.composition(of: asset), warp)
+        } catch {
+            Log.playback.warning("AutoMix: couldn\u{2019}t bake the tempo (\(error.localizedDescription)), using the deck rate")
+            return nil
+        }
+    }
+
+    private func loadIncoming(_ session: MixSession, resolved: ResolvedSource, warped: (AVComposition, TimeWarp)?) {
+        let incoming: PreparedItem
+        if case let (composition, warp)? = warped {
+            incoming = makePrepared(entry: session.target, resolved: resolved, asset: composition)
+            incoming.warp = warp
+            let b = session.b
+            incoming.automation.set(deck: AutoMixPlan.Deck(start: warp.itemTime(b.start), handoff: nil, stop: nil, rate: nil,
+                                                           gain: warp.itemFrames(b.gain), hpf: warp.itemFrames(b.hpf),
+                                                           lpf: warp.itemFrames(b.lpf), rateRamp: nil))
+            session.warped = true
+        } else {
+            incoming = makePrepared(entry: session.target, resolved: resolved)
+            incoming.automation.set(deck: session.b)
+        }
         incoming.item.audioTimePitchAlgorithm = .spectral
         session.incoming = incoming
         let deck = takeSpareDeck()
@@ -305,7 +380,7 @@ extension PlayerEngine {
         deck.removeAllItems()
         deck.actionAtItemEnd = .advance
         deck.automaticallyWaitsToMinimizeStalling = false
-        deck.defaultRate = session.rate
+        deck.defaultRate = session.deckRate
         deck.volume = deckVolume(for: session.target.song)
         deck.insert(incoming.item, after: nil)
         session.statusObservation = incoming.item.observe(\.status, options: [.initial, .new]) { [weak self, weak session] item, _ in
@@ -333,8 +408,8 @@ extension PlayerEngine {
     }
 
     private func preroll(_ session: MixSession) {
-        guard let deck = session.deck else { return }
-        let start = CMTime(seconds: session.b.start, preferredTimescale: 600_000)
+        guard let deck = session.deck, let incoming = session.incoming else { return }
+        let start = CMTime(seconds: incoming.itemTime(session.b.start), preferredTimescale: 600_000)
         deck.seek(to: start, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self, weak session] done in
             Task { @MainActor in
                 guard let self, let session, self.mixSession === session, session.phase == .preparing else { return }
@@ -342,7 +417,7 @@ extension PlayerEngine {
                     self.cancelMix(reprepare: true)
                     return
                 }
-                deck.preroll(atRate: session.rate) { [weak self, weak session] _ in
+                deck.preroll(atRate: session.deckRate) { [weak self, weak session] _ in
                     Task { @MainActor in
                         guard let self, let session, self.mixSession === session, session.phase == .preparing else { return }
                         session.phase = .ready
@@ -355,7 +430,8 @@ extension PlayerEngine {
 
     /// Starts B at the host time A reaches `a.start`: both decks then run off the same clock, beat for beat.
     private func schedule(_ session: MixSession) {
-        guard session.phase == .ready, let deck = session.deck, let timebase = session.outgoing.item.timebase else { return }
+        guard session.phase == .ready, let deck = session.deck, let incoming = session.incoming,
+              let timebase = session.outgoing.item.timebase else { return }
         // The host-time conversion below assumes A already runs at its blend tempo.
         if abs(player.rate - session.aRate) >= 0.0005 {
             if retempoJob?.purpose == .outgoing { return }
@@ -365,7 +441,7 @@ extension PlayerEngine {
             }
             session.aHeld = true
         }
-        deck.defaultRate = session.rate
+        deck.defaultRate = session.deckRate
         let hostClock = CMClockGetHostTimeClock()
         let startOnA = CMTime(seconds: session.a.start, preferredTimescale: 600_000)
         let hostStart = CMSyncConvertTime(startOnA, from: timebase, to: hostClock)
@@ -375,7 +451,7 @@ extension PlayerEngine {
             return
         }
         deck.automaticallyWaitsToMinimizeStalling = false
-        deck.setRate(session.rate, time: CMTime(seconds: session.b.start, preferredTimescale: 600_000),
+        deck.setRate(session.deckRate, time: CMTime(seconds: incoming.itemTime(session.b.start), preferredTimescale: 600_000),
                      atHostTime: hostStart)
         session.phase = .scheduled
         Log.playback.info("AutoMix scheduled in \(String(format: "%.2f", (hostStart - now).seconds))s at rate \(String(format: "%.4f", session.rate))")
@@ -395,7 +471,7 @@ extension PlayerEngine {
         spareDeck = outgoingPlayer          // busy until the tail ends; `takeSpareDeck` knows
         installPlayerObservers()
         player.automaticallyWaitsToMinimizeStalling = false
-        player.defaultRate = session.rate
+        player.defaultRate = session.deckRate
         session.statusObservation = nil
         mixSession = nil
 
@@ -411,7 +487,7 @@ extension PlayerEngine {
         let tempoAt = session.b.rateRamp?.first?.first ?? automationEnd
         mixTail = MixTail(player: outgoingPlayer, prepared: session.outgoing, stopAt: session.a.stop ?? session.a.start,
                           outgoingRate: session.aRate, automationEnd: automationEnd, tempoAt: tempoAt,
-                          tempo: abs(session.rate - 1) > 0.0005 ? .pending : .done)
+                          tempo: abs(session.deckRate - 1) > 0.0005 ? .pending : .done)
         applyVolume()
         prepareNext()
         syncCache()
@@ -423,7 +499,7 @@ extension PlayerEngine {
         guard let tail = mixTail else { return }
         if !tail.finished {
             let t = tail.player.currentTime().seconds
-            if t.isFinite, t >= tail.stopAt { stopOutgoing(tail) }
+            if tail.player.currentItem == nil || (t.isFinite && t >= tail.stopAt) { stopOutgoing(tail) }
         }
         let bTime = elapsedNow()
         // B returns to its own tempo on the ramp's first beat (A is silent by then), through its twin.
@@ -507,7 +583,7 @@ extension PlayerEngine {
         settleRetempo()
         if let session = mixSession {
             if keepIncoming, session.phase == .mixing || session.phase == .scheduled, session.incoming != nil {
-                if session.phase == .scheduled { session.deck?.rate = session.rate }
+                if session.phase == .scheduled { session.deck?.rate = session.deckRate }
                 handOff(session)
             } else {
                 cancelMix(reprepare: false)
@@ -541,7 +617,7 @@ extension PlayerEngine {
         let otherRate: Float
         if let session = mixSession, session.phase == .mixing, let deck = session.deck {
             other = deck
-            otherRate = session.rate
+            otherRate = session.deckRate
         } else if let tail = mixTail, !tail.finished {
             other = tail.player
             otherRate = tail.outgoingRate

@@ -3,7 +3,7 @@ import SwiftUI
 /// Four equalizer bars. Bounces while `isAnimating`, rests low when paused.
 struct NowPlayingIndicator: View {
     var isAnimating: Bool = true
-    var color: Color = Theme.accent
+    var color: Color? = nil
     var size: CGFloat = 16
 
     private let speeds: [Double] = [5.1, 6.7, 4.3, 7.4]
@@ -16,7 +16,7 @@ struct NowPlayingIndicator: View {
                 ForEach(0..<4, id: \.self) { i in
                     let level = isAnimating ? 0.25 + 0.75 * abs(sin(t * speeds[i] * 0.5 + phases[i])) : 0.2
                     Capsule()
-                        .fill(color)
+                        .fill(color ?? Theme.accent)
                         .frame(width: size * 0.17, height: size * level)
                 }
             }

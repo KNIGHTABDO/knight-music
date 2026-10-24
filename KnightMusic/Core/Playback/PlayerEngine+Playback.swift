@@ -23,7 +23,7 @@ extension PlayerEngine {
     func isPlayable(_ song: Song) -> Bool {
         if downloads?.localFileURL(for: song.id) != nil { return true }
         if streamCache.contains(song.id) { return true }
-        if song.isYouTube { return !services.isOffline }
+        if song.isYouTube { return !services.isInternetOffline }
         return !services.isOffline && services.urls != nil
     }
 
@@ -46,12 +46,13 @@ extension PlayerEngine {
             return ResolvedSource(url: url, kind: .cached, quality: q,
                                   description: AudioDescription.make(kind: .cached, song: song, quality: q))
         }
-        guard !services.isOffline else { return nil }
         if song.isYouTube {
+            guard !services.isInternetOffline else { return nil }
             guard let url = streamURL(for: song, quality: .original) else { return nil }
             return ResolvedSource(url: url, kind: .streaming, quality: .original,
                                   description: AudioDescription.make(kind: .streaming, song: song, quality: nil))
         }
+        guard !services.isOffline else { return nil }
         let q = currentQuality()
         guard let url = streamURL(for: song, quality: q) else { return nil }
         return ResolvedSource(url: url, kind: .streaming, quality: q,
@@ -111,6 +112,22 @@ extension PlayerEngine {
         }
         userWantsPlaying = false
         stopPlayer()
+        if !silent, services.isOffline, !services.isInternetOffline, let recheck = services.reresolveAddress {
+            // Online but the server is flagged unreachable (possibly stale): check right now instead of refusing the tap.
+            let queueIds = order.map(\.id)
+            Task { @MainActor [weak self] in
+                let reachable = await recheck() != nil
+                guard let self, self.order.map(\.id) == queueIds else { return }
+                if reachable {
+                    self.userWantsPlaying = autoplay
+                    if self.load(index: index, autoplay: autoplay, startAt: startAt, scanBackward: scanBackward, silent: true) { return }
+                    self.userWantsPlaying = false
+                }
+                self.report(reachable ? "Couldn't find a playable source for the queue."
+                                      : "Can't reach your server and none of these songs are downloaded.")
+            }
+            return false
+        }
         if !silent {
             report(services.isOffline ? "None of the songs in the queue are available offline."
                                       : "Couldn't find a playable source for the queue.")
@@ -222,11 +239,11 @@ extension PlayerEngine {
     }
 
     /// `asset` reuses an already loaded asset (a retempo twin); `tap: false` leaves the tap to the caller.
-    func makePrepared(entry: QueueEntry, resolved: ResolvedSource, asset: AVURLAsset? = nil, tap: Bool = true) -> PreparedItem {
+    func makePrepared(entry: QueueEntry, resolved: ResolvedSource, asset: AVAsset? = nil, tap: Bool = true) -> PreparedItem {
         let item = AVPlayerItem(asset: asset ?? makeAsset(for: resolved))
         let prepared = PreparedItem(item: item, entry: entry, resolved: resolved)
         if settings.speedChanged { item.audioTimePitchAlgorithm = .spectral }
-        if tap, settings.mixesTransitions || settings.eqEnabled { attachTap(prepared) }
+        if tap, settings.mixesTransitions || settings.eqEnabled || settings.metersLevel { attachTap(prepared) }
         prepared.observations = [
             item.observe(\.status, options: [.new]) { [weak self, weak prepared] _, _ in
                 Task { @MainActor in
@@ -271,6 +288,12 @@ extension PlayerEngine {
 
     func prepareGaplessNext() {
         guard let tracked else { return }
+        // The player may already have moved on to the queued item before its KVO change was delivered:
+        // replacing it now would leave the new song playing while the old one stays "current".
+        if let next = nextPrepared, player.currentItem === next.item {
+            promoteNext()
+            return
+        }
         for item in player.items() where item !== tracked.item { player.remove(item) }
         nextPrepared?.observations.removeAll()
         nextPrepared = nil
@@ -305,6 +328,11 @@ extension PlayerEngine {
 
     func advanceAfterEnd() {
         guard tracked != nil else { return }
+        // The outgoing song ended before its planned handoff: the incoming deck is already playing, keep it.
+        if let session = mixSession, session.phase == .scheduled || session.phase == .mixing, session.incoming != nil {
+            settleAutoMix(keepIncoming: true)
+            return
+        }
         cancelMix(reprepare: false)
         if endOfSongArmed {
             endOfSongArmed = false
@@ -482,7 +510,7 @@ extension PlayerEngine {
         let delta = min(max(now - lastTickUptime, 0), 1)
         lastTickUptime = now
         guard !isScrubbing, seekTarget == nil else { return }
-        let t = time.seconds
+        let t = tracked?.songTime(time.seconds) ?? time.seconds
         guard t.isFinite, t >= 0 else { return }
         currentTime = t
 
@@ -554,7 +582,7 @@ extension PlayerEngine {
 
     func itemMetricsChanged(_ p: PreparedItem) {
         guard p === tracked else { return }
-        let d = p.item.duration.seconds
+        let d = p.songTime(p.item.duration.seconds)
         if !p.isRadio, d.isFinite, d > 0, abs(d - duration) > 0.5 {
             duration = d
             nowPlaying.updateDuration(d)
@@ -575,7 +603,8 @@ extension PlayerEngine {
     // MARK: - Failures and Handoff
 
     func checkNextPreparedAddress() {
-        guard let next = nextPrepared, next.resolved.kind == .streaming,
+        // YouTube streams don't go through the server address.
+        guard let next = nextPrepared, next.resolved.kind == .streaming, !next.entry.song.isYouTube,
               let curBase = services.currentBaseURL?() else { return }
         if !next.resolved.url.absoluteString.hasPrefix(curBase.absoluteString) {
             PlaybackLog.logger.info("Re-preparing nextPrepared (\(next.entry.song.title)) because URL points to old address")

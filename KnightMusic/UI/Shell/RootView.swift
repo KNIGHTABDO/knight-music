@@ -9,7 +9,6 @@ struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
     @Environment(PlayerEngine.self) private var player
-    @Environment(AppSettings.self) private var settings
     @Environment(UpdateChecker.self) private var updates
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -48,36 +47,17 @@ struct RootView: View {
         }
         .animation(.smooth, value: updates.showsBanner)
         .focusedSceneValue(\.windowUIState, ui)
-        .overlay(alignment: .top) {
-            if let toast = ui.toast {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                    Text(toast)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.label)
-                        .lineLimit(2)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .glassEffect(.regular, in: .capsule)
-                .padding(.top, 12)
-                .padding(.horizontal, 20)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(100)
-            }
-        }
         .modifier(SongInfoPresenter(insidePlayer: false))
+        .modifier(ShellBannersPresenter(insidePlayer: false))
         .fullScreenCover(isPresented: $ui.isPlayerPresented) {
             FullPlayerView()
                 .modifier(SongInfoPresenter(insidePlayer: true))
+                .modifier(ShellBannersPresenter(insidePlayer: true))
                 .preferredColorScheme(.dark)
                 .environment(\.colorScheme, .dark)
                 .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
         }
-        .tint(settings.accentColor)
-        .animation(.smooth, value: ui.toast != nil)
+        .tint(LookStore.shared.accent)
         .environment(ui)
         .environment(nav)
         .task(id: ui.toast) {
@@ -121,10 +101,13 @@ struct RootView: View {
         .task {
             await applyDebugRoutingIfNeeded()
         }
+        .modifier(LookEffects(ui: ui))
         .task(id: player.currentSong?.id) {
             // Extract the current and next palettes before the player opens, so its first frame
             // already has the right colours.
-            _ = await ArtworkPalette.palette(for: player.currentSong?.coverArt)
+            let palette = player.currentSong == nil ? nil : await ArtworkPalette.palette(for: player.currentSong?.coverArt)
+            guard !Task.isCancelled else { return }
+            LookStore.shared.updateArtwork(palette)
             _ = await ArtworkPalette.palette(for: player.upcoming.first?.song.coverArt)
         }
         .onChange(of: app.debugScreen) { _, _ in

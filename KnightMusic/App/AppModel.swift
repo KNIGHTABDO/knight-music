@@ -34,7 +34,19 @@ final class AppModel {
     private(set) var database: LibraryDatabase?
     private(set) var activeAccount: ServerAccount?
     /// False when the last reachability check (ping on any address) failed.
-    private(set) var serverReachable = true
+    private(set) var serverReachable = true {
+        didSet {
+            guard serverReachable != oldValue else { return }
+            if serverReachable {
+                stopReachabilityRecovery()
+                // Back from an outage, whatever noticed it: catch the library up (SyncEngine dedupes overlapping syncs).
+                Log.api.info("Server reachable again")
+                Task { await self.refresh() }
+            } else {
+                startReachabilityRecovery()
+            }
+        }
+    }
     /// Bumps on every client/database change; observe it from views that must rebuild on account switch.
     private(set) var sessionRevision = 0
     /// Screen requested via `-KMScreen` in screenshot mode; the shell routes on it.
@@ -49,6 +61,7 @@ final class AppModel {
     @ObservationIgnored private var networkTask: Task<Void, Never>?
     @ObservationIgnored private var recheckTask: Task<Void, Never>?
     @ObservationIgnored private var lastRecheck = Date.distantPast
+    @ObservationIgnored private var recoveryTask: Task<Void, Never>?
     @ObservationIgnored private var started = false
 
     init() {
@@ -113,6 +126,10 @@ final class AppModel {
             autoMixShowcase?.refreshIfDue()
         }
         guard started, session == .ready else { return }
+        if !serverReachable {
+            Task { await reresolveAddress() }
+            return
+        }
         if let lastSync = syncStatus.lastSyncAt, Date().timeIntervalSince(lastSync) < 180 {
             return
         }
@@ -204,7 +221,12 @@ final class AppModel {
             serverReachable = false
             return nil
         }
-        let url = await addressResolver.resolve(account: account, password: password)
+        var url = await addressResolver.resolve(account: account, password: password)
+        if url == nil, network.isConnected, activeAccount?.id == account.id {
+            // The quick probe favours the preferred (LAN) address; a cold Tailscale/cellular link can need longer.
+            // Only a slow probe that also fails means the server is really unreachable.
+            url = await addressResolver.resolve(account: account, password: password, timeout: 8)
+        }
         guard activeAccount?.id == account.id else { return nil }
         if let url {
             serverReachable = true
@@ -245,6 +267,28 @@ final class AppModel {
             await self?.reresolveAddress()
             self?.recheckTask = nil
         }
+    }
+
+    /// The server can drop (home internet blip) while this device's network stays the same, so nothing else would
+    /// re-check it: keep pinging with backoff until it answers, then catch the library up.
+    private func startReachabilityRecovery() {
+        guard recoveryTask == nil, session == .ready else { return }
+        recoveryTask = Task { [weak self] in
+            var delay = 2
+            while true {
+                try? await Task.sleep(for: .seconds(delay))
+                delay = min(delay * 2, 10)
+                guard !Task.isCancelled, let self else { return }
+                guard self.network.isConnected else { continue }
+                // Success flips `serverReachable`, which cancels this loop and starts the catch-up sync.
+                if await self.reresolveAddress() != nil { return }
+            }
+        }
+    }
+
+    private func stopReachabilityRecovery() {
+        recoveryTask?.cancel()
+        recoveryTask = nil
     }
 
     // MARK: - Accounts
@@ -389,6 +433,7 @@ final class AppModel {
 
     private func teardownSession() {
         networkTask?.cancel()
+        stopReachabilityRecovery()
         recheckTask?.cancel()
         recheckTask = nil
         syncTask?.cancel()

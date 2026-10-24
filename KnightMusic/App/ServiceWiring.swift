@@ -114,6 +114,7 @@ extension AppModel {
             s.replayGain = ReplayGainMode(rawValue: self.settings.replayGainMode.rawValue) ?? .off
             s.scrobblingEnabled = self.settings.scrobblingEnabled
             s.offlineMode = self.isOffline
+            s.internetOffline = self.settings.offlineMode == .manual ? self.settings.manualOfflineEnabled : !self.network.isConnected
             s.streamCacheLimitMB = self.settings.streamCacheLimitMB
             s.serverQueueSyncEnabled = self.settings.syncPlayQueueWithServer
             s.saveAheadMode = SaveAheadMode(rawValue: self.settings.saveAheadMode.rawValue) ?? .off
@@ -122,6 +123,7 @@ extension AppModel {
             s.eqEnabled = self.settings.eqEnabled
             s.eqGains = self.settings.eqGains.map { Float($0) }
             s.downloadOnCellular = self.settings.downloadOverCellular
+            s.metersLevel = LookStore.shared.current.pulse == .beat
             return s
         }
 

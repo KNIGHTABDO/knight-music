@@ -38,6 +38,9 @@ struct PlaybackSettings: Equatable, Sendable {
     var replayGain: ReplayGainMode = .off
     var scrobblingEnabled: Bool = true
     var offlineMode: Bool = false
+    /// Manual offline mode or no network at all. YouTube and radio only need this to be false; the Navidrome
+    /// server being unreachable doesn't matter to them.
+    var internetOffline: Bool = false
     var streamCacheEnabled: Bool = true
     var streamCacheLimitMB: Int = 2048
     var serverQueueSyncEnabled: Bool = true
@@ -48,6 +51,8 @@ struct PlaybackSettings: Equatable, Sendable {
     var eqEnabled: Bool = false
     /// dB per `Equalizer.frequencies` band.
     var eqGains: [Float] = []
+    /// The player's beat pulse wants the audio level, which only an audio tap can measure.
+    var metersLevel: Bool = false
 
     /// Songs blend into each other (AutoMix or crossfade). Off while the speed is changed: mixes run at their own rates.
     var mixesTransitions: Bool { (autoMix || crossfadeSeconds > 0) && !speedChanged }
@@ -116,6 +121,7 @@ final class PlaybackServices: @unchecked Sendable {
     var settings: PlaybackSettings { settingsProvider() }
     var network: PlaybackNetworkStatus { networkProvider() }
     var isOffline: Bool { settings.offlineMode || network == .offline }
+    var isInternetOffline: Bool { settings.internetOffline || network == .offline }
 }
 
 /// Quality requested from the server for a stream (or transcoded download).

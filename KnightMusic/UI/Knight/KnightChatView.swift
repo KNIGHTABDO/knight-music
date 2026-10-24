@@ -31,6 +31,10 @@ struct KnightChatView: View {
         hermes.isRunning && hermes.activeConversationId == conversationId
     }
 
+    private var hasDetachedRun: Bool {
+        !isStreamingThisConversation && conversation?.messages.contains { $0.status == "running" } == true
+    }
+
     private var canSend: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hermes.isRunning
     }
@@ -59,6 +63,13 @@ struct KnightChatView: View {
                 .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
+            .task(id: hasDetachedRun) {
+                // A run that finished while the app was away: keep asking the server until it settles.
+                while hasDetachedRun && !Task.isCancelled {
+                    await hermes.recoverRunningMessages()
+                    try? await Task.sleep(for: .seconds(4))
+                }
+            }
             .onChange(of: hermes.currentStreamingText) { _, _ in
                 withAnimation(.smooth) {
                     proxy.scrollTo("bottomID", anchor: .bottom)
@@ -201,6 +212,17 @@ struct KnightChatView: View {
 
         case .assistant:
             VStack(alignment: .leading, spacing: 12) {
+                if message.status == "running" && message.text.isEmpty {
+                    if !isStreamingThisConversation {
+                        Label {
+                            Text("Knight is still working on this…")
+                        } icon: {
+                            ProgressView().controlSize(.small)
+                        }
+                        .font(.system(size: 15))
+                        .foregroundStyle(Theme.secondaryLabel)
+                    }
+                } else {
                 markdownText(message.text)
                     .contextMenu {
                         Button {
@@ -219,6 +241,7 @@ struct KnightChatView: View {
                             Label("Delete Message", systemImage: "trash")
                         }
                     }
+                }
 
                 if !message.toolSteps.isEmpty {
                     toolStepsList(message.toolSteps)

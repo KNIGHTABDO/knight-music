@@ -46,6 +46,10 @@ struct RouteRootView: View {
             RadioStationsView()
         case .replay:
             ReplayView()
+        case .customize:
+            CustomizeView()
+        case .appIcons:
+            AppIconView()
         case .knightChat(let id, let draft):
             KnightChatView(conversationId: id, initialDraft: draft)
         case .youTubeGrid(let browseId, let params, let title):

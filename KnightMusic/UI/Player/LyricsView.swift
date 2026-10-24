@@ -16,6 +16,7 @@ struct LyricsView: View {
 
     @Environment(LibraryRepository.self) private var library
     @Environment(PlayerEngine.self) private var player
+    @Environment(LookStore.self) private var looks
 
     @State private var offsetStore = LyricsOffsetStore.shared
     @State private var lyricsList: [StructuredLyrics] = []
@@ -101,7 +102,10 @@ struct LyricsView: View {
 
     @ViewBuilder
     private func syncedLyricsView(_ lyrics: StructuredLyrics) -> some View {
-        let fontSize: CGFloat = isIPad ? 34 : 28
+        let look = looks.current
+        let fontSize: CGFloat = (isIPad ? 34 : 28) * look.lyricsScale
+        let centered = look.lyricsAlignment == .center
+        let highlight = looks.lyricsHighlight
         let userOffset = offsetStore.userOffset(for: song.id)
 
         ScrollViewReader { proxy in
@@ -118,7 +122,7 @@ struct LyricsView: View {
                             let line = item.line
                             let isActive = (index == activeIndex)
                             let distance = abs(index - (activeIndex ?? 0))
-                            let blurRadius: CGFloat = distance > 2 ? min(CGFloat(distance - 2) * 1.0, 2.0) : 0
+                            let blurRadius: CGFloat = look.lyricsBlur && distance > 2 ? min(CGFloat(distance - 2) * 1.0, 2.0) : 0
                             let opacity: Double = isActive ? 1.0 : 0.45
 
                             Button {
@@ -130,20 +134,21 @@ struct LyricsView: View {
                                             KaraokeLineText(
                                                 words: item.words,
                                                 lineEndMs: lineEnd(after: index),
+                                                highlight: highlight,
                                                 offsetMs: offsetStore.effectiveOffset(serverOffset: lyrics.offset, songId: song.id)
                                             )
                                         } else {
                                             Text(item.text.isEmpty ? " " : item.text)
-                                                .foregroundStyle(Color.white.opacity(opacity))
+                                                .foregroundStyle(isActive ? highlight : Color.white.opacity(opacity))
                                         }
                                     }
                                     .font(.system(size: fontSize, weight: .bold))
                                     // Soft glow on the line being sung.
-                                    .shadow(color: .white.opacity(isActive ? 0.45 : 0), radius: isActive ? 12 : 0)
-                                    .scaleEffect(isActive ? 1.0 : 0.97, anchor: .leading)
+                                    .shadow(color: highlight.opacity(isActive && look.lyricsGlow ? 0.45 : 0), radius: isActive && look.lyricsGlow ? 12 : 0)
+                                    .scaleEffect(isActive ? 1.0 : 0.97, anchor: centered ? .center : .leading)
                                     .blur(radius: blurRadius)
-                                    .multilineTextAlignment(.leading)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .multilineTextAlignment(centered ? .center : .leading)
+                                    .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
                                     .animation(.smooth(duration: 0.35), value: isActive)
 
                                     if syncedLineIndex == index && showSyncedToast {
@@ -427,7 +432,7 @@ struct LyricsView: View {
             VStack(spacing: isIPad ? 22 : 16) {
                 ForEach(identifiedLines) { item in
                     Text(item.text.isEmpty ? " " : item.text)
-                        .font(.system(size: isIPad ? 34 : 28, weight: .bold))
+                        .font(.system(size: (isIPad ? 34 : 28) * looks.current.lyricsScale, weight: .bold))
                         .foregroundStyle(Color.white.opacity(0.9))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -518,6 +523,7 @@ private struct KaraokeLineText: View {
     let words: [LyricWord]
     /// Raw lyric time at which the last word ends.
     let lineEndMs: Int
+    let highlight: Color
     let offsetMs: Int
 
     @Environment(PlayerEngine.self) private var player
@@ -533,7 +539,7 @@ private struct KaraokeLineText: View {
                 let end = i + 1 < words.count ? words[i + 1].start : lineEndMs
                 let progress = min(max(Double(nowRawMs - start) / Double(max(end - start, 1)), 0), 1)
                 return text + Text(verbatim: words[i].text)
-                    .foregroundStyle(Color.white.opacity(0.4 + 0.6 * progress))
+                    .foregroundStyle(Color.white.opacity(0.4).mix(with: highlight, by: progress))
             }
         }
         .onChange(of: player.currentTime, initial: true) { _, time in
