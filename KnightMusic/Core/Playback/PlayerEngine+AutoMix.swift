@@ -209,18 +209,19 @@ extension PlayerEngine {
         }
     }
 
-    /// A eases into the blend tempo in the bars before B comes in (only when the tempos meet halfway).
+    /// A moves to the blend tempo before B comes in (only when the tempos meet halfway). Every AVPlayer rate change
+    /// briefly flushes the audio output, so the plan's ramp is taken in one step at its last keyframe (a bar line
+    /// shortly before B) instead of stepping through it audibly.
     private func rampOutgoing(_ session: MixSession, at t: Double) {
-        guard let ramp = session.a.rateRamp, tracked === session.outgoing else { return }
-        while session.aRampIndex < ramp.count, ramp[session.aRampIndex].count >= 2, t >= ramp[session.aRampIndex][0] {
-            let rate = Float(ramp[session.aRampIndex][1])
-            player.defaultRate = rate
-            if player.rate > 0 {
-                player.rate = rate
-                nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: Double(rate))
-            }
-            session.aRampIndex += 1
+        guard let ramp = session.a.rateRamp, tracked === session.outgoing, session.aRampIndex < ramp.count,
+              let last = ramp.last, last.count >= 2, t >= last[0] else { return }
+        let rate = Float(last[1])
+        player.defaultRate = rate
+        if player.rate > 0 {
+            player.rate = rate
+            nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: Double(rate))
         }
+        session.aRampIndex = ramp.count
     }
 
     private func refreshProvisionalPlan(_ session: MixSession) {
@@ -380,14 +381,17 @@ extension PlayerEngine {
             if t.isFinite, t >= tail.stopAt { stopOutgoing(tail) }
         }
         let bTime = elapsedNow()
-        while tail.rampIndex < tail.ramp.count, tail.ramp[tail.rampIndex].count >= 2, bTime >= tail.ramp[tail.rampIndex][0] {
-            let rate = Float(tail.ramp[tail.rampIndex][1])
+        // B returns to its own tempo in one step on the ramp's first beat (A is silent by then): stepping through
+        // the ramp would cut the audio at every rate change.
+        if tail.rampIndex < tail.ramp.count, let first = tail.ramp.first, first.count >= 2, bTime >= first[0],
+           let last = tail.ramp.last, last.count >= 2 {
+            let rate = Float(last[1])
             player.defaultRate = rate
             if player.rate > 0 {
                 player.rate = rate
                 nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: Double(rate))
             }
-            tail.rampIndex += 1
+            tail.rampIndex = tail.ramp.count
         }
         if tail.finished, tail.rampIndex >= tail.ramp.count, bTime >= tail.automationEnd { endTail(tail) }
     }
