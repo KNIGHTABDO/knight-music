@@ -11,7 +11,8 @@ final class MixSession {
     let plan: AutoMixPlan
     let a: AutoMixPlan.Deck
     let b: AutoMixPlan.Deck
-    let outgoing: PreparedItem
+    /// Replaced by its twin when A changes tempo (see Retempo).
+    var outgoing: PreparedItem
     let target: QueueEntry
     /// Chosen when preparation starts (the previous transition's deck may still be fading out at plan time).
     var deck: AVQueuePlayer?
@@ -20,10 +21,12 @@ final class MixSession {
     var statusObservation: NSKeyValueObservation?
     var fetchedAt = ProcessInfo.processInfo.systemUptime
 
-    var rate: Float { Float(b.rate ?? 1) }
+    /// B's rate. When A can't change tempo seamlessly (a stream has no tap) A stays at 1 and B takes the whole ratio.
+    var rate: Float { aHeld ? Float((b.rate ?? 1) / (a.rate ?? 1)) : Float(b.rate ?? 1) }
     /// A's rate while B plays (1 unless the tempos meet halfway).
-    var aRate: Float { Float(a.rate ?? 1) }
-    var aRampIndex = 0
+    var aRate: Float { aHeld ? 1 : Float(a.rate ?? 1) }
+    var aTempo: TempoStep = .pending
+    var aHeld = false
 
     init(plan: AutoMixPlan, a: AutoMixPlan.Deck, b: AutoMixPlan.Deck, outgoing: PreparedItem, target: QueueEntry) {
         self.plan = plan
@@ -43,20 +46,25 @@ final class MixTail {
     let outgoingRate: Float
     /// The incoming song's media time after which its automation is flat (gain 1, filters open).
     let automationEnd: Double
-    var ramp: [[Double]]
-    var rampIndex = 0
+    /// B's media time at which it goes back to its own tempo (the plan's ramp start).
+    let tempoAt: Double
+    var tempo: TempoStep
     var finished = false
 
     init(player: AVQueuePlayer, prepared: PreparedItem, stopAt: Double, outgoingRate: Float, automationEnd: Double,
-         ramp: [[Double]]) {
+         tempoAt: Double, tempo: TempoStep) {
         self.player = player
         self.prepared = prepared
         self.stopAt = stopAt
         self.outgoingRate = outgoingRate
         self.automationEnd = automationEnd
-        self.ramp = ramp
+        self.tempoAt = tempoAt
+        self.tempo = tempo
     }
 }
+
+/// A deck's one tempo change: pending, its twin preparing, failed (falls back to a hard rate change) or done.
+enum TempoStep { case pending, running, failed, done }
 
 extension PlayerEngine {
     /// How long before the transition the incoming deck starts loading and pre-rolling.
@@ -170,7 +178,7 @@ extension PlayerEngine {
         tickTail()
         guard let session = mixSession else { return }
         let t = elapsedNow()
-        if session.phase != .scheduled, session.phase != .mixing { rampOutgoing(session, at: t) }
+        if session.phase != .scheduled, session.phase != .mixing { retempoOutgoing(session, at: t) }
         switch session.phase {
         case .planned:
             if session.plan.final != true, ProcessInfo.processInfo.systemUptime - session.fetchedAt > 20,
@@ -209,19 +217,43 @@ extension PlayerEngine {
         }
     }
 
-    /// A moves to the blend tempo before B comes in (only when the tempos meet halfway). Every AVPlayer rate change
-    /// briefly flushes the audio output, so the plan's ramp is taken in one step at its last keyframe (a bar line
-    /// shortly before B) instead of stepping through it audibly.
-    private func rampOutgoing(_ session: MixSession, at t: Double) {
-        guard let ramp = session.a.rateRamp, tracked === session.outgoing, session.aRampIndex < ramp.count,
-              let last = ramp.last, last.count >= 2, t >= last[0] else { return }
-        let rate = Float(last[1])
-        player.defaultRate = rate
-        if player.rate > 0 {
-            player.rate = rate
-            nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: Double(rate))
+    /// A moves to the blend tempo before B comes in (only when the tempos meet halfway), on a bar line shortly before
+    /// B: its twin takes over at the new rate (an AVPlayer rate change would cut the audio). When that can't be done
+    /// seamlessly A keeps its tempo and B takes the whole ratio.
+    private func retempoOutgoing(_ session: MixSession, at t: Double) {
+        guard session.aTempo == .pending, !session.aHeld, tracked === session.outgoing, isPlaying else { return }
+        guard abs(session.aRate - 1) > 0.0005 else {
+            session.aTempo = .done
+            return
         }
-        session.aRampIndex = ramp.count
+        guard let last = session.a.rateRamp?.last, last.count >= 2 else {
+            session.aHeld = true
+            return
+        }
+        let at = last[0]
+        guard t >= at - 3 else { return }
+        if t < at - 0.8, isLocal(session.target.song), startRetempo(.outgoing, at: at, to: session.aRate) {
+            session.aTempo = .running
+        } else {
+            session.aHeld = true
+            Log.playback.info("AutoMix: outgoing keeps its tempo, incoming takes the whole ratio")
+        }
+    }
+
+    /// Outcome of a retempo started by the transition (called from Retempo).
+    func retempoEnded(_ job: RetempoJob, outcome: TempoStep) {
+        switch job.purpose {
+        case .outgoing:
+            guard let session = mixSession else { return }
+            switch outcome {
+            case .done: session.aTempo = .done
+            case .failed: session.aHeld = true
+            default: session.aTempo = .pending      // interrupted before it started: tried again if there's time
+            }
+        case .incoming:
+            guard let tail = mixTail else { return }
+            tail.tempo = outcome
+        }
     }
 
     private func refreshProvisionalPlan(_ session: MixSession) {
@@ -319,10 +351,15 @@ extension PlayerEngine {
     private func schedule(_ session: MixSession) {
         guard session.phase == .ready, let deck = session.deck, let timebase = session.outgoing.item.timebase else { return }
         // The host-time conversion below assumes A already runs at its blend tempo.
-        guard abs(player.rate - session.aRate) < 0.0005 else {
-            if (session.a.rateRamp ?? []).isEmpty, player.rate > 0 { player.rate = session.aRate }
-            return
+        if abs(player.rate - session.aRate) >= 0.0005 {
+            if retempoJob?.purpose == .outgoing { return }
+            guard !session.aHeld, abs(player.rate - 1) < 0.0005 else {
+                cancelMix(reprepare: true)
+                return
+            }
+            session.aHeld = true
         }
+        deck.defaultRate = session.rate
         let hostClock = CMClockGetHostTimeClock()
         let startOnA = CMTime(seconds: session.a.start, preferredTimescale: 600_000)
         let hostStart = CMSyncConvertTime(startOnA, from: timebase, to: hostClock)
@@ -365,8 +402,10 @@ extension PlayerEngine {
         publishCurrent(incoming, startAt: elapsedNow(), playing: true)
         let curves = [session.b.gain, session.b.hpf, session.b.lpf, session.b.rateRamp ?? []]
         let automationEnd = curves.compactMap { $0.last?.first }.max() ?? 0
+        let tempoAt = session.b.rateRamp?.first?.first ?? automationEnd
         mixTail = MixTail(player: outgoingPlayer, prepared: session.outgoing, stopAt: session.a.stop ?? session.a.start,
-                          outgoingRate: session.aRate, automationEnd: automationEnd, ramp: session.b.rateRamp ?? [])
+                          outgoingRate: session.aRate, automationEnd: automationEnd, tempoAt: tempoAt,
+                          tempo: abs(session.rate - 1) > 0.0005 ? .pending : .done)
         applyVolume()
         prepareNext()
         syncCache()
@@ -381,19 +420,21 @@ extension PlayerEngine {
             if t.isFinite, t >= tail.stopAt { stopOutgoing(tail) }
         }
         let bTime = elapsedNow()
-        // B returns to its own tempo in one step on the ramp's first beat (A is silent by then): stepping through
-        // the ramp would cut the audio at every rate change.
-        if tail.rampIndex < tail.ramp.count, let first = tail.ramp.first, first.count >= 2, bTime >= first[0],
-           let last = tail.ramp.last, last.count >= 2 {
-            let rate = Float(last[1])
-            player.defaultRate = rate
-            if player.rate > 0 {
-                player.rate = rate
-                nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: Double(rate))
+        // B returns to its own tempo on the ramp's first beat (A is silent by then), through its twin.
+        switch tail.tempo {
+        case .pending where isPlaying && bTime >= tail.tempoAt - 3:
+            if startRetempo(.incoming, at: max(tail.tempoAt, bTime + 1), to: 1) {
+                tail.tempo = .running
+            } else if bTime >= tail.tempoAt {
+                tail.tempo = .failed
             }
-            tail.rampIndex = tail.ramp.count
+        case .failed:
+            setRateAbruptly(1)
+            tail.tempo = .done
+        default:
+            break
         }
-        if tail.finished, tail.rampIndex >= tail.ramp.count, bTime >= tail.automationEnd { endTail(tail) }
+        if tail.finished, tail.tempo == .done, bTime >= tail.automationEnd { endTail(tail) }
     }
 
     private func stopOutgoing(_ tail: MixTail) {
@@ -429,6 +470,7 @@ extension PlayerEngine {
     func cancelMix(reprepare: Bool) {
         autoMixPlanTask?.cancel()
         guard let session = mixSession else { return }
+        settleRetempo()
         stopVolumeAutomation()
         mixSession = nil
         plannedMix = nil
@@ -456,6 +498,7 @@ extension PlayerEngine {
 
     /// Ends any transition at once: the incoming song plays alone at its own tempo, or the mix is dropped.
     func settleAutoMix(keepIncoming: Bool) {
+        settleRetempo()
         if let session = mixSession {
             if keepIncoming, session.phase == .mixing || session.phase == .scheduled, session.incoming != nil {
                 if session.phase == .scheduled { session.deck?.rate = session.rate }
@@ -465,7 +508,7 @@ extension PlayerEngine {
             }
         }
         if let tail = mixTail {
-            tail.ramp = []
+            tail.tempo = .done
             endTail(tail)
         }
     }

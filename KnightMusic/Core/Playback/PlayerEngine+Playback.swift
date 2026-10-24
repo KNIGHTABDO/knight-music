@@ -160,6 +160,7 @@ extension PlayerEngine {
     }
 
     func stopPlayer() {
+        settleRetempo()
         settleAutoMix(keepIncoming: false)
         tracked?.observations.removeAll()
         nextPrepared?.observations.removeAll()
@@ -202,11 +203,17 @@ extension PlayerEngine {
 
     // MARK: Gapless preparation
 
-    func makePrepared(entry: QueueEntry, resolved: ResolvedSource) -> PreparedItem {
-        let item = AVPlayerItem(asset: AVURLAsset(url: resolved.url))
+    func makeAsset(for resolved: ResolvedSource) -> AVURLAsset {
+        guard let headers = resolved.headers, !headers.isEmpty else { return AVURLAsset(url: resolved.url) }
+        return AVURLAsset(url: resolved.url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+    }
+
+    /// `asset` reuses an already loaded asset (a retempo twin); `tap: false` leaves the tap to the caller.
+    func makePrepared(entry: QueueEntry, resolved: ResolvedSource, asset: AVURLAsset? = nil, tap: Bool = true) -> PreparedItem {
+        let item = AVPlayerItem(asset: asset ?? makeAsset(for: resolved))
         let prepared = PreparedItem(item: item, entry: entry, resolved: resolved)
         if settings.speedChanged { item.audioTimePitchAlgorithm = .spectral }
-        if settings.mixesTransitions || settings.eqEnabled { attachTap(prepared) }
+        if tap, settings.mixesTransitions || settings.eqEnabled { attachTap(prepared) }
         prepared.observations = [
             item.observe(\.status, options: [.new]) { [weak self, weak prepared] _, _ in
                 Task { @MainActor in
