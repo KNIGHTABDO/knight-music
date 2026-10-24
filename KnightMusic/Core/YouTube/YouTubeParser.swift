@@ -252,7 +252,7 @@ enum YouTubeParser {
         var topMore: YTBrowseTarget?
         if let shelf = findAll("musicShelfRenderer", in: root).first as? JSON {
             topSongs = items(in: shelf["contents"]).compactMap { if case .song(let s) = $0 { return s } else { return nil } }
-            if let run = runs(shelf["title"]).first, let id = browseId(run) {
+            if let run = runs(shelf["title"]).first, let id = Self.browseId(run) {
                 topMore = YTBrowseTarget(browseId: id, params: dig(run, "navigationEndpoint", "browseEndpoint", "params") as? String)
             }
         }
@@ -263,7 +263,7 @@ enum YouTubeParser {
             let list = items(in: carousel["contents"])
             guard !list.isEmpty else { return nil }
             var more: YTBrowseTarget?
-            if let run = headerRuns.first, let id = browseId(run) {
+            if let run = headerRuns.first, let id = Self.browseId(run) {
                 more = YTBrowseTarget(browseId: id, params: dig(run, "navigationEndpoint", "browseEndpoint", "params") as? String)
             }
             return YTShelf(title: title, items: list, more: more)
