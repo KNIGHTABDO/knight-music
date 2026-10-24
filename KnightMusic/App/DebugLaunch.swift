@@ -127,6 +127,10 @@ enum DebugLaunch {
             }
         case "settings":
             ui.selectedTab = .settings
+        case "customize", "icons":
+            ui.selectedTab = .settings
+            nav.settings.append(Route.customize)
+            if screen == "icons" { nav.settings.append(Route.appIcons) }
         case "server":
             // SettingsView is a stub; if it exposes a server status page push it, else just settings
             ui.selectedTab = .settings

@@ -17,6 +17,8 @@ enum Route: Hashable {
     case genres
     case radioStations
     case replay
+    case customize
+    case appIcons
     case knightChat(id: String, draft: String? = nil)
     case youTubeGrid(browseId: String, params: String?, title: String)
     case youTubeSongs(browseId: String, params: String?, title: String)
