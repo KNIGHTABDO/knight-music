@@ -25,6 +25,7 @@ final class TabNavigationModel {
     var recentlyAdded = NavigationPath()
     var frequentlyPlayed = NavigationPath()
     var random = NavigationPath()
+    var youTubeDiscover = NavigationPath()
 
     func binding(for route: Route) -> Binding<NavigationPath> {
         switch route {
@@ -70,6 +71,8 @@ final class TabNavigationModel {
             return Binding(get: { self.genres }, set: { self.genres = $0 })
         case .playlists:
             return Binding(get: { self.playlists }, set: { self.playlists = $0 })
+        case .youTubeDiscover:
+            return Binding(get: { self.youTubeDiscover }, set: { self.youTubeDiscover = $0 })
         default:
             return Binding(get: { self.library }, set: { self.library = $0 })
         }

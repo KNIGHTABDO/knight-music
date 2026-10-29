@@ -48,6 +48,8 @@ actor YouTubeMusic {
     private var visitorTask: Task<String?, Never>?
     private var streams: [String: YTStream] = [:]
     private var resolving: [String: Task<YTStream, Error>] = [:]
+    private var feedCache: [String: (feed: YTDiscoverFeed, fetchedAt: Date)] = [:]
+    private var moodSectionsCache: (sections: [YTMoodGenreSection], fetchedAt: Date)? = nil
     private var lastGoodClient: String?
     private var store: YouTubeConfigStore { .shared }
 
@@ -156,6 +158,80 @@ actor YouTubeMusic {
         let next = try await call("next", ["videoId": videoId, "isAudioOnly": true])
         guard let id = YouTubeParser.lyricsBrowseId(next) else { return nil }
         return YouTubeParser.lyricsText(try await browse(id))
+    }
+
+    // MARK: Discovery & Browse (BitChord-aligned)
+
+    private static let cacheTTL: TimeInterval = 600
+
+    func home(params: String? = nil, forceRefresh: Bool = false) async throws -> YTDiscoverFeed {
+        let key = "home:\(params ?? "")"
+        if !forceRefresh, let cached = feedCache[key], Date().timeIntervalSince(cached.fetchedAt) < Self.cacheTTL {
+            return cached.feed
+        }
+        let root = try await browse("FEmusic_home", params: params)
+        let feed = YouTubeParser.discoverFeed(root)
+        feedCache[key] = (feed, Date())
+        return feed
+    }
+
+    func continueHome(token: String) async throws -> (shelves: [YTShelf], continuation: String?) {
+        let root = try await call("browse", ["continuation": token])
+        return YouTubeParser.discoverContinuation(root)
+    }
+
+    func explore(forceRefresh: Bool = false) async throws -> YTDiscoverFeed {
+        let key = "explore"
+        if !forceRefresh, let cached = feedCache[key], Date().timeIntervalSince(cached.fetchedAt) < Self.cacheTTL {
+            return cached.feed
+        }
+        let root = try await browse("FEmusic_explore")
+        let feed = YouTubeParser.discoverFeed(root)
+        feedCache[key] = (feed, Date())
+        return feed
+    }
+
+    func newReleases(forceRefresh: Bool = false) async throws -> YTDiscoverFeed {
+        let key = "new_releases"
+        if !forceRefresh, let cached = feedCache[key], Date().timeIntervalSince(cached.fetchedAt) < Self.cacheTTL {
+            return cached.feed
+        }
+        let root = try await browse("FEmusic_new_releases")
+        let feed = YouTubeParser.discoverFeed(root)
+        feedCache[key] = (feed, Date())
+        return feed
+    }
+
+    func charts(forceRefresh: Bool = false) async throws -> YTDiscoverFeed {
+        let key = "charts"
+        if !forceRefresh, let cached = feedCache[key], Date().timeIntervalSince(cached.fetchedAt) < Self.cacheTTL {
+            return cached.feed
+        }
+        let root = try await browse("FEmusic_charts")
+        let feed = YouTubeParser.discoverFeed(root)
+        feedCache[key] = (feed, Date())
+        return feed
+    }
+
+    func moodsAndGenres(forceRefresh: Bool = false) async throws -> [YTMoodGenreSection] {
+        if !forceRefresh, let cached = moodSectionsCache, Date().timeIntervalSince(cached.fetchedAt) < Self.cacheTTL {
+            return cached.sections
+        }
+        let root = try await browse("FEmusic_moods_and_genres")
+        let sections = YouTubeParser.moodAndGenres(root)
+        moodSectionsCache = (sections, Date())
+        return sections
+    }
+
+    func category(_ target: YTBrowseTarget, forceRefresh: Bool = false) async throws -> YTDiscoverFeed {
+        let key = "cat:\(target.browseId):\(target.params ?? "")"
+        if !forceRefresh, let cached = feedCache[key], Date().timeIntervalSince(cached.fetchedAt) < Self.cacheTTL {
+            return cached.feed
+        }
+        let root = try await browse(target.browseId, params: target.params)
+        let feed = YouTubeParser.discoverFeed(root)
+        feedCache[key] = (feed, Date())
+        return feed
     }
 
     private func browse(_ browseId: String, params: String? = nil) async throws -> JSON {
