@@ -42,7 +42,7 @@ struct SearchView: View {
             if trimmed.isEmpty {
                 emptyQueryView
             } else if source == .youTube {
-                YouTubeSearchResultsView(query: debouncedQuery, scope: $scope)
+                YouTubeSearchResultsView(query: debouncedQuery, scope: $scope, onSelectResult: { addRecentSearch(debouncedQuery) })
             } else if let results = searchResults {
                 if isEmpty(results, playlists: matchedPlaylists) && !isSearching {
                     VStack(spacing: 24) {
@@ -80,7 +80,7 @@ struct SearchView: View {
         .onAppear {
             loadRecentSearches()
         }
-        .task(id: query) {
+        .task(id: "\(source.rawValue):\(query)") {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 debouncedQuery = ""
@@ -94,6 +94,12 @@ struct SearchView: View {
 
             if debouncedQuery != trimmed { scope = .top }
             debouncedQuery = trimmed
+
+            if source == .youTube {
+                isSearching = false
+                return
+            }
+
             isSearching = true
 
             if let db = library.database {
@@ -184,7 +190,11 @@ struct SearchView: View {
                 }
             }
 
-            GenreBrowseGrid()
+            if source == .youTube {
+                YouTubeSearchBrowseView()
+            } else {
+                GenreBrowseGrid()
+            }
         }
         .padding(.vertical, 16)
     }

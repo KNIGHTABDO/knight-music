@@ -8,11 +8,16 @@ extension PlayerEngine {
     private static let stationLowWater = 3
 
     func startStation(from song: Song) async {
-        let picks = await stationSongs(after: song, excluding: [song.id])
-        play([song] + picks, startAt: 0, shuffle: false)
+        stationRefillTask?.cancel()
+        stationRefillTask = nil
+        play([song], startAt: 0, shuffle: false)
         stationSeed = song
+        let picks = await stationSongs(after: song, excluding: [song.id])
+        guard !Task.isCancelled, stationSeed?.id == song.id else { return }
         if picks.isEmpty {
             report("No similar songs found for \(song.title).")
+        } else {
+            enqueue(picks, next: false)
         }
     }
 
@@ -38,7 +43,7 @@ extension PlayerEngine {
     private func stationSongs(after song: Song, excluding known: Set<String>) async -> [Song] {
         var picks: [Song] = []
         if let videoId = song.youTubeVideoId {
-            guard !services.isOffline else { return [] }
+            guard !services.isInternetOffline else { return [] }
             do {
                 picks = try await YouTubeMusic.shared.radio(videoId: videoId).map(\.song)
             } catch {

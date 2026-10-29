@@ -22,6 +22,9 @@ enum Route: Hashable {
     case knightChat(id: String, draft: String? = nil)
     case youTubeGrid(browseId: String, params: String?, title: String)
     case youTubeSongs(browseId: String, params: String?, title: String)
+    case youTubeDiscover
+    case youTubeMoodsAndGenres
+    case youTubeCategory(browseId: String, params: String?, title: String)
 }
 
 

@@ -14,6 +14,25 @@ extension YTItem: CoverArtProviding {
 extension YTBrowseTarget {
     func gridRoute(title: String) -> Route { .youTubeGrid(browseId: browseId, params: params, title: title) }
     func songsRoute(title: String) -> Route { .youTubeSongs(browseId: browseId, params: params, title: title) }
+
+    func destinationRoute(title: String) -> Route {
+        if browseId == "FEmusic_moods_and_genres" {
+            return .youTubeMoodsAndGenres
+        }
+        if browseId.hasPrefix("FEmusic_moods_and_genres_category") || (browseId.hasPrefix("FE") && params != nil && browseId != "FEmusic_home") {
+            return .youTubeCategory(browseId: browseId, params: params, title: title)
+        }
+        if browseId.hasPrefix("VL") || browseId.hasPrefix("PL") || browseId.hasPrefix("RD") {
+            return .playlist(Song.youTubePrefix + browseId)
+        }
+        if browseId.hasPrefix("MPRE") {
+            return .album(Song.youTubePrefix + browseId)
+        }
+        if browseId.hasPrefix("UC") {
+            return .artist(Song.youTubePrefix + browseId)
+        }
+        return gridRoute(title: title)
+    }
 }
 
 extension YTArtistRef {
@@ -83,16 +102,37 @@ struct YTItemTile: View {
                 AlbumTile(coverArt: a.thumbnail, title: a.title, subtitle: a.subtitle)
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                if let shareURL = URL(string: "https://music.youtube.com/browse/\(a.browseId)") {
+                    ShareLink(item: shareURL) {
+                        Label("Share Album", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
         case .artist(let a):
             NavigationLink(value: Route.artist(Song.youTubePrefix + a.browseId)) {
                 AlbumTile(coverArt: a.thumbnail, title: a.name, subtitle: a.subtitle ?? "Artist", isCircle: true)
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                if let shareURL = URL(string: "https://music.youtube.com/channel/\(a.browseId)") {
+                    ShareLink(item: shareURL) {
+                        Label("Share Artist", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
         case .playlist(let p):
             NavigationLink(value: Route.playlist(Song.youTubePrefix + p.browseId)) {
                 AlbumTile(coverArt: p.thumbnail, title: p.title, subtitle: p.subtitle)
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                if let shareURL = URL(string: "https://music.youtube.com/playlist?list=\(p.browseId)") {
+                    ShareLink(item: shareURL) {
+                        Label("Share Playlist", systemImage: "square.and.arrow.up")
+                    }
+                }
+            }
         }
     }
 }
@@ -106,7 +146,7 @@ struct YTSongList: View {
 
     var body: some View {
         LazyVStack(spacing: 0) {
-            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+            ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
                 Button {
                     Haptics.selection()
                     player.play(songs, startAt: index, shuffle: false)
@@ -231,11 +271,89 @@ struct YTCollectionHeader: View {
 /// A titled horizontal shelf of YouTube Music tiles.
 struct YTShelfView: View {
     let shelf: YTShelf
+    var onHeaderTap: (() -> Void)? = nil
 
     var body: some View {
-        ShelfSection(title: shelf.title, items: shelf.items, headerRoute: shelf.more?.gridRoute(title: shelf.title)) { item in
+        ShelfSection(
+            title: shelf.title,
+            subtitle: shelf.strapline,
+            items: shelf.items,
+            headerRoute: shelf.more?.destinationRoute(title: shelf.title),
+            onHeaderTap: onHeaderTap
+        ) { item in
             YTItemTile(item: item)
         }
         .scrollClipDisabled()
+    }
+}
+
+/// Apple Music-style paged columns of four song rows for YouTube Music discover / charts shelves.
+struct YTSongColumnsShelf: View {
+    let shelf: YTShelf
+    var onHeaderTap: (() -> Void)? = nil
+
+    @Environment(PlayerEngine.self) private var player
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        let songs: [Song] = shelf.items.compactMap { if case .song(let s) = $0 { return s.song } else { return nil } }
+        let columnWidth: CGFloat = sizeClass == .regular ? 340 : 300
+        let rowCount = min(4, max(songs.count, 1))
+
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(
+                title: shelf.title,
+                route: shelf.more?.destinationRoute(title: shelf.title),
+                action: onHeaderTap
+            )
+            .padding(.horizontal, Theme.margin)
+
+            if let strapline = shelf.strapline, !strapline.isEmpty {
+                Text(strapline)
+                    .font(.kmTileSubtitle)
+                    .foregroundStyle(Theme.secondaryLabel)
+                    .padding(.horizontal, Theme.margin)
+                    .padding(.top, -6)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHGrid(rows: Array(repeating: GridItem(.fixed(56), spacing: 4), count: rowCount), spacing: 18) {
+                    ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
+                        Button {
+                            Haptics.impact(.light)
+                            player.play(songs, startAt: index, shuffle: false)
+                        } label: {
+                            SongRow(
+                                song: song,
+                                isPlaying: player.currentSong?.id == song.id,
+                                isPaused: !player.isPlaying
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(width: columnWidth)
+                        .contextMenu { SongActionsMenu(song: song) }
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .contentMargins(.horizontal, Theme.margin, for: .scrollContent)
+            .scrollClipDisabled()
+        }
+    }
+}
+
+/// Renders a YTShelf using the appropriate visual style (carousel or song columns).
+struct YTShelfItemDispatcher: View {
+    let shelf: YTShelf
+    var onHeaderTap: (() -> Void)? = nil
+
+    var body: some View {
+        switch shelf.style {
+        case .songColumns:
+            YTSongColumnsShelf(shelf: shelf, onHeaderTap: onHeaderTap)
+        case .carousel, .moodStrip:
+            YTShelfView(shelf: shelf, onHeaderTap: onHeaderTap)
+        }
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 struct YouTubeSearchResultsView: View {
     let query: String
     @Binding var scope: SearchView.SearchScope
+    var onSelectResult: (() -> Void)? = nil
 
     @Environment(PlayerEngine.self) private var player
 
@@ -29,10 +30,13 @@ struct YouTubeSearchResultsView: View {
                 }
                 .padding(.top, 60)
             } else if let results, resultsQuery == query {
-                if results.isEmpty {
-                    EmptyStateView(title: "No Results", systemImage: "magnifyingglass",
-                                   message: "YouTube Music has nothing for \u{201C}\(query)\u{201D}")
-                        .padding(.top, 60)
+                if results.isEmpty || isScopeEmpty(results) {
+                    EmptyStateView(
+                        title: emptyStateTitle,
+                        systemImage: "magnifyingglass",
+                        message: emptyStateMessage
+                    )
+                    .padding(.top, 60)
                 } else {
                     sections(results)
                 }
@@ -45,6 +49,25 @@ struct YouTubeSearchResultsView: View {
         .task(id: query) { await search() }
     }
 
+    private var emptyStateTitle: String {
+        "No " + (scope == .top ? "Results" : scope.rawValue)
+    }
+
+    private var emptyStateMessage: String {
+        let name = scope == .top ? "results" : scope.rawValue.lowercased()
+        return "YouTube Music has no " + name + " for “" + query + "”"
+    }
+
+    private func isScopeEmpty(_ results: YTSearchResults) -> Bool {
+        switch scope {
+        case .top: results.isEmpty
+        case .songs: results.songs.isEmpty && results.videos.isEmpty
+        case .artists: results.artists.isEmpty
+        case .albums: results.albums.isEmpty
+        case .playlists: results.playlists.isEmpty
+        }
+    }
+
     @ViewBuilder
     private func sections(_ results: YTSearchResults) -> some View {
         switch scope {
@@ -53,16 +76,24 @@ struct YouTubeSearchResultsView: View {
                 songs(Array(results.songs.prefix(6)), title: "Songs", showsMore: results.songs.count > 6)
             }
             if !results.artists.isEmpty {
-                YTShelfView(shelf: YTShelf(title: "Artists", items: results.artists.map(YTItem.artist)))
+                YTShelfView(shelf: YTShelf(title: "Artists", items: results.artists.map(YTItem.artist)), onHeaderTap: {
+                    withAnimation(.snappy(duration: 0.25)) { scope = .artists }
+                })
             }
             if !results.albums.isEmpty {
-                YTShelfView(shelf: YTShelf(title: "Albums", items: results.albums.map(YTItem.album)))
+                YTShelfView(shelf: YTShelf(title: "Albums", items: results.albums.map(YTItem.album)), onHeaderTap: {
+                    withAnimation(.snappy(duration: 0.25)) { scope = .albums }
+                })
             }
             if !results.videos.isEmpty {
-                YTShelfView(shelf: YTShelf(title: "Videos", items: results.videos.map(YTItem.song)))
+                YTShelfView(shelf: YTShelf(title: "Videos", items: results.videos.map(YTItem.song)), onHeaderTap: {
+                    withAnimation(.snappy(duration: 0.25)) { scope = .songs }
+                })
             }
             if !results.playlists.isEmpty {
-                YTShelfView(shelf: YTShelf(title: "Playlists", items: results.playlists.map(YTItem.playlist)))
+                YTShelfView(shelf: YTShelf(title: "Playlists", items: results.playlists.map(YTItem.playlist)), onHeaderTap: {
+                    withAnimation(.snappy(duration: 0.25)) { scope = .playlists }
+                })
             }
         case .songs:
             songs(results.songs + results.videos, title: nil, showsMore: false)
@@ -75,13 +106,20 @@ struct YouTubeSearchResultsView: View {
                             .padding(.vertical, 6)
                     }
                     .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded { onSelectResult?() })
                     Divider().padding(.leading, Theme.margin + 68)
                 }
             }
         case .albums:
-            AdaptiveAlbumGrid(items: results.albums.map(YTItem.album)) { YTItemTile(item: $0) }
+            AdaptiveAlbumGrid(items: results.albums.map(YTItem.album)) { item in
+                YTItemTile(item: item)
+                    .simultaneousGesture(TapGesture().onEnded { onSelectResult?() })
+            }
         case .playlists:
-            AdaptiveAlbumGrid(items: results.playlists.map(YTItem.playlist)) { YTItemTile(item: $0) }
+            AdaptiveAlbumGrid(items: results.playlists.map(YTItem.playlist)) { item in
+                YTItemTile(item: item)
+                    .simultaneousGesture(TapGesture().onEnded { onSelectResult?() })
+            }
         }
     }
 
@@ -93,6 +131,7 @@ struct YouTubeSearchResultsView: View {
                     .padding(.bottom, 6)
             }
             YTSongList(songs: songs.map(\.song))
+                .simultaneousGesture(TapGesture().onEnded { onSelectResult?() })
         }
     }
 

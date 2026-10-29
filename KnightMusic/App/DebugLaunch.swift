@@ -44,6 +44,13 @@ enum DebugLaunch {
             ui.selectedTab = .home
         case "search":
             ui.selectedTab = .search
+        case "discover":
+            if isRegular {
+                ui.selectedTab = .section(.youTubeDiscover)
+            } else {
+                ui.selectedTab = .library
+                nav.library.append(Route.youTubeDiscover)
+            }
         case "artists":
             if isRegular {
                 ui.selectedTab = .section(.artists)

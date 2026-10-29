@@ -29,6 +29,7 @@ struct MainTabsView: View {
         LibraryTabItem(id: .songList(.favorites), title: "Favorite Songs", systemImage: "heart.fill", route: .songList(.favorites), customizationId: "library.favoriteSongs"),
         LibraryTabItem(id: .songList(.downloaded), title: "Downloaded Songs", systemImage: "arrow.down.circle", route: .songList(.downloaded), customizationId: "library.downloadedSongs"),
         LibraryTabItem(id: .radioStations, title: "Radio Stations", systemImage: "dot.radiowaves.left.and.right", route: .radioStations, customizationId: "library.radioStations"),
+        LibraryTabItem(id: .youTubeDiscover, title: "Discover", systemImage: "globe", route: .youTubeDiscover, customizationId: "library.youTubeDiscover"),
         LibraryTabItem(id: .genres, title: "Genres", systemImage: "guitars", route: .genres, customizationId: "library.genres"),
         LibraryTabItem(id: .playlists, title: "Playlists", systemImage: "music.note.list", route: .playlists, customizationId: "library.playlists"),
         LibraryTabItem(id: .albumList(.recentlyPlayed), title: "Recently Played", systemImage: "clock", route: .albumList(.recentlyPlayed), customizationId: "library.recentlyPlayed"),

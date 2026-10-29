@@ -77,11 +77,46 @@ struct YTBrowseTarget: Hashable, Sendable {
     var params: String?
 }
 
-struct YTShelf: Hashable, Sendable, Identifiable {
+struct YTFeedChip: Hashable, Sendable, Identifiable {
     var title: String
+    var target: YTBrowseTarget
+    var id: String { title + "|" + (target.params ?? "") }
+}
+
+struct YTMoodGenreItem: Hashable, Sendable, Identifiable {
+    var title: String
+    var target: YTBrowseTarget
+    /// 32-bit ARGB integer from solid.leftStripeColor (e.g. 0xFF99CCFF).
+    var stripeColor: UInt32?
+    var id: String { target.browseId + "|" + (target.params ?? "") + "|" + title }
+}
+
+struct YTMoodGenreSection: Hashable, Sendable, Identifiable {
+    var title: String
+    var items: [YTMoodGenreItem]
+    var id: String { title }
+}
+
+struct YTShelf: Hashable, Sendable, Identifiable {
+    enum Style: Hashable, Sendable {
+        case carousel
+        case songColumns
+        case moodStrip
+    }
+
+    var title: String
+    var strapline: String?
     var items: [YTItem]
     var more: YTBrowseTarget?
-    var id: String { title + (items.first?.id ?? "") }
+    var style: Style = .carousel
+
+    var id: String { title + "|" + (more?.browseId ?? "") + "|" + (items.first?.id ?? "") + "|\(items.count)" }
+}
+
+struct YTDiscoverFeed: Sendable {
+    var chips: [YTFeedChip] = []
+    var shelves: [YTShelf] = []
+    var continuation: String?
 }
 
 struct YTSearchResults: Sendable {

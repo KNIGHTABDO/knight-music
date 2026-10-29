@@ -56,6 +56,12 @@ struct RouteRootView: View {
             YTGridView(target: YTBrowseTarget(browseId: browseId, params: params), title: title)
         case .youTubeSongs(let browseId, let params, let title):
             YTSongsView(target: YTBrowseTarget(browseId: browseId, params: params), title: title)
+        case .youTubeDiscover:
+            YTDiscoverView()
+        case .youTubeMoodsAndGenres:
+            YTMoodsAndGenresView()
+        case .youTubeCategory(let browseId, let params, let title):
+            YTCategoryView(target: YTBrowseTarget(browseId: browseId, params: params), title: title)
         }
     }
 }

@@ -336,4 +336,147 @@ enum YouTubeParser {
         walk(object)
         return out
     }
+
+    // MARK: Discovery & Browse (BitChord-aligned)
+
+    static func browseTarget(_ endpoint: Any?) -> YTBrowseTarget? {
+        guard let endpoint = endpoint as? JSON else { return nil }
+        let browseEndpoint = (endpoint["browseEndpoint"] as? JSON) ?? endpoint
+        guard let id = browseEndpoint["browseId"] as? String else { return nil }
+        return YTBrowseTarget(browseId: id, params: browseEndpoint["params"] as? String)
+    }
+
+    static func carouselMoreTarget(_ header: JSON) -> YTBrowseTarget? {
+        if let target = browseTarget(dig(header, "moreContentButton", "buttonRenderer", "navigationEndpoint")) {
+            return target
+        }
+        if let target = browseTarget(dig(header, "title", "runs", 0, "navigationEndpoint")) {
+            return target
+        }
+        if let target = browseTarget(dig(header, "endIcons", 0, "iconButtonRenderer", "navigationEndpoint")) {
+            return target
+        }
+        if let run = runs(header["title"]).first, let id = Self.browseId(run) {
+            return YTBrowseTarget(browseId: id, params: dig(run, "navigationEndpoint", "browseEndpoint", "params") as? String)
+        }
+        return nil
+    }
+
+    static func discoverFeed(_ root: JSON) -> YTDiscoverFeed {
+        // 1. Mood filter chips (FEmusic_home header)
+        var chips: [YTFeedChip] = []
+        for chipNode in findAll("chipCloudChipRenderer", in: root) {
+            guard let chip = chipNode as? JSON,
+                  let title = text(chip["text"]), !title.isEmpty,
+                  let target = browseTarget(chip["navigationEndpoint"]) else { continue }
+            chips.append(YTFeedChip(title: title, target: target))
+        }
+
+        // 2. Shelves from musicCarouselShelfRenderer and musicShelfRenderer
+        var shelves: [YTShelf] = []
+
+        // Music Carousel Shelves
+        for value in findAllInOrder("musicCarouselShelfRenderer", in: root) {
+            guard let carousel = value as? JSON else { continue }
+            let header = (carousel["header"] as? JSON)?["musicCarouselShelfBasicHeaderRenderer"] as? JSON
+            let title = header.flatMap { text($0["title"]) ?? text($0["straplineTextOne"]) }
+            guard let title, !title.isEmpty else { continue }
+            let strapline = header.flatMap { text($0["strapline"]) }
+            let list = items(in: carousel["contents"])
+            guard !list.isEmpty else { continue }
+            let more = header.flatMap(carouselMoreTarget)
+
+            let isSongColumns = (carousel["numItemsPerColumn"] as? Int ?? 1) > 1
+                || list.allSatisfy { if case .song = $0 { return true } else { return false } }
+
+            shelves.append(YTShelf(
+                title: title,
+                strapline: strapline,
+                items: list,
+                more: more,
+                style: isSongColumns ? .songColumns : .carousel
+            ))
+        }
+
+        // Music Shelves (e.g. track list shelves / charts)
+        for value in findAllInOrder("musicShelfRenderer", in: root) {
+            guard let shelf = value as? JSON else { continue }
+            guard let title = text(shelf["title"]), !title.isEmpty else { continue }
+            let strapline = text(shelf["strapline"])
+            let list = items(in: shelf["contents"])
+            guard !list.isEmpty else { continue }
+            let more = browseTarget(shelf["bottomEndpoint"])
+                ?? browseTarget(dig(shelf, "title", "runs", 0, "navigationEndpoint"))
+                ?? browseTarget(dig(shelf, "moreContentButton", "buttonRenderer", "navigationEndpoint"))
+            let isSongColumns = list.allSatisfy { if case .song = $0 { return true } else { return false } }
+
+            shelves.append(YTShelf(
+                title: title,
+                strapline: strapline,
+                items: list,
+                more: more,
+                style: isSongColumns ? .songColumns : .carousel
+            ))
+        }
+
+        let token = continuation(in: root)
+        return YTDiscoverFeed(chips: chips, shelves: shelves, continuation: token)
+    }
+
+    static func discoverContinuation(_ root: JSON) -> (shelves: [YTShelf], continuation: String?) {
+        let body = root["continuationContents"] ?? root["onResponseReceivedActions"]
+        var shelves: [YTShelf] = []
+
+        for value in findAllInOrder("musicCarouselShelfRenderer", in: body) {
+            guard let carousel = value as? JSON else { continue }
+            let header = (carousel["header"] as? JSON)?["musicCarouselShelfBasicHeaderRenderer"] as? JSON
+            let title = header.flatMap { text($0["title"]) ?? text($0["straplineTextOne"]) }
+            guard let title, !title.isEmpty else { continue }
+            let strapline = header.flatMap { text($0["strapline"]) }
+            let list = items(in: carousel["contents"])
+            guard !list.isEmpty else { continue }
+            let more = header.flatMap(carouselMoreTarget)
+            let isSongColumns = (carousel["numItemsPerColumn"] as? Int ?? 1) > 1
+                || list.allSatisfy { if case .song = $0 { return true } else { return false } }
+            shelves.append(YTShelf(title: title, strapline: strapline, items: list, more: more, style: isSongColumns ? .songColumns : .carousel))
+        }
+
+        for value in findAllInOrder("musicShelfRenderer", in: body) {
+            guard let shelf = value as? JSON else { continue }
+            guard let title = text(shelf["title"]), !title.isEmpty else { continue }
+            let strapline = text(shelf["strapline"])
+            let list = items(in: shelf["contents"])
+            guard !list.isEmpty else { continue }
+            let more = browseTarget(shelf["bottomEndpoint"]) ?? browseTarget(dig(shelf, "title", "runs", 0, "navigationEndpoint"))
+            let isSongColumns = list.allSatisfy { if case .song = $0 { return true } else { return false } }
+            shelves.append(YTShelf(title: title, strapline: strapline, items: list, more: more, style: isSongColumns ? .songColumns : .carousel))
+        }
+
+        return (shelves, continuation(in: body))
+    }
+
+    static func moodAndGenres(_ root: JSON) -> [YTMoodGenreSection] {
+        var sections: [YTMoodGenreSection] = []
+        for gridNode in findAll("gridRenderer", in: root) {
+            guard let grid = gridNode as? JSON else { continue }
+            let title = text(dig(grid, "header", "gridHeaderRenderer", "title")) ?? "Browse"
+            var items: [YTMoodGenreItem] = []
+            for btnNode in findAll("musicNavigationButtonRenderer", in: grid["items"]) {
+                guard let btn = btnNode as? JSON else { continue }
+                guard let buttonText = text(btn["buttonText"]), !buttonText.isEmpty else { continue }
+                let endpoint = dig(btn, "clickCommand", "browseEndpoint") ?? dig(btn, "navigationEndpoint", "browseEndpoint")
+                guard let browseId = dig(endpoint, "browseId") as? String else { continue }
+                let params = dig(endpoint, "params") as? String
+                let stripeNum = (dig(btn, "solid", "leftStripeColor") as? NSNumber)?.uint32Value
+                    ?? (dig(btn, "solid", "leftStripeColor") as? UInt32)
+                    ?? (dig(btn, "solid", "leftStripeColor") as? Int).map { UInt32(bitPattern: Int32($0)) }
+                items.append(YTMoodGenreItem(title: buttonText, target: YTBrowseTarget(browseId: browseId, params: params), stripeColor: stripeNum))
+            }
+            if !items.isEmpty {
+                sections.append(YTMoodGenreSection(title: title, items: items))
+            }
+        }
+        return sections
+    }
 }
+
