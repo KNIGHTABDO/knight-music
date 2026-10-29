@@ -62,6 +62,7 @@ struct KnightMusicApp: App {
                 .environment(app.network)
                 .environment(app.syncStatus)
                 .environment(app.hermes)
+                .environment(app.discord)
                 .environment(app.updates)
                 .environment(LookStore.shared)
                 .fontDesign(LookStore.shared.current.typeface.design)

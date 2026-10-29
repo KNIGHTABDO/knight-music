@@ -123,6 +123,7 @@ final class PlayerEngine {
     @ObservationIgnored var remote: RemoteCommands?
     @ObservationIgnored let queueStore = PlayQueueStore()
     @ObservationIgnored var onStarChanged: ((_ songId: String, _ starred: Bool) -> Void)?
+    @ObservationIgnored var onSeekFinished: ((TimeInterval) -> Void)?
 
     // MARK: Internals (internal access: used by extensions in other files)
 
@@ -437,6 +438,7 @@ final class PlayerEngine {
                 if finished {
                     let rate = (self.isPlaying && !self.isBuffering) ? 1.0 : 0.0
                     self.nowPlaying.updatePlayback(elapsed: self.currentTime, rate: rate)
+                    self.onSeekFinished?(self.currentTime)
                 }
             }
         }

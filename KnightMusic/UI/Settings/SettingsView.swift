@@ -147,6 +147,9 @@ struct SettingsView: View {
                 NavigationLink(destination: HermesSettingsView()) {
                     Label("Knight AI (Hermes)", systemImage: "sparkles")
                 }
+                NavigationLink(destination: DiscordSettingsView()) {
+                    Label("Discord Presence", systemImage: "bubble.left.and.bubble.right.fill")
+                }
                 NavigationLink("Customize", destination: CustomizeView())
             }
 

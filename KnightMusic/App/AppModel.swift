@@ -22,6 +22,7 @@ final class AppModel {
     let artwork = AnimatedArtworkService()
     let player: PlayerEngine
     let hermes = HermesService()
+    let discord = DiscordPresenceService()
     let updates = UpdateChecker()
     @ObservationIgnored private var autoMixShowcase: AutoMixShowcase?
     let autoDownloader = AutoDownloader()
@@ -75,6 +76,7 @@ final class AppModel {
         installServiceWiring()
         hermes.configure(app: self, library: library, artwork: artwork)
         WidgetBridge.shared.start(app: self)
+        discord.start(app: self)
     }
 
 
