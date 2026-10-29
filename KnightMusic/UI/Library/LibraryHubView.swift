@@ -4,14 +4,16 @@ struct LibraryHubView: View {
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
 
-    private struct HubItem: Identifiable {
+    private struct HubItem: Identifiable, Equatable {
         let title: String
         let icon: String
         let route: Route
         var id: String { title }
     }
 
-    private let hubItems: [HubItem] = [
+    private static let orderDefaultsKey = "library_hub_order"
+
+    private static let defaultItems: [HubItem] = [
         HubItem(title: "Playlists", icon: "music.note.list", route: .playlists),
         HubItem(title: "Artists", icon: "music.mic", route: .artists),
         HubItem(title: "Albums", icon: "square.stack", route: .albums),
@@ -28,6 +30,9 @@ struct LibraryHubView: View {
         HubItem(title: "Random", icon: "shuffle", route: .albumList(.random)),
         HubItem(title: "Knight Replay", icon: "chart.bar.xaxis", route: .replay)
     ]
+
+    @State private var hubItems: [HubItem] = Self.loadOrderedItems()
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         let newestQuery = library.homeList(.newest)
@@ -51,6 +56,7 @@ struct LibraryHubView: View {
                     }
                     .listRowBackground(Color.clear)
                 }
+                .onMove(perform: moveItems)
             }
 
             Section {
@@ -81,12 +87,72 @@ struct LibraryHubView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
+            .environment(\.editMode, .constant(.inactive))
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.background.ignoresSafeArea())
         .navigationTitle("Library")
+        .environment(\.editMode, $editMode)
+        .toolbar {
+            if editMode == .active {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Reset") {
+                        withAnimation {
+                            resetOrder()
+                        }
+                    }
+                    .foregroundStyle(Theme.secondaryLabel)
+                }
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(editMode == .active ? "Done" : "Edit") {
+                    withAnimation {
+                        editMode = editMode == .active ? .inactive : .active
+                    }
+                }
+                .fontWeight(editMode == .active ? .semibold : .regular)
+            }
+        }
         .refreshable { await app.pullToRefresh() }
         .observing(newestQuery)
+    }
+
+    private func moveItems(from source: IndexSet, to destination: Int) {
+        hubItems.move(fromOffsets: source, toOffset: destination)
+        saveOrder()
+    }
+
+    private func resetOrder() {
+        hubItems = Self.defaultItems
+        UserDefaults.standard.removeObject(forKey: Self.orderDefaultsKey)
+    }
+
+    private func saveOrder() {
+        let order = hubItems.map(\.id)
+        UserDefaults.standard.set(order, forKey: Self.orderDefaultsKey)
+    }
+
+    private static func loadOrderedItems() -> [HubItem] {
+        guard let savedOrder = UserDefaults.standard.stringArray(forKey: orderDefaultsKey),
+              !savedOrder.isEmpty else {
+            return defaultItems
+        }
+
+        var itemMap = Dictionary(uniqueKeysWithValues: defaultItems.map { ($0.id, $0) })
+        var ordered: [HubItem] = []
+
+        for id in savedOrder {
+            if let item = itemMap.removeValue(forKey: id) {
+                ordered.append(item)
+            }
+        }
+
+        for item in defaultItems where itemMap[item.id] != nil {
+            ordered.append(item)
+        }
+
+        return ordered.isEmpty ? defaultItems : ordered
     }
 }
