@@ -28,6 +28,7 @@ enum DiscordConnectionState: Equatable, Sendable {
 struct DiscordActivity: Codable, Equatable, Sendable {
     var name: String
     var type: Int
+    var application_id: String?
     var details: String?
     var state: String?
     var timestamps: Timestamps?
@@ -60,6 +61,7 @@ struct DiscordActivity: Codable, Equatable, Sendable {
     init(
         name: String,
         type: Int = 2,
+        application_id: String? = nil,
         details: String? = nil,
         state: String? = nil,
         timestamps: Timestamps? = nil,
@@ -67,6 +69,7 @@ struct DiscordActivity: Codable, Equatable, Sendable {
     ) {
         self.name = name
         self.type = type
+        self.application_id = application_id
         self.details = details
         self.state = state
         self.timestamps = timestamps

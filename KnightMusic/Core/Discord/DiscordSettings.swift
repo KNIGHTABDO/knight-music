@@ -9,7 +9,10 @@ final class DiscordSettings {
     private static let showArtworkKey = "discord_rpc_show_artwork"
     private static let clearOnPauseKey = "discord_rpc_clear_on_pause"
     private static let activityNameKey = "discord_rpc_activity_name"
+    private static let applicationIdKey = "discord_rpc_application_id"
     private static let keychainAccount = "discord_user_token"
+
+    static let defaultApplicationId = "1140767928610979862"
 
     var isEnabled: Bool {
         didSet { UserDefaults.standard.set(isEnabled, forKey: Self.enabledKey) }
@@ -25,6 +28,15 @@ final class DiscordSettings {
 
     var activityName: String {
         didSet { UserDefaults.standard.set(activityName, forKey: Self.activityNameKey) }
+    }
+
+    var applicationId: String {
+        didSet { UserDefaults.standard.set(applicationId, forKey: Self.applicationIdKey) }
+    }
+
+    var effectiveApplicationId: String {
+        let trimmed = applicationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? Self.defaultApplicationId : trimmed
     }
 
     var token: String {
@@ -53,6 +65,7 @@ final class DiscordSettings {
         self.showArtwork = UserDefaults.standard.object(forKey: Self.showArtworkKey) as? Bool ?? true
         self.clearOnPause = UserDefaults.standard.object(forKey: Self.clearOnPauseKey) as? Bool ?? true
         self.activityName = UserDefaults.standard.string(forKey: Self.activityNameKey) ?? "Knight Music"
+        self.applicationId = UserDefaults.standard.string(forKey: Self.applicationIdKey) ?? Self.defaultApplicationId
         self.token = Keychain.get(account: Self.keychainAccount) ?? ""
     }
 }

@@ -14,6 +14,10 @@ final class DiscordPresenceService {
     private var lastSentState: Bool? // isPlaying
     private var lastSentTime: TimeInterval = 0
 
+    // In-memory artwork cache: song.id -> "mp:external/..."
+    private var cachedArtwork: [String: String] = [:]
+    private var resolvingSongId: String?
+
     init() {
         client.onStateChange = { [weak self] state in
             self?.settings.state = state
@@ -111,22 +115,59 @@ final class DiscordPresenceService {
 
         var assets: DiscordActivity.Assets? = nil
         if settings.showArtwork {
-            let coverUrl = resolveArtworkURL(for: song)
             let albumText = song.album ?? song.title
-            assets = DiscordActivity.Assets(
-                large_image: coverUrl,
-                large_text: albumText
-            )
+            if let mpAsset = cachedArtwork[song.id] {
+                assets = DiscordActivity.Assets(
+                    large_image: mpAsset,
+                    large_text: albumText
+                )
+            } else {
+                // Trigger background resolution and registration with Discord
+                resolveArtworkInBackground(for: song)
+            }
         }
 
         return DiscordActivity(
             name: name,
             type: 2, // 2 = Listening to
+            application_id: settings.effectiveApplicationId,
             details: details,
             state: state.isEmpty ? nil : state,
             timestamps: timestamps,
             assets: assets
         )
+    }
+
+    private func resolveArtworkInBackground(for song: Song) {
+        guard settings.showArtwork, settings.isConfigured else { return }
+        let songId = song.id
+        guard resolvingSongId != songId, cachedArtwork[songId] == nil else { return }
+        resolvingSongId = songId
+
+        let directURL = resolveArtworkURL(for: song)
+        let token = settings.token
+        let appId = settings.effectiveApplicationId
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let asset = await DiscordAssetResolver.shared.resolveArtwork(
+                songId: song.id,
+                artist: song.artist,
+                title: song.title,
+                album: song.album,
+                directURL: directURL,
+                token: token,
+                applicationId: appId
+            )
+            self.resolvingSongId = nil
+            if let asset {
+                self.cachedArtwork[songId] = asset
+                // If this song is still playing, update the presence to show the artwork immediately
+                if self.player?.currentSong?.id == songId {
+                    self.update()
+                }
+            }
+        }
     }
 
     private func resolveArtworkURL(for song: Song) -> String? {
@@ -155,6 +196,7 @@ final class DiscordPresenceService {
             _ = settings.showArtwork
             _ = settings.clearOnPause
             _ = settings.activityName
+            _ = settings.applicationId
         } onChange: {
             Task { @MainActor [weak self] in
                 self?.update()
