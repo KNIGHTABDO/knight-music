@@ -70,7 +70,7 @@ final class RecognizedTracksStore {
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([RecognizedTrack].self, data) else {
+              let decoded = try? JSONDecoder().decode([RecognizedTrack].self, from: data) else {
             return
         }
         tracks = decoded
