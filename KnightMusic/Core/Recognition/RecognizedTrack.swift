@@ -1,16 +1,16 @@
 import Foundation
 
-public struct RecognizedTrack: Identifiable, Codable, Sendable, Equatable {
-    public let id: String
-    public let title: String
-    public let artist: String
-    public let album: String?
-    public let artworkURL: URL?
-    public let appleMusicURL: URL?
-    public let isrc: String?
-    public let recognizedAt: Date
+struct RecognizedTrack: Identifiable, Codable, Sendable, Equatable {
+    let id: String
+    let title: String
+    let artist: String
+    let album: String?
+    let artworkURL: URL?
+    let appleMusicURL: URL?
+    let isrc: String?
+    let recognizedAt: Date
 
-    public init(
+    init(
         id: String = UUID().uuidString,
         title: String,
         artist: String,
@@ -33,10 +33,10 @@ public struct RecognizedTrack: Identifiable, Codable, Sendable, Equatable {
 
 @MainActor
 @Observable
-public final class RecognizedTracksStore {
-    public static let shared = RecognizedTracksStore()
+final class RecognizedTracksStore {
+    static let shared = RecognizedTracksStore()
 
-    public private(set) var tracks: [RecognizedTrack] = []
+    private(set) var tracks: [RecognizedTrack] = []
 
     private let storageKey = "knightmusic.recognized_tracks"
 
@@ -44,7 +44,7 @@ public final class RecognizedTracksStore {
         load()
     }
 
-    public func add(_ track: RecognizedTrack) {
+    func add(_ track: RecognizedTrack) {
         // Deduplicate existing identical song
         tracks.removeAll {
             $0.id == track.id ||
@@ -58,12 +58,12 @@ public final class RecognizedTracksStore {
         save()
     }
 
-    public func remove(id: String) {
+    func remove(id: String) {
         tracks.removeAll { $0.id == id }
         save()
     }
 
-    public func clear() {
+    func clear() {
         tracks.removeAll()
         save()
     }

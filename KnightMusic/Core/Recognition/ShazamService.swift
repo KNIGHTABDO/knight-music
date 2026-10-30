@@ -7,8 +7,8 @@ import GRDB
 
 @MainActor
 @Observable
-public final class ShazamService: NSObject, @unchecked Sendable {
-    public enum RecognitionState: Equatable {
+final class ShazamService: NSObject, @unchecked Sendable {
+    enum RecognitionState: Equatable {
         case idle
         case listening
         case matching
@@ -17,10 +17,10 @@ public final class ShazamService: NSObject, @unchecked Sendable {
         case error(String)
     }
 
-    public private(set) var state: RecognitionState = .idle
-    public private(set) var currentTrack: RecognizedTrack?
-    public private(set) var localMatch: Song?
-    public var lastError: String?
+    private(set) var state: RecognitionState = .idle
+    private(set) var currentTrack: RecognizedTrack?
+    private(set) var localMatch: Song?
+    var lastError: String?
 
     @ObservationIgnored private var audioEngine: AVAudioEngine?
     #if canImport(ShazamKit)
@@ -28,11 +28,11 @@ public final class ShazamService: NSObject, @unchecked Sendable {
     #endif
     @ObservationIgnored private var timeoutTask: Task<Void, Never>?
 
-    override public init() {
+    override init() {
         super.init()
     }
 
-    public func startListening(library: LibraryRepository? = nil) {
+    func startListening(library: LibraryRepository? = nil) {
         stopListening()
         state = .listening
         currentTrack = nil
@@ -55,7 +55,7 @@ public final class ShazamService: NSObject, @unchecked Sendable {
         #endif
     }
 
-    public func stopListening() {
+    func stopListening() {
         timeoutTask?.cancel()
         timeoutTask = nil
 
@@ -142,7 +142,7 @@ public final class ShazamService: NSObject, @unchecked Sendable {
     }
     #endif
 
-    public func resolveLocalMatch(title: String, artist: String, library: LibraryRepository) async -> Song? {
+    func resolveLocalMatch(title: String, artist: String, library: LibraryRepository) async -> Song? {
         guard let database = library.database else { return nil }
         return try? await database.pool.read { db in
             let candidates = try Song
@@ -162,7 +162,7 @@ public final class ShazamService: NSObject, @unchecked Sendable {
 
 #if canImport(ShazamKit)
 extension ShazamService: SHSessionDelegate {
-    public nonisolated func session(_ session: SHSession, didFind match: SHMatch) {
+    nonisolated func session(_ session: SHSession, didFind match: SHMatch) {
         guard let item = match.mediaItems.first else { return }
         let track = RecognizedTrack(
             id: item.shazamID ?? UUID().uuidString,
@@ -181,7 +181,7 @@ extension ShazamService: SHSessionDelegate {
         }
     }
 
-    public nonisolated func session(_ session: SHSession, didNotFindMatchFor signature: SHSignature, error: Error?) {
+    nonisolated func session(_ session: SHSession, didNotFindMatchFor signature: SHSignature, error: Error?) {
         Task { @MainActor in
             self.stopListening()
             if let error {
