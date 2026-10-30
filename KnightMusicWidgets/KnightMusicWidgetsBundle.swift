@@ -10,6 +10,7 @@ struct KnightMusicWidgetsBundle: WidgetBundle {
         LockScreenWidget()
         PlayPauseControlWidget()
         ShuffleLibraryControlWidget()
+        RecognizeMusicControlWidget()
         KickLiveWidget()
     }
 }

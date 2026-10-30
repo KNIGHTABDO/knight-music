@@ -23,6 +23,7 @@ struct LibraryHubView: View {
         HubItem(title: "Favorite Albums", icon: "heart.fill", route: .albumList(.favorites)),
         HubItem(title: "Favorite Songs", icon: "heart.fill", route: .songList(.favorites)),
         HubItem(title: "Downloaded", icon: "arrow.down.circle", route: .songList(.downloaded)),
+        HubItem(title: "Identified Songs", icon: "shazam.logo.fill", route: .identifiedSongs),
         HubItem(title: "Radio Stations", icon: "antenna.radiowaves.left.and.right", route: .radioStations),
         HubItem(title: "Discover", icon: "globe", route: .youTubeDiscover),
         HubItem(title: "Recently Played", icon: "clock", route: .albumList(.recentlyPlayed)),

@@ -8,8 +8,23 @@ import GRDB
 final class LibraryRepository {
     enum StarKind { case song, album, artist }
 
+    enum PlaylistEditError: LocalizedError {
+        case notOwner(playlist: Playlist)
+
+        var errorDescription: String? {
+            switch self {
+            case .notOwner(let playlist):
+                return "'\(playlist.name)' is shared or managed by the server and cannot be directly modified."
+            }
+        }
+    }
+
     /// Last mutation failure, for a global toast/banner. Cleared by the UI after display.
     var lastError: String?
+
+    var currentUsername: String? {
+        client?.username
+    }
 
     @ObservationIgnored private(set) var database: LibraryDatabase?
     @ObservationIgnored private var client: SubsonicClient?
@@ -519,12 +534,44 @@ final class LibraryRepository {
         }
     }
 
+    @discardableResult
+    func duplicatePlaylist(id: String, newName: String? = nil, additionalSongIds: [String] = []) async throws -> Playlist {
+        let database = try requireDatabase()
+        let existingSongIds = (try? await playlistSongIds(database, id: id)) ?? []
+        var combined = existingSongIds
+        for sid in additionalSongIds {
+            if !combined.contains(sid) {
+                combined.append(sid)
+            }
+        }
+        let current = try? await database.pool.read { db in try Playlist.fetchOne(db, id: id) }
+        let baseName = current?.name ?? "Playlist"
+        let targetName = newName ?? "\(baseName) (My Copy)"
+        return try await createPlaylist(name: targetName, songIds: combined)
+    }
+
     func addToPlaylist(id: String, songIds: [String]) async throws {
         guard !songIds.isEmpty else { return }
         let client = try requireClient()
+        let database = try requireDatabase()
+
+        // Pre-check ownership to prevent hitting server error 50
+        if let playlist = try? await database.pool.read({ db in try Playlist.fetchOne(db, id: id) }),
+           !playlist.isOwned(by: client.username) {
+            throw PlaylistEditError.notOwner(playlist: playlist)
+        }
+
         do {
             try await client.updatePlaylist(id: id, songIdsToAdd: songIds)
             try await refreshPlaylist(id: id)
+        } catch let error as SubsonicError {
+            if case .server(let code, _) = error, code == 50 {
+                if let playlist = try? await database.pool.read({ db in try Playlist.fetchOne(db, id: id) }) {
+                    throw PlaylistEditError.notOwner(playlist: playlist)
+                }
+            }
+            report(error, "Could not add to playlist")
+            throw error
         } catch {
             report(error, "Could not add to playlist")
             throw error

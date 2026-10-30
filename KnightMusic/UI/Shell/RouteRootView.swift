@@ -46,6 +46,8 @@ struct RouteRootView: View {
             RadioStationsView()
         case .replay:
             ReplayView()
+        case .identifiedSongs:
+            IdentifiedSongsView()
         case .customize:
             CustomizeView()
         case .appIcons:

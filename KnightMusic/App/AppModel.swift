@@ -26,6 +26,7 @@ final class AppModel {
     let updates = UpdateChecker()
     @ObservationIgnored private var autoMixShowcase: AutoMixShowcase?
     let autoDownloader = AutoDownloader()
+    let shazam = ShazamService()
 
     private(set) var session: SessionState = .loggedOut
 
@@ -288,6 +289,11 @@ final class AppModel {
         }
     }
 
+
+    func startRecognition() {
+        NotificationCenter.default.post(name: .startMusicRecognition, object: nil)
+    }
+
     private func stopReachabilityRecovery() {
         recoveryTask?.cancel()
         recoveryTask = nil
@@ -449,4 +455,8 @@ final class AppModel {
         library.configure(database: nil, client: nil, syncEngine: nil)
         syncStatus.reset()
     }
+}
+
+extension Notification.Name {
+    static let startMusicRecognition = Notification.Name("knightmusic.startMusicRecognition")
 }

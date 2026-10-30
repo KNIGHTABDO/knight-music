@@ -4,6 +4,7 @@ struct PlaylistsView: View {
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
     @Environment(UIState.self) private var ui
+    @Environment(PlayerEngine.self) private var player
     @Environment(HermesService.self) private var hermes: HermesService?
     @State private var searchText = ""
     @State private var showCreateSheet = false
@@ -54,14 +55,60 @@ struct PlaylistsView: View {
                             .opacity(0)
 
                             PlaylistRowItem(playlist: playlist)
+                                .contextMenu {
+                                    Button {
+                                        Task {
+                                            let songs = (try? await library.playlistSongs(id: playlist.id).value) ?? []
+                                            if !songs.isEmpty {
+                                                player.play(songs, shuffle: false)
+                                            }
+                                        }
+                                    } label: {
+                                        Label("Play", systemImage: "play.fill")
+                                    }
+                                    Button {
+                                        Task {
+                                            let songs = (try? await library.playlistSongs(id: playlist.id).value) ?? []
+                                            if !songs.isEmpty {
+                                                player.play(songs, shuffle: true)
+                                            }
+                                        }
+                                    } label: {
+                                        Label("Shuffle", systemImage: "shuffle")
+                                    }
+                                    Divider()
+                                    Button {
+                                        duplicatePlaylist(playlist)
+                                    } label: {
+                                        Label("Duplicate to My Playlists", systemImage: "doc.on.doc")
+                                    }
+                                    if playlist.isOwned(by: library.currentUsername) {
+                                        Divider()
+                                        Button(role: .destructive) {
+                                            playlistToDelete = playlist
+                                            showDeleteConfirmation = true
+                                        } label: {
+                                            Label("Delete Playlist", systemImage: "trash")
+                                        }
+                                    }
+                                }
                         }
                         .listRowBackground(Color.clear)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                playlistToDelete = playlist
-                                showDeleteConfirmation = true
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+                            if playlist.isOwned(by: library.currentUsername) {
+                                Button(role: .destructive) {
+                                    playlistToDelete = playlist
+                                    showDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            } else {
+                                Button {
+                                    duplicatePlaylist(playlist)
+                                } label: {
+                                    Label("Make Copy", systemImage: "doc.on.doc")
+                                }
+                                .tint(Theme.accent)
                             }
                         }
                     }
@@ -182,6 +229,19 @@ struct PlaylistsView: View {
             Text("Are you sure you want to delete “\(playlist.name)”?")
         }
         .observing(query)
+    }
+
+    private func duplicatePlaylist(_ playlist: Playlist) {
+        Task {
+            do {
+                let copy = try await library.duplicatePlaylist(id: playlist.id)
+                Haptics.success()
+                ui.showToast("Created \"\(copy.name)\"")
+            } catch {
+                Haptics.error()
+                ui.showToast("Could not duplicate playlist")
+            }
+        }
     }
 
     private func filtered(_ all: [Playlist]) -> [Playlist] {

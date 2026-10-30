@@ -77,6 +77,19 @@ struct SearchView: View {
         .onSubmit(of: .search) {
             addRecentSearch(query)
         }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Haptics.impact(.light)
+                    ui?.startRecognition()
+                } label: {
+                    Image(systemName: "shazam.logo.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+                .accessibilityLabel("Recognize Music")
+            }
+        }
         .onAppear {
             loadRecentSearches()
         }
@@ -137,6 +150,42 @@ struct SearchView: View {
     @ViewBuilder
     private var emptyQueryView: some View {
         VStack(alignment: .leading, spacing: 28) {
+            Button {
+                Haptics.impact(.medium)
+                ui?.startRecognition()
+            } label: {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Theme.accent)
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "shazam.logo.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Identify What’s Playing")
+                            .font(.kmRowTitle.weight(.semibold))
+                            .foregroundStyle(Theme.label)
+                        Text("Tap to recognize songs around you")
+                            .font(.kmRowSubtitle)
+                            .foregroundStyle(Theme.secondaryLabel)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.tertiaryLabel)
+                }
+                .padding(14)
+                .background(Color(uiColor: .systemGray6).opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                .padding(.horizontal, Theme.margin)
+            }
+            .buttonStyle(.plain)
+
             if !recentSearches.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {

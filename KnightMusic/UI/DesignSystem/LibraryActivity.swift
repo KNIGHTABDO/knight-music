@@ -32,6 +32,10 @@ extension View {
         self
             .onOpenURL { url in
                 guard url.scheme?.lowercased() == "knightmusic", let host = url.host?.lowercased() else { return }
+                if host == "recognize" {
+                    NotificationCenter.default.post(name: .startMusicRecognition, object: nil)
+                    return
+                }
                 let id = url.pathComponents.dropFirst().first ?? ""
                 if let route = SpotlightIndexer.route(for: "\(host):\(id)") { open(route) }
             }

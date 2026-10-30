@@ -23,6 +23,7 @@ final class WidgetBridge {
     func start(app: AppModel) {
         self.app = app
         IntentPlaybackBridge.handler = AppPlaybackHandler(app: app)
+        IntentRecognitionBridge.handler = AppRecognitionHandler(app: app)
 
         observePlayer()
         setupLibraryQueries()

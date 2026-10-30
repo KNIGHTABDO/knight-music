@@ -112,6 +112,18 @@ struct Playlist: Codable, Hashable, Identifiable, FetchableRecord, PersistableRe
     var coverArt: String?
 }
 
+extension Playlist {
+    func isOwned(by username: String?) -> Bool {
+        guard let owner = owner?.trimmingCharacters(in: .whitespacesAndNewlines), !owner.isEmpty else {
+            return true
+        }
+        guard let username = username?.trimmingCharacters(in: .whitespacesAndNewlines), !username.isEmpty else {
+            return true
+        }
+        return owner.caseInsensitiveCompare(username) == .orderedSame
+    }
+}
+
 /// Ordered membership of songs in a playlist (local mirror).
 struct PlaylistEntry: Codable, Hashable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "playlistEntry"

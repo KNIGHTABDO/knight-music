@@ -106,3 +106,27 @@ public struct PlayFavoriteSongIntent: AudioPlaybackIntent {
         return .result()
     }
 }
+
+
+@MainActor
+public protocol IntentRecognitionHandling: AnyObject {
+    func startRecognition()
+}
+
+public enum IntentRecognitionBridge {
+    @MainActor public static var handler: IntentRecognitionHandling?
+}
+
+public struct RecognizeMusicIntent: AppIntent {
+    public static var title: LocalizedStringResource = "Recognize Music"
+    public static var description = IntentDescription("Identifies music playing around you using Knight Music.")
+    public static var openAppWhenRun: Bool = true
+
+    public init() {}
+
+    @MainActor
+    public func perform() async throws -> some IntentResult {
+        IntentRecognitionBridge.handler?.startRecognition()
+        return .result()
+    }
+}

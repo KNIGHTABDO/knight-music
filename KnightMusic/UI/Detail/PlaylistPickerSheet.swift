@@ -18,10 +18,16 @@ struct PlaylistPickerSheet: View {
     @State private var newName = ""
     @State private var isCreating = false
     @State private var isSaving = false
+    @State private var playlistToFork: Playlist?
+    @State private var showForkAlert = false
     @FocusState private var nameFocused: Bool
 
     var body: some View {
         let playlists = library.playlists()
+        let currentUsername = library.currentUsername
+        let ownedPlaylists = playlists.value.filter { $0.isOwned(by: currentUsername) }
+        let sharedPlaylists = playlists.value.filter { !$0.isOwned(by: currentUsername) }
+
         NavigationStack {
             List {
                 Section {
@@ -47,9 +53,9 @@ struct PlaylistPickerSheet: View {
                     }
                 }
 
-                if !playlists.value.isEmpty {
-                    Section("Playlists") {
-                        ForEach(playlists.value) { playlist in
+                if !ownedPlaylists.isEmpty {
+                    Section(sharedPlaylists.isEmpty ? "Playlists" : "My Playlists") {
+                        ForEach(ownedPlaylists) { playlist in
                             Button {
                                 add(to: playlist)
                             } label: {
@@ -66,6 +72,36 @@ struct PlaylistPickerSheet: View {
                         }
                     }
                 }
+
+                if !sharedPlaylists.isEmpty {
+                    Section("Shared & Smart Playlists") {
+                        ForEach(sharedPlaylists) { playlist in
+                            Button {
+                                playlistToFork = playlist
+                                showForkAlert = true
+                            } label: {
+                                HStack(spacing: 12) {
+                                    PlaylistMosaic(coverArts: [playlist.coverArt], side: 48)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(playlist.name).font(.kmRowTitle).foregroundStyle(Theme.label)
+                                            Image(systemName: "person.2.fill")
+                                                .font(.caption2)
+                                                .foregroundStyle(Theme.secondaryLabel)
+                                        }
+                                        Text(KMFormat.songCount(playlist.songCount ?? 0) + (playlist.owner.map { " • \($0)" } ?? ""))
+                                            .font(.kmRowSubtitle).foregroundStyle(Theme.secondaryLabel)
+                                    }
+                                    Spacer()
+                                    Text("Make Copy")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Theme.accent)
+                                }
+                            }
+                            .disabled(isSaving)
+                        }
+                    }
+                }
             }
             .navigationTitle(request.songs.count == 1 ? "Add to Playlist" : "Add \(request.songs.count) Songs")
             .navigationBarTitleDisplayMode(.inline)
@@ -73,6 +109,14 @@ struct PlaylistPickerSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", systemImage: "xmark") { dismiss() }
                 }
+            }
+            .alert("Shared Playlist", isPresented: $showForkAlert, presenting: playlistToFork) { playlist in
+                Button("Create Copy & Add") {
+                    duplicateAndAdd(to: playlist)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { playlist in
+                Text("'\(playlist.name)' is managed by the server or shared by another user. Would you like to create your own editable copy with this song added?")
             }
             .overlay { if isSaving { ProgressView() } }
         }
@@ -99,10 +143,31 @@ struct PlaylistPickerSheet: View {
         isSaving = true
         Task {
             defer { isSaving = false }
-            if (try? await library.addToPlaylist(id: playlist.id, songIds: request.songs.map(\.id))) != nil {
+            do {
+                try await library.addToPlaylist(id: playlist.id, songIds: request.songs.map(\.id))
                 Haptics.success()
                 ui.showToast("Added to \(playlist.name)")
                 dismiss()
+            } catch LibraryRepository.PlaylistEditError.notOwner(let p) {
+                playlistToFork = p
+                showForkAlert = true
+            } catch {
+                // Handled in repository
+            }
+        }
+    }
+
+    private func duplicateAndAdd(to playlist: Playlist) {
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            do {
+                let copy = try await library.duplicatePlaylist(id: playlist.id, additionalSongIds: request.songs.map(\.id))
+                Haptics.success()
+                ui.showToast("Created '\(copy.name)'")
+                dismiss()
+            } catch {
+                ui.showToast("Could not duplicate playlist")
             }
         }
     }

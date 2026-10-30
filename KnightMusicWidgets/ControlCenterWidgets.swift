@@ -29,3 +29,18 @@ struct ShuffleLibraryControlWidget: ControlWidget {
         .description("Shuffles your entire music library in Knight Music.")
     }
 }
+
+
+struct RecognizeMusicControlWidget: ControlWidget {
+    static let kind = "com.knightabdo.knightmusic.widgets.control.recognize"
+
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: Self.kind) {
+            ControlWidgetButton(action: RecognizeMusicIntent()) {
+                Label("Recognize Music", systemImage: "shazam.logo.fill")
+            }
+        }
+        .displayName("Recognize Music")
+        .description("Identifies songs playing around you with Knight Music.")
+    }
+}

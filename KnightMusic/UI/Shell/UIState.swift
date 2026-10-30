@@ -26,6 +26,12 @@ final class UIState {
     var songInfo: Song?
     /// Songs being added to a playlist (see `SongInfoPresenter`).
     var playlistPicker: PlaylistPickerRequest?
+    /// Whether the music recognition sheet is presented.
+    var isRecognitionPresented = false
+
+    func startRecognition() {
+        isRecognitionPresented = true
+    }
 
     func open(_ route: Route) { pendingRoute = route }
 

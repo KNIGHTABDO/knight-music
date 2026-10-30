@@ -57,6 +57,12 @@ struct RootView: View {
                 .environment(\.colorScheme, .dark)
                 .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
         }
+        .sheet(isPresented: $ui.isRecognitionPresented) {
+            MusicRecognitionSheet()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .startMusicRecognition)) { _ in
+            ui.startRecognition()
+        }
         .tint(LookStore.shared.accent)
         .environment(ui)
         .environment(nav)
