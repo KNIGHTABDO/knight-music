@@ -198,8 +198,8 @@ public struct MusicRecognitionLiveActivity: Widget {
                         .foregroundStyle(Color.blue)
                 }
             }
+            .widgetURL(deepLinkURL(songId: context.state.localSongId))
         }
-        .widgetURL(deepLinkURL(songId: context.state.localSongId))
     }
 
     @ViewBuilder
