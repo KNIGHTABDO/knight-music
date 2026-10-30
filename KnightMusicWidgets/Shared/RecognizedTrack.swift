@@ -1,16 +1,16 @@
 import Foundation
 
-struct RecognizedTrack: Identifiable, Codable, Sendable, Equatable {
-    let id: String
-    let title: String
-    let artist: String
-    let album: String?
-    let artworkURL: URL?
-    let appleMusicURL: URL?
-    let isrc: String?
-    let recognizedAt: Date
+public struct RecognizedTrack: Identifiable, Codable, Sendable, Equatable {
+    public let id: String
+    public let title: String
+    public let artist: String
+    public let album: String?
+    public let artworkURL: URL?
+    public let appleMusicURL: URL?
+    public let isrc: String?
+    public let recognizedAt: Date
 
-    init(
+    public init(
         id: String = UUID().uuidString,
         title: String,
         artist: String,
@@ -33,19 +33,24 @@ struct RecognizedTrack: Identifiable, Codable, Sendable, Equatable {
 
 @MainActor
 @Observable
-final class RecognizedTracksStore {
-    static let shared = RecognizedTracksStore()
+public final class RecognizedTracksStore {
+    public static let shared = RecognizedTracksStore()
 
-    private(set) var tracks: [RecognizedTrack] = []
+    public private(set) var tracks: [RecognizedTrack] = []
 
     private let storageKey = "knightmusic.recognized_tracks"
+    private let appGroupIdentifier = "group.com.knightabdo.knightmusic"
+
+    private var defaults: UserDefaults {
+        UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+    }
 
     private init() {
         load()
     }
 
-    func add(_ track: RecognizedTrack) {
-        // Deduplicate existing identical song
+    public func add(_ track: RecognizedTrack) {
+        load()
         tracks.removeAll {
             $0.id == track.id ||
             ($0.title.caseInsensitiveCompare(track.title) == .orderedSame &&
@@ -58,18 +63,23 @@ final class RecognizedTracksStore {
         save()
     }
 
-    func remove(id: String) {
+    public func remove(id: String) {
+        load()
         tracks.removeAll { $0.id == id }
         save()
     }
 
-    func clear() {
+    public func clear() {
         tracks.removeAll()
         save()
     }
 
+    public func reload() {
+        load()
+    }
+
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
+        guard let data = defaults.data(forKey: storageKey),
               let decoded = try? JSONDecoder().decode([RecognizedTrack].self, from: data) else {
             return
         }
@@ -78,6 +88,6 @@ final class RecognizedTracksStore {
 
     private func save() {
         guard let data = try? JSONEncoder().encode(tracks) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        defaults.set(data, forKey: storageKey)
     }
 }

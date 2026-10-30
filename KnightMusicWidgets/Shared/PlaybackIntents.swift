@@ -1,5 +1,8 @@
 import AppIntents
 import Foundation
+#if canImport(ShazamKit)
+import ShazamKit
+#endif
 
 @MainActor
 public protocol IntentPlaybackHandling: AnyObject {
@@ -107,7 +110,6 @@ public struct PlayFavoriteSongIntent: AudioPlaybackIntent {
     }
 }
 
-
 @MainActor
 public protocol IntentRecognitionHandling: AnyObject {
     func startRecognition()
@@ -117,7 +119,7 @@ public enum IntentRecognitionBridge {
     @MainActor public static var handler: IntentRecognitionHandling?
 }
 
-public struct RecognizeMusicIntent: AppIntent {
+public struct RecognizeMusicIntent: AudioRecordingIntent {
     public static var title: LocalizedStringResource = "Recognize Music"
     public static var description = IntentDescription("Identifies music playing around you using Knight Music.")
     public static var openAppWhenRun: Bool = false
@@ -126,7 +128,60 @@ public struct RecognizeMusicIntent: AppIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
+        // Also inform in-app handler if the main app is running
         IntentRecognitionBridge.handler?.startRecognition()
+
+        // Start Live Activity immediately on tap
+        RecognitionActivityManager.shared.startListening()
+
+        #if canImport(ShazamKit)
+        if #available(iOS 17.0, *) {
+            do {
+                let session = SHManagedSession()
+                await session.prepare()
+                let result = await session.result()
+                switch result {
+                case .match(let match):
+                    if let item = match.mediaItems.first {
+                        let title = item.title ?? "Unknown Title"
+                        let artist = item.artist ?? "Unknown Artist"
+                        let track = RecognizedTrack(
+                            id: item.shazamID ?? UUID().uuidString,
+                            title: title,
+                            artist: artist,
+                            album: item.subtitle,
+                            artworkURL: item.artworkURL,
+                            appleMusicURL: item.appleMusicURL,
+                            isrc: item.isrc
+                        )
+                        RecognizedTracksStore.shared.add(track)
+
+                        await RecognitionActivityManager.shared.updateMatched(
+                            title: title,
+                            artist: artist,
+                            artworkURL: item.artworkURL,
+                            localSongId: nil
+                        )
+                    } else {
+                        await RecognitionActivityManager.shared.updateNotFound()
+                    }
+                case .noMatch:
+                    await RecognitionActivityManager.shared.updateNotFound()
+                case .error(let error, _):
+                    await RecognitionActivityManager.shared.updateError("Recognition failed: \(error.localizedDescription)")
+                @unknown default:
+                    await RecognitionActivityManager.shared.updateNotFound()
+                }
+            } catch {
+                await RecognitionActivityManager.shared.updateError("Capture error: \(error.localizedDescription)")
+            }
+        } else {
+            await RecognitionActivityManager.shared.updateError("Requires iOS 17+")
+        }
+        #else
+        await RecognitionActivityManager.shared.updateError("ShazamKit not supported")
+        #endif
+
         return .result()
     }
 }

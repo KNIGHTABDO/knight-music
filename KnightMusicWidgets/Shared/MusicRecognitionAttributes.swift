@@ -5,7 +5,7 @@ public struct MusicRecognitionAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         public enum Phase: Codable, Hashable {
             case listening
-            case matched(title: String, artist: String, artworkURL: String?, localSongId: String?)
+            case matched(title: String, artist: String, artworkURL: String?, artworkFileName: String?, localSongId: String?)
             case notFound
             case error(message: String)
         }
@@ -19,9 +19,5 @@ public struct MusicRecognitionAttributes: ActivityAttributes {
         }
     }
 
-    public var sessionId: String
-
-    public init(sessionId: String = UUID().uuidString) {
-        self.sessionId = sessionId
-    }
+    public init() {}
 }

@@ -119,6 +119,8 @@ targets:
         CFBundleDisplayName: Knight Music
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSSupportsLiveActivities: true
+        NSMicrophoneUsageDescription: Knight Music uses the microphone to recognize music playing around you.
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 

@@ -179,10 +179,10 @@ extension ShazamService: SHSessionDelegate {
             self.currentTrack = track
             self.state = .matched(track)
             RecognizedTracksStore.shared.add(track)
-            RecognitionActivityManager.shared.updateMatched(
+            await RecognitionActivityManager.shared.updateMatched(
                 title: track.title,
                 artist: track.artist,
-                artworkURL: track.artworkURL?.absoluteString,
+                artworkURL: track.artworkURL,
                 localSongId: self.localMatch?.id
             )
         }
@@ -197,7 +197,7 @@ extension ShazamService: SHSessionDelegate {
             } else {
                 self.state = .notFound
             }
-            RecognitionActivityManager.shared.updateNotFound()
+            await RecognitionActivityManager.shared.updateNotFound()
         }
     }
 }
