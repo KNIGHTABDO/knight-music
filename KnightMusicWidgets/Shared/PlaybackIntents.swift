@@ -139,40 +139,84 @@ public struct RecognizeMusicIntent: AudioRecordingIntent, LiveActivityIntent {
 
         #if canImport(ShazamKit)
         if #available(iOS 17.0, *) {
+            #if canImport(AVFoundation)
+            let audioSession = AVAudioSession.sharedInstance()
+            try? audioSession.setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth]
+            )
+            try? audioSession.setActive(true)
+            #endif
+
             do {
                 let session = SHManagedSession()
                 await session.prepare()
-                let result = await session.result()
-                switch result {
-                case .match(let match):
-                    if let item = match.mediaItems.first {
-                        let title = item.title ?? "Unknown Title"
-                        let artist = item.artist ?? "Unknown Artist"
-                        let track = RecognizedTrack(
-                            id: item.shazamID ?? UUID().uuidString,
-                            title: title,
-                            artist: artist,
-                            album: item.subtitle,
-                            artworkURL: item.artworkURL,
-                            appleMusicURL: item.appleMusicURL,
-                            isrc: item.isrc
-                        )
-                        RecognizedTracksStore.shared.add(track)
 
-                        await RecognitionActivityManager.shared.updateMatched(
-                            title: title,
-                            artist: artist,
-                            artworkURL: item.artworkURL,
-                            localSongId: nil
-                        )
-                    } else {
-                        await RecognitionActivityManager.shared.updateNotFound()
+                var hasMatched = false
+                let timeoutTask = Task {
+                    try? await Task.sleep(nanoseconds: 20_000_000_000)
+                    if !Task.isCancelled && !hasMatched {
+                        session.cancel()
                     }
-                case .noMatch:
-                    await RecognitionActivityManager.shared.updateNotFound()
-                case .error(let error, _):
-                    await RecognitionActivityManager.shared.updateError("Recognition failed: \(error.localizedDescription)")
-                @unknown default:
+                }
+
+                for await result in session.results {
+                    switch result {
+                    case .match(let match):
+                        hasMatched = true
+                        timeoutTask.cancel()
+                        session.cancel()
+
+                        if let item = match.mediaItems.first {
+                            let title = item.title ?? "Unknown Title"
+                            let artist = item.artist ?? "Unknown Artist"
+                            let track = RecognizedTrack(
+                                id: item.shazamID ?? UUID().uuidString,
+                                title: title,
+                                artist: artist,
+                                album: item.subtitle,
+                                artworkURL: item.artworkURL,
+                                appleMusicURL: item.appleMusicURL,
+                                isrc: item.isrc
+                            )
+                            RecognizedTracksStore.shared.add(track)
+
+                            await RecognitionActivityManager.shared.updateMatched(
+                                title: title,
+                                artist: artist,
+                                artworkURL: item.artworkURL,
+                                localSongId: nil
+                            )
+                        } else {
+                            await RecognitionActivityManager.shared.updateNotFound()
+                        }
+                        return .result()
+
+                    case .noMatch:
+                        // Window buffer did not match; continue listening until 20s timeout
+                        continue
+
+                    case .error(let error, _):
+                        let nsError = error as NSError
+                        if nsError.domain == "com.apple.ShazamKit" && nsError.code == 202 {
+                            // 202 = matchAttemptFailed (audio window didn't yield a match yet); continue listening!
+                            continue
+                        } else {
+                            hasMatched = true
+                            timeoutTask.cancel()
+                            session.cancel()
+                            await RecognitionActivityManager.shared.updateError("Recognition failed: \(error.localizedDescription)")
+                            return .result()
+                        }
+
+                    @unknown default:
+                        continue
+                    }
+                }
+
+                timeoutTask.cancel()
+                if !hasMatched {
                     await RecognitionActivityManager.shared.updateNotFound()
                 }
             } catch {
