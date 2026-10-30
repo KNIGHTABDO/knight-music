@@ -120,7 +120,7 @@ public enum IntentRecognitionBridge {
 public struct RecognizeMusicIntent: AppIntent {
     public static var title: LocalizedStringResource = "Recognize Music"
     public static var description = IntentDescription("Identifies music playing around you using Knight Music.")
-    public static var openAppWhenRun: Bool = true
+    public static var openAppWhenRun: Bool = false
 
     public init() {}
 

@@ -11,6 +11,7 @@ struct KnightMusicWidgetsBundle: WidgetBundle {
         PlayPauseControlWidget()
         ShuffleLibraryControlWidget()
         RecognizeMusicControlWidget()
+        MusicRecognitionLiveActivity()
         KickLiveWidget()
     }
 }

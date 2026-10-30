@@ -38,6 +38,7 @@ final class ShazamService: NSObject, @unchecked Sendable {
         currentTrack = nil
         localMatch = nil
         lastError = nil
+        RecognitionActivityManager.shared.startListening()
 
         #if canImport(ShazamKit)
         requestMicrophonePermission { [weak self] granted in
@@ -100,7 +101,7 @@ final class ShazamService: NSObject, @unchecked Sendable {
     private func beginCapture(library: LibraryRepository?) {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth])
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth])
             try audioSession.setActive(true)
 
             let engine = AVAudioEngine()
@@ -178,6 +179,12 @@ extension ShazamService: SHSessionDelegate {
             self.currentTrack = track
             self.state = .matched(track)
             RecognizedTracksStore.shared.add(track)
+            RecognitionActivityManager.shared.updateMatched(
+                title: track.title,
+                artist: track.artist,
+                artworkURL: track.artworkURL?.absoluteString,
+                localSongId: self.localMatch?.id
+            )
         }
     }
 
@@ -190,6 +197,7 @@ extension ShazamService: SHSessionDelegate {
             } else {
                 self.state = .notFound
             }
+            RecognitionActivityManager.shared.updateNotFound()
         }
     }
 }
