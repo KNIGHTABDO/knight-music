@@ -131,20 +131,6 @@ public struct RecognizeMusicIntent: AudioRecordingIntent, LiveActivityIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        #if canImport(AVFoundation)
-        if #available(iOS 17.0, *) {
-            if AVAudioApplication.shared.recordPermission != .granted {
-                try await requestToContinueInForeground()
-                return .result()
-            }
-        } else {
-            if AVAudioSession.sharedInstance().recordPermission != .granted {
-                try await requestToContinueInForeground()
-                return .result()
-            }
-        }
-        #endif
-
         // Also inform in-app handler if the main app is running
         IntentRecognitionBridge.handler?.startRecognition()
 
