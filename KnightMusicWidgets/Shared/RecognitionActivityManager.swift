@@ -12,6 +12,10 @@ public final class RecognitionActivityManager {
     private var dismissTask: Task<Void, Never>?
     private let appGroupIdentifier = "group.com.knightabdo.knightmusic"
 
+    private var activeActivity: Activity<MusicRecognitionAttributes>? {
+        currentActivity ?? Activity<MusicRecognitionAttributes>.activities.first
+    }
+
     private init() {}
 
     public func startListening() {
@@ -19,7 +23,8 @@ public final class RecognitionActivityManager {
         dismissTask = nil
 
         // If activity already running, update it to listening state
-        if let activity = currentActivity {
+        if let activity = activeActivity {
+            currentActivity = activity
             Task {
                 await activity.update(
                     ActivityContent(
@@ -52,7 +57,7 @@ public final class RecognitionActivityManager {
     }
 
     public func updateMatched(title: String, artist: String, artworkURL: URL?, localSongId: String?) async {
-        guard let activity = currentActivity else { return }
+        guard let activity = activeActivity else { return }
 
         // Download artwork to shared container so WidgetKit can load it synchronously from disk
         var artworkFileName: String? = nil
@@ -93,7 +98,7 @@ public final class RecognitionActivityManager {
     }
 
     public func updateNotFound() async {
-        guard let activity = currentActivity else { return }
+        guard let activity = activeActivity else { return }
 
         await activity.update(
             ActivityContent(
@@ -111,7 +116,7 @@ public final class RecognitionActivityManager {
     }
 
     public func updateError(_ message: String) async {
-        guard let activity = currentActivity else { return }
+        guard let activity = activeActivity else { return }
 
         await activity.update(
             ActivityContent(
@@ -138,9 +143,9 @@ public final class RecognitionActivityManager {
             try? FileManager.default.removeItem(at: fileURL)
         }
 
-        if let activity = currentActivity {
+        for activity in Activity<MusicRecognitionAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
-            currentActivity = nil
         }
+        currentActivity = nil
     }
 }

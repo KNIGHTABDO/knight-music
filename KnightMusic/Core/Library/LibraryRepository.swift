@@ -537,7 +537,12 @@ final class LibraryRepository {
     @discardableResult
     func duplicatePlaylist(id: String, newName: String? = nil, additionalSongIds: [String] = []) async throws -> Playlist {
         let database = try requireDatabase()
-        let existingSongIds = (try? await playlistSongIds(database, id: id)) ?? []
+        var existingSongIds = (try? await playlistSongIds(database, id: id)) ?? []
+        if existingSongIds.isEmpty, let client = try? requireClient() {
+            if let (_, songs) = try? await client.getPlaylist(id: id) {
+                existingSongIds = songs.map(\.id)
+            }
+        }
         var combined = existingSongIds
         for sid in additionalSongIds {
             if !combined.contains(sid) {

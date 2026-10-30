@@ -81,7 +81,7 @@ public struct MusicRecognitionLiveActivity: Widget {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .activityBackgroundTint(Color.black.opacity(0.85))
+            .activityBackgroundTint(Color.black)
             .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -89,7 +89,7 @@ public struct MusicRecognitionLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     switch context.state.phase {
                     case .matched(_, _, _, let artworkFileName, _):
-                        artworkView(filename: artworkFileName, size: 52, cornerRadius: 10)
+                        artworkView(filename: artworkFileName, size: 52, cornerRadius: 12)
                             .padding(.leading, 8)
                             .padding(.top, 4)
                     case .listening:
@@ -149,13 +149,8 @@ public struct MusicRecognitionLiveActivity: Widget {
 
                 DynamicIslandExpandedRegion(.trailing) {
                     switch context.state.phase {
-                    case .matched(_, _, _, _, let localSongId):
-                        Link(destination: deepLinkURL(songId: localSongId)) {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color(white: 0.5))
-                                .padding(.trailing, 8)
-                        }
+                    case .matched:
+                        EmptyView()
                     case .listening:
                         Image(systemName: "waveform")
                             .font(.system(size: 16))
@@ -204,6 +199,7 @@ public struct MusicRecognitionLiveActivity: Widget {
                 }
             }
         }
+        .widgetURL(deepLinkURL(songId: context.state.localSongId))
     }
 
     @ViewBuilder

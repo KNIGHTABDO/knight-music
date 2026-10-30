@@ -64,6 +64,7 @@ struct PlaylistDetailView: View {
     // MARK: - Playlist Content
 
     private func playlistContentView(playlist: Playlist, songs: [Song]) -> some View {
+        let isOwned = playlist.isOwned(by: library.currentUsername)
         let items = songs.indices.map { PlaylistItem(id: "\($0)-\(songs[$0].id)", index: $0, song: songs[$0]) }
 
         return List {
@@ -85,12 +86,13 @@ struct PlaylistDetailView: View {
                         .padding(.vertical, 24)
                 } else {
                     ForEach(items) { item in
-                        songRowView(song: item.song, index: item.index, songs: songs)
+                        songRowView(song: item.song, index: item.index, songs: songs, isOwned: isOwned)
                             .songSwipeActions(item.song, trailing: false)
                             .listRowInsets(EdgeInsets(top: 6, leading: Theme.margin, bottom: 6, trailing: Theme.margin))
                             .listRowBackground(Color.clear)
                     }
                     .onMove { source, destination in
+                        guard isOwned else { return }
                         Task {
                             do {
                                 try await library.movePlaylistEntries(id: playlistId, from: source, to: destination)
@@ -100,6 +102,7 @@ struct PlaylistDetailView: View {
                         }
                     }
                     .onDelete { indexSet in
+                        guard isOwned else { return }
                         Task {
                             do {
                                 try await library.removeFromPlaylist(id: playlistId, indexes: Array(indexSet))
@@ -119,6 +122,15 @@ struct PlaylistDetailView: View {
             do {
                 try await library.addToPlaylist(id: playlistId, songIds: dropped.map(\.id))
                 ui.showToast(dropped.count == 1 ? "Added to Playlist" : "Added \(dropped.count) Songs to Playlist")
+            } catch LibraryRepository.PlaylistEditError.notOwner {
+                Task {
+                    do {
+                        let copy = try await library.duplicatePlaylist(id: playlistId, additionalSongIds: dropped.map(\.id))
+                        ui.showToast("Created \"\(copy.name)\"")
+                    } catch {
+                        ui.showToast("Couldn't Add to Playlist")
+                    }
+                }
             } catch {
                 Log.sync.error("Add dropped songs to playlist failed: \(error)")
                 ui.showToast("Couldn't Add to Playlist")
@@ -253,7 +265,7 @@ struct PlaylistDetailView: View {
 
     // MARK: - Song Row
 
-    private func songRowView(song: Song, index: Int, songs: [Song]) -> some View {
+    private func songRowView(song: Song, index: Int, songs: [Song], isOwned: Bool) -> some View {
         let isPlaying = player.currentSong?.id == song.id
         let isPaused = isPlaying && !player.isPlaying
         let isDownloaded = downloads.isDownloaded(song.id)
@@ -272,6 +284,26 @@ struct PlaylistDetailView: View {
                 isDownloaded: isDownloaded
             ) {
                 SongActionsMenu(song: song)
+                if isOwned {
+                    Divider()
+                    Button(role: .destructive) {
+                        Task {
+                            do {
+                                try await library.removeFromPlaylist(id: playlistId, indexes: [index])
+                            } catch {
+                                Log.sync.error("Remove from playlist failed: \(error)")
+                            }
+                        }
+                    } label: {
+                        Label("Remove from Playlist", systemImage: "trash")
+                    }
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            SongActionsMenu(song: song)
+            if isOwned {
                 Divider()
                 Button(role: .destructive) {
                     Task {
@@ -286,41 +318,45 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            SongActionsMenu(song: song)
-            Divider()
-            Button(role: .destructive) {
-                Task {
-                    do {
-                        try await library.removeFromPlaylist(id: playlistId, indexes: [index])
-                    } catch {
-                        Log.sync.error("Remove from playlist failed: \(error)")
-                    }
-                }
-            } label: {
-                Label("Remove from Playlist", systemImage: "trash")
-            }
-        }
     }
 
     // MARK: - Toolbar
 
     @ToolbarContentBuilder
     private func toolbarItems(playlist: Playlist, songs: [Song]) -> some ToolbarContent {
+        let isOwned = playlist.isOwned(by: library.currentUsername)
+
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Button(editMode == .active ? "Done" : "Edit") {
-                withAnimation {
-                    editMode = editMode == .active ? .inactive : .active
+            if isOwned {
+                Button(editMode == .active ? "Done" : "Edit") {
+                    withAnimation {
+                        editMode = editMode == .active ? .inactive : .active
+                    }
                 }
             }
 
             Menu {
-                Button {
-                    newPlaylistName = playlist.name
-                    showingRenameAlert = true
-                } label: {
-                    Label("Rename", systemImage: "pencil")
+                if isOwned {
+                    Button {
+                        newPlaylistName = playlist.name
+                        showingRenameAlert = true
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                } else {
+                    Button {
+                        Task {
+                            do {
+                                let copy = try await library.duplicatePlaylist(id: playlist.id)
+                                Haptics.success()
+                                ui.showToast("Created \"\(copy.name)\"")
+                            } catch {
+                                ui.showToast("Could not duplicate playlist")
+                            }
+                        }
+                    } label: {
+                        Label("Make Copy", systemImage: "doc.on.doc")
+                    }
                 }
 
                 Button {
@@ -334,12 +370,14 @@ struct PlaylistDetailView: View {
                     Label("Download Automatically", systemImage: "arrow.down.circle.dotted")
                 }
 
-                Divider()
+                if isOwned {
+                    Divider()
 
-                Button(role: .destructive) {
-                    showingDeleteConfirmation = true
-                } label: {
-                    Label("Delete Playlist", systemImage: "trash")
+                    Button(role: .destructive) {
+                        showingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Playlist", systemImage: "trash")
+                    }
                 }
             } label: {
                 Image(systemName: "ellipsis")

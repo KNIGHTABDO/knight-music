@@ -3,6 +3,9 @@ import Foundation
 #if canImport(ShazamKit)
 import ShazamKit
 #endif
+#if canImport(AVFoundation)
+import AVFoundation
+#endif
 
 @MainActor
 public protocol IntentPlaybackHandling: AnyObject {
@@ -119,7 +122,7 @@ public enum IntentRecognitionBridge {
     @MainActor public static var handler: IntentRecognitionHandling?
 }
 
-public struct RecognizeMusicIntent: AudioRecordingIntent {
+public struct RecognizeMusicIntent: AudioRecordingIntent, LiveActivityIntent {
     public static var title: LocalizedStringResource = "Recognize Music"
     public static var description = IntentDescription("Identifies music playing around you using Knight Music.")
     public static var openAppWhenRun: Bool = false
@@ -128,6 +131,20 @@ public struct RecognizeMusicIntent: AudioRecordingIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
+        #if canImport(AVFoundation)
+        if #available(iOS 17.0, *) {
+            if AVAudioApplication.shared.recordPermission != .granted {
+                try await requestToContinueInForeground()
+                return .result()
+            }
+        } else {
+            if AVAudioSession.sharedInstance().recordPermission != .granted {
+                try await requestToContinueInForeground()
+                return .result()
+            }
+        }
+        #endif
+
         // Also inform in-app handler if the main app is running
         IntentRecognitionBridge.handler?.startRecognition()
 

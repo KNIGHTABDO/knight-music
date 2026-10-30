@@ -21,3 +21,13 @@ public struct MusicRecognitionAttributes: ActivityAttributes {
 
     public init() {}
 }
+
+
+extension MusicRecognitionAttributes.ContentState {
+    public var localSongId: String? {
+        if case .matched(_, _, _, _, let songId) = phase {
+            return songId
+        }
+        return nil
+    }
+}
