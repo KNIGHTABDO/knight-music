@@ -42,6 +42,17 @@ final class DiscordPresenceService {
         settings.state = .connecting
         client.disconnect()
         client.connect(token: settings.token)
+
+        for _ in 0..<40 {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            if settings.state != .connecting {
+                return
+            }
+        }
+
+        if settings.state == .connecting {
+            settings.state = .error("Connection timed out. Check token and internet.")
+        }
     }
 
     // MARK: - Update Engine

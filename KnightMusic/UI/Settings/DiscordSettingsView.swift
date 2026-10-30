@@ -95,6 +95,7 @@ struct DiscordSettingsView: View {
                 Button {
                     Task {
                         settings.token = tokenInput
+                        settings.isEnabled = true
                         isTesting = true
                         await discord.testConnection()
                         isTesting = false

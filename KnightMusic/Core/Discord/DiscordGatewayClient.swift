@@ -1,11 +1,11 @@
 import Foundation
 import UIKit
 
-/// Manages real-time WebSocket connection to the Discord Gateway v10.
+/// Manages real-time WebSocket connection to the Discord Gateway.
 /// Sends Opcode 3 (Presence Update) for instantaneous profile updates.
 @MainActor
 final class DiscordGatewayClient {
-    private static let defaultGatewayURL = URL(string: "wss://gateway.discord.gg/?v=10&encoding=json")!
+    private static let defaultGatewayURL = URL(string: "wss://gateway.discord.gg/?v=9&encoding=json")!
 
     var onStateChange: ((DiscordConnectionState) -> Void)?
 
@@ -23,6 +23,11 @@ final class DiscordGatewayClient {
     private var currentUsername: String?
     private var isIntentionalDisconnect = false
     private var retryCount = 0
+
+    // Client session identifiers for Discord anti-spam compliance
+    private let clientLaunchId = UUID().uuidString
+    private let launchSignature = UUID().uuidString
+    private let heartbeatSessionId = UUID().uuidString
 
     private(set) var currentState: DiscordConnectionState = .disconnected {
         didSet {
@@ -103,6 +108,8 @@ final class DiscordGatewayClient {
         self.session = session
 
         let task = session.webSocketTask(with: url)
+        // User account READY dispatch packets can exceed 8MB with all guilds/friends
+        task.maximumMessageSize = 32 * 1024 * 1024
         self.webSocketTask = task
         task.resume()
 
@@ -307,17 +314,37 @@ final class DiscordGatewayClient {
                 "op": 2,
                 "d": [
                     "token": token,
-                    "capabilities": 16381,
+                    "capabilities": 0,
                     "properties": [
-                        "os": "iOS",
-                        "browser": "Discord iOS",
-                        "device": "iPhone"
+                        "os": "Windows",
+                        "browser": "Discord Client",
+                        "release_channel": "stable",
+                        "client_version": "1.0.9210",
+                        "os_version": "10.0.19044",
+                        "os_arch": "x64",
+                        "app_arch": "x64",
+                        "system_locale": "en-US",
+                        "has_client_mods": false,
+                        "client_launch_id": clientLaunchId,
+                        "browser_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9210 Chrome/134.0.6998.205 Electron/35.3.0 Safari/537.36",
+                        "browser_version": "35.3.0",
+                        "os_sdk_version": "19044",
+                        "client_build_number": 455964,
+                        "native_build_number": 69976,
+                        "client_event_source": NSNull(),
+                        "launch_signature": launchSignature,
+                        "client_heartbeat_session_id": heartbeatSessionId,
+                        "client_app_state": "focused"
                     ],
                     "presence": [
                         "status": "online",
                         "since": 0,
                         "activities": serializeActivities(currentActivities),
                         "afk": false
+                    ],
+                    "compress": false,
+                    "client_state": [
+                        "guild_versions": [:] as [String: Any]
                     ]
                 ]
             ]
