@@ -23,6 +23,7 @@ no placeholder screens, no "coming soon".** If a feature is in scope, it works e
 4. UI work: include `[shots]` in the commit message → artifact `screens` with iPhone + iPad PNGs of every
    screen (demo server). `gh run download <id> -n screens -D /tmp/<yourbranch>-screens` and **look at them**
    with the Read tool. Compare with `ref/*.PNG`. Iterate until it looks right.
+   Prefer `[shots:recognize,settings]` while iterating: only those screens, iPhone only, much faster.
 
 ## Architecture
 ```
