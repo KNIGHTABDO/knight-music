@@ -18,6 +18,7 @@ struct DeviceAudioBroadcastButton: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.secondaryLabel)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .task {
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])

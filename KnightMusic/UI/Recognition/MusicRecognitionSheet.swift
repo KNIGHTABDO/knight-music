@@ -44,7 +44,7 @@ struct MusicRecognitionSheet: View {
                 }
             }
         }
-        .presentationDetents([.fraction(0.68), .large])
+        .presentationDetents([.fraction(0.75), .large])
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(Theme.Radius.hero)
         .onAppear {
@@ -103,6 +103,7 @@ struct MusicRecognitionSheet: View {
 
                 Text("Hold your device near the speaker. Other apps keep playing.")
                     .font(.kmRowSubtitle)
+                    .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(Theme.secondaryLabel)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
