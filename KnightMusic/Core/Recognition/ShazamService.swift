@@ -303,14 +303,14 @@ final class ShazamService {
     }
 
     /// "Song (feat. X) [Remastered]" -> "Song"
-    private nonisolated static func baseTitle(_ title: String) -> String {
+    nonisolated static func baseTitle(_ title: String) -> String {
         let cut = title.firstIndex { $0 == "(" || $0 == "[" } ?? title.endIndex
         let base = title[..<cut].trimmingCharacters(in: .whitespaces)
         return base.isEmpty ? title : base
     }
 
     /// Shazam lists collaborators in one string: "A & B", "A feat. B".
-    private nonisolated static func leadArtist(_ artist: String) -> String {
+    nonisolated static func leadArtist(_ artist: String) -> String {
         var lead = artist
         for separator in [" & ", " feat. ", " Feat. ", " ft. ", ", ", " x ", " X "] {
             if let range = lead.range(of: separator) { lead = String(lead[..<range.lowerBound]) }

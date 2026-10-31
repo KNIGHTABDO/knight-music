@@ -14,7 +14,7 @@ struct IdentifiedSongsView: View {
             if store.tracks.isEmpty {
                 EmptyStateView(
                     title: "No Identified Songs",
-                    systemImage: "shazam.logo.fill",
+                    systemImage: "waveform.circle.fill",
                     message: "Songs you identify with Knight Music or Control Center will appear here.",
                     actionTitle: "Identify Song",
                     action: {
@@ -146,7 +146,7 @@ struct IdentifiedSongsView: View {
                         Haptics.impact(.light)
                         ui.startRecognition()
                     } label: {
-                        Image(systemName: "shazam.logo.fill")
+                        Image(systemName: "waveform.circle.fill")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(Theme.accent)
                     }

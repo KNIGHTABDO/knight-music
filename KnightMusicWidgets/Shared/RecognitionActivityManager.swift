@@ -13,7 +13,9 @@ public final class RecognitionActivityManager {
     private let appGroupIdentifier = "group.com.knightabdo.knightmusic"
 
     private var activeActivity: Activity<MusicRecognitionAttributes>? {
-        currentActivity ?? Activity<MusicRecognitionAttributes>.activities.first
+        // An ended activity waiting out its dismissal time ignores updates, so it can't be reused.
+        if let currentActivity, currentActivity.activityState == .active { return currentActivity }
+        return Activity<MusicRecognitionAttributes>.activities.first { $0.activityState == .active }
     }
 
     private init() {}
@@ -23,6 +25,7 @@ public final class RecognitionActivityManager {
     public func startListening() -> Bool {
         dismissTask?.cancel()
         dismissTask = nil
+        removeOldPosters()
 
         // If activity already running, update it to listening state
         if let activity = activeActivity {
@@ -69,35 +72,56 @@ public final class RecognitionActivityManager {
             let filename = "shazam_art_\(UUID().uuidString.prefix(8)).jpg"
             if let sharedContainer = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) {
                 let fileURL = sharedContainer.appendingPathComponent(filename)
-                if let (data, _) = try? await URLSession.shared.data(from: artworkURL) {
-                    if (try? data.write(to: fileURL)) != nil {
+                if let (data, _) = try? await URLSession.shared.data(from: artworkURL), let poster = bannerPoster(from: data) {
+                    if (try? poster.write(to: fileURL)) != nil {
                         artworkFileName = filename
                     }
                 }
             }
         }
 
-        await activity.update(
-            ActivityContent(
-                state: MusicRecognitionAttributes.ContentState(
-                    phase: .matched(
-                        title: title,
-                        artist: artist,
-                        artworkURL: artworkURL?.absoluteString,
-                        artworkFileName: artworkFileName,
-                        localSongId: localSongId
-                    )
-                ),
-                staleDate: nil
-            )
+        let content = ActivityContent(
+            state: MusicRecognitionAttributes.ContentState(
+                phase: .matched(
+                    title: title,
+                    artist: artist,
+                    artworkURL: artworkURL?.absoluteString,
+                    artworkFileName: artworkFileName,
+                    localSongId: localSongId
+                )
+            ),
+            staleDate: nil
         )
+        // The alert is what makes iOS drop the banner over the current app; a plain update changes it silently.
+        await activity.update(content, alertConfiguration: AlertConfiguration(title: "\(title)", body: "\(artist)", sound: .default))
 
-        // Auto-dismiss smoothly after 5 seconds matching native Apple Shazam
+        // Ending with a later dismissal leaves iOS to remove it, even if the app is suspended by then.
         dismissTask?.cancel()
         dismissTask = Task {
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
             guard !Task.isCancelled else { return }
-            await self.endActivity(cleanupFileName: artworkFileName)
+            await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(30)))
+            self.currentActivity = nil
+        }
+    }
+
+    private func bannerPoster(from data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let size = CGSize(width: 180, height: 180)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).jpegData(withCompressionQuality: 0.85) { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    private func removeOldPosters() {
+        guard Activity<MusicRecognitionAttributes>.activities.isEmpty,
+              let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier),
+              let files = try? FileManager.default.contentsOfDirectory(at: container, includingPropertiesForKeys: nil)
+        else { return }
+        for file in files where file.lastPathComponent.hasPrefix("shazam_art_") {
+            try? FileManager.default.removeItem(at: file)
         }
     }
 
@@ -108,7 +132,8 @@ public final class RecognitionActivityManager {
             ActivityContent(
                 state: MusicRecognitionAttributes.ContentState(phase: .notFound),
                 staleDate: nil
-            )
+            ),
+            alertConfiguration: AlertConfiguration(title: "No Match Found", body: "Knight Music couldn't identify this song.", sound: .default)
         )
 
         dismissTask?.cancel()

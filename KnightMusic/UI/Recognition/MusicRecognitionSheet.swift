@@ -10,6 +10,15 @@ struct MusicRecognitionSheet: View {
     @State private var isPulsing = false
     @State private var localMatch: Song?
     @State private var isResolvingLocal = false
+    @State private var youTube = YouTubeState.idle
+    @State private var youTubeSearch: Task<Void, Never>?
+
+    private enum YouTubeState: Equatable {
+        case idle
+        case searching
+        case choices([YTSong])
+        case failed(String)
+    }
 
     var body: some View {
         NavigationStack {
@@ -58,11 +67,14 @@ struct MusicRecognitionSheet: View {
             }
         }
         .onDisappear {
+            youTubeSearch?.cancel()
             app.shazam.stopListening()
         }
         // .task, not onChange: the sheet can open on a match found while the app was in the background.
         .task(id: app.shazam.currentTrack?.id) {
             localMatch = nil
+            youTubeSearch?.cancel()
+            youTube = .idle
             guard let track = app.shazam.currentTrack else { return }
             isResolvingLocal = true
             localMatch = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist)
@@ -93,7 +105,7 @@ struct MusicRecognitionSheet: View {
                     .frame(width: 110, height: 110)
                     .shadow(color: Theme.accent.opacity(0.4), radius: 16, x: 0, y: 8)
 
-                Image(systemName: "shazam.logo.fill")
+                Image(systemName: "waveform.circle.fill")
                     .font(.system(size: 52, weight: .bold))
                     .foregroundStyle(.white)
             }
@@ -188,13 +200,11 @@ struct MusicRecognitionSheet: View {
             VStack(spacing: 10) {
                 if let local = localMatch {
                     Button {
-                        Haptics.impact(.medium)
-                        player.play([local], startAt: 0, shuffle: false)
-                        dismiss()
+                        startPlaying(local)
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "play.fill")
-                            Text("Play in Knight Music")
+                            Text("Play")
                         }
                         .font(.system(size: 16, weight: .semibold))
                         .frame(maxWidth: .infinity)
@@ -216,33 +226,7 @@ struct MusicRecognitionSheet: View {
                     }
                     .buttonStyle(.glass)
                 } else {
-                    Button {
-                        dismiss()
-                        ui.askKnight("Play \(track.title) by \(track.artist) from YouTube Music")
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "play.circle.fill")
-                            Text("Stream on YouTube Music")
-                        }
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 38)
-                    }
-                    .buttonStyle(.glassProminent)
-
-                    Button {
-                        dismiss()
-                        ui.askKnight("Download song \(track.title) by \(track.artist) to my library")
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "sparkles")
-                            Text("Ask Knight to Download")
-                        }
-                        .font(.system(size: 15, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                    }
-                    .buttonStyle(.glass)
+                    youTubeSection(track: track)
                 }
 
                 // Recognize another
@@ -262,6 +246,104 @@ struct MusicRecognitionSheet: View {
             }
             .padding(.top, 4)
         }
+    }
+
+    // MARK: - YouTube Music
+
+    @ViewBuilder
+    private func youTubeSection(track: RecognizedTrack) -> some View {
+        if case .choices(let songs) = youTube {
+            Text("Which one is it?")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.secondaryLabel)
+            ForEach(songs) { song in
+                Button {
+                    startPlaying(song.song)
+                } label: {
+                    choiceRow(song)
+                }
+                .buttonStyle(.plain)
+            }
+        } else {
+            let isSearching = youTube == .searching
+            Button {
+                playOnYouTube(track)
+            } label: {
+                HStack(spacing: 8) {
+                    if isSearching {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "play.fill")
+                    }
+                    Text("Play on YouTube Music")
+                }
+                .font(.system(size: 16, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+            }
+            .buttonStyle(.glassProminent)
+            .disabled(isSearching)
+
+            if case .failed(let message) = youTube {
+                Text(message)
+                    .font(.kmRowSubtitle)
+                    .foregroundStyle(Theme.secondaryLabel)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func choiceRow(_ song: YTSong) -> some View {
+        HStack(spacing: 12) {
+            AsyncImage(url: song.thumbnail.flatMap(URL.init(string:))) { image in
+                image.resizable().aspectRatio(contentMode: .fill)
+            } placeholder: {
+                Theme.secondaryBackground
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(song.title)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.label)
+                    .lineLimit(1)
+                Text(song.artistLine)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.secondaryLabel)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func playOnYouTube(_ track: RecognizedTrack) {
+        youTube = .searching
+        youTubeSearch = Task {
+            do {
+                let result = try await YouTubeTrackMatcher.lookup(title: track.title, artist: track.artist)
+                guard !Task.isCancelled else { return }
+                switch result {
+                case .match(let song):
+                    startPlaying(song)
+                case .choices(let songs):
+                    youTube = songs.isEmpty ? .failed("This song isn't on YouTube Music.") : .choices(songs)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                Log.app.error("YouTube lookup for recognized song failed: \(error.localizedDescription)")
+                youTube = .failed("Couldn't reach YouTube Music. Tap to try again.")
+            }
+        }
+    }
+
+    private func startPlaying(_ song: Song) {
+        Haptics.impact(.medium)
+        player.play([song], startAt: 0, shuffle: false)
+        ui.playerAfterRecognition = true
+        dismiss()
     }
 
     // MARK: - Not Found State

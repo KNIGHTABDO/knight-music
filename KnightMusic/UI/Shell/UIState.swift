@@ -31,6 +31,8 @@ final class UIState {
 
     /// Set when the sheet should begin a new recognition instead of showing the one in progress or just finished.
     var recognitionShouldStart = false
+    /// iOS drops a cover requested while a sheet is still dismissing, so RootView presents it from onDismiss.
+    var playerAfterRecognition = false
 
     func startRecognition() {
         recognitionShouldStart = true
