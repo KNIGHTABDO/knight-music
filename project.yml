@@ -35,6 +35,8 @@ targets:
     dependencies:
       - target: KnightMusicWidgets
         embed: true
+      - target: KnightMusicBroadcast
+        embed: true
       - package: GRDB
       - package: Nuke
         product: Nuke
@@ -99,6 +101,35 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+
+  KnightMusicBroadcast:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: KnightMusicBroadcast
+      - path: KnightMusicWidgets/Shared/RecognitionClient.swift
+      - path: KnightMusicWidgets/Shared/RecognizedTrack.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.knightabdo.knightmusic.broadcast
+        PRODUCT_NAME: KnightMusicBroadcast
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: KnightMusicBroadcast/Info.plist
+        CODE_SIGN_ENTITLEMENTS: KnightMusicBroadcast/KnightMusicBroadcast.entitlements
+    info:
+      path: KnightMusicBroadcast/Info.plist
+      properties:
+        CFBundleDisplayName: Knight Music
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: Knight Music connects to your server on your local network to identify songs.
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
 
   KnightMusicWidgets:
     type: app-extension

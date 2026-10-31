@@ -6,7 +6,9 @@
 set -uo pipefail
 APP="$1"; OUT="$2"; mkdir -p "$OUT"
 BUNDLE=com.knightabdo.knightmusic
-SCREENS=(home search discover artists albums songs playlists album artist player lyrics queue settings customize icons server downloads onboarding knight)
+SCREENS=(home search discover artists albums songs playlists album artist player lyrics queue settings customize icons server downloads onboarding knight recognized recognize)
+QUICK="${SHOT_SCREENS:-}"
+[ -n "$QUICK" ] && IFS=, read -ra SCREENS <<< "$QUICK"
 LANDSCAPE=(home albums artists album player)   # iPad only; Simulator.app rotates the device (apps can't on iPadOS 26)
 
 
@@ -38,7 +40,8 @@ run_device() {
   for s in "${SCREENS[@]}"; do
     xcrun simctl terminate "$udid" $BUNDLE 2>/dev/null
     xcrun simctl launch "$udid" $BUNDLE -KMDemo YES -KMScreen "$s" >/dev/null
-    sleep 9
+    # Routing runs only after the demo sync finishes, and the demo server is sometimes slow.
+    sleep "$([ -n "$QUICK" ] && echo 20 || echo 9)"
     xcrun simctl io "$udid" screenshot "$OUT/${label}-${s}.png" >/dev/null 2>&1 && echo "shot $label-$s"
   done
   if [ "$label" = ipad ] && rotate_left "$udid"; then
@@ -54,5 +57,5 @@ run_device() {
 }
 
 run_device iphone "$(pick '^iPhone \d+ Pro$')"
-run_device ipad "$(pick '^iPad Pro 13')"
+[ -z "$QUICK" ] && run_device ipad "$(pick '^iPad Pro 13')"
 ls "$OUT"

@@ -132,6 +132,14 @@ enum DebugLaunch {
                     ui.isPlayerPresented = true
                 }
             }
+        case "recognize":
+            ui.startRecognition()
+        case "recognized":
+            // Goes through the real broadcast hand-off, so the shot shows what a match actually looks like.
+            let track = RecognizedTrack(id: "demo", title: "New Person, Same Old Mistakes", artist: "Tame Impala", album: "Currents")
+            RecognizedTracksStore.shared.add(track)
+            BroadcastResultMailbox.post(trackID: track.id)
+            ui.isRecognitionPresented = app.shazam.consumeBroadcastResult()
         case "settings":
             ui.selectedTab = .settings
         case "customize", "icons":

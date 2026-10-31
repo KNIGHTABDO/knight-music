@@ -16,59 +16,57 @@ struct MusicRecognitionSheet: View {
             ZStack {
                 Theme.background.ignoresSafeArea()
 
-                VStack(spacing: 24) {
-                    Spacer(minLength: 16)
-
-                    switch app.shazam.state {
-                    case .idle, .listening, .matching:
-                        listeningView
-                    case .matched(let track):
-                        matchedView(track: track)
-                    case .notFound:
-                        notFoundView
-                    case .error(let message):
-                        errorView(message: message)
+                // Scrolls only when the content is taller than the sheet; otherwise stays vertically centered.
+                ScrollView {
+                    Group {
+                        switch app.shazam.state {
+                        case .idle, .listening:
+                            listeningView
+                        case .matched(let track):
+                            matchedView(track: track)
+                        case .notFound:
+                            notFoundView
+                        case .error(let message):
+                            errorView(message: message)
+                        }
                     }
-
-                    Spacer(minLength: 16)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 24)
+                .defaultScrollAnchor(.center, for: .alignment)
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle("Music Recognition")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    Button(role: .close) {
                         dismiss()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(Theme.secondaryLabel)
                     }
                 }
             }
         }
-        .presentationDetents([.fraction(0.68), .large])
+        .presentationDetents([.fraction(0.75), .large])
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(Theme.Radius.hero)
         .onAppear {
             isPulsing = true
-            app.shazam.startListening(library: library)
+            if ui.recognitionShouldStart || app.shazam.state == .idle {
+                ui.recognitionShouldStart = false
+                app.shazam.startListening()
+            }
         }
         .onDisappear {
             app.shazam.stopListening()
         }
-        .onChange(of: app.shazam.currentTrack?.id) { _, _ in
-            if let track = app.shazam.currentTrack {
-                isResolvingLocal = true
-                Task {
-                    let song = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist, library: library)
-                    await MainActor.run {
-                        self.localMatch = song
-                        self.isResolvingLocal = false
-                    }
-                }
-            }
+        // .task, not onChange: the sheet can open on a match found while the app was in the background.
+        .task(id: app.shazam.currentTrack?.id) {
+            localMatch = nil
+            guard let track = app.shazam.currentTrack else { return }
+            isResolvingLocal = true
+            localMatch = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist)
+            isResolvingLocal = false
         }
     }
 
@@ -106,25 +104,15 @@ struct MusicRecognitionSheet: View {
                     .font(.kmSectionTitle)
                     .foregroundStyle(Theme.label)
 
-                Text("Keep your device near the audio to identify the song.")
+                Text("Hold your device near the speaker. Other apps keep playing.")
                     .font(.kmRowSubtitle)
+                    .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(Theme.secondaryLabel)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
             }
 
-            Button {
-                dismiss()
-            } label: {
-                Text("Cancel")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(Theme.secondaryLabel)
-                    .frame(height: 44)
-                    .padding(.horizontal, 32)
-                    .background(Theme.secondaryBackground)
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
+            DeviceAudioBroadcastButton()
         }
     }
 
@@ -209,13 +197,10 @@ struct MusicRecognitionSheet: View {
                             Text("Play in Knight Music")
                         }
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                        .frame(height: 38)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glassProminent)
 
                     Button {
                         dismiss()
@@ -226,13 +211,10 @@ struct MusicRecognitionSheet: View {
                             Text("Add to Playlist")
                         }
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Theme.label)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(Theme.secondaryBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                        .frame(height: 32)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
                 } else {
                     Button {
                         dismiss()
@@ -243,13 +225,10 @@ struct MusicRecognitionSheet: View {
                             Text("Stream on YouTube Music")
                         }
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                        .frame(height: 38)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glassProminent)
 
                     Button {
                         dismiss()
@@ -260,19 +239,16 @@ struct MusicRecognitionSheet: View {
                             Text("Ask Knight to Download")
                         }
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Theme.label)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(Theme.secondaryBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                        .frame(height: 32)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
                 }
 
                 // Recognize another
                 Button {
                     localMatch = nil
-                    app.shazam.startListening(library: library)
+                    app.shazam.startListening()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.clockwise")
@@ -314,22 +290,21 @@ struct MusicRecognitionSheet: View {
                     .padding(.horizontal, 16)
             }
 
+            DeviceAudioBroadcastButton()
+
             Button {
                 Haptics.impact(.light)
-                app.shazam.startListening(library: library)
+                app.shazam.startListening()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.clockwise")
                     Text("Try Again")
                 }
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(Theme.accent)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                .frame(height: 38)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glassProminent)
         }
     }
 
@@ -348,7 +323,7 @@ struct MusicRecognitionSheet: View {
             }
 
             VStack(spacing: 8) {
-                Text("Recognition Error")
+                Text("Couldn’t Identify")
                     .font(.kmSectionTitle)
                     .foregroundStyle(Theme.label)
 
@@ -361,20 +336,17 @@ struct MusicRecognitionSheet: View {
 
             Button {
                 Haptics.impact(.light)
-                app.shazam.startListening(library: library)
+                app.shazam.startListening()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.clockwise")
                     Text("Retry")
                 }
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(Theme.accent)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                .frame(height: 38)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glassProminent)
         }
     }
 }

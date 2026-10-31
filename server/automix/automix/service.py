@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import planner, showcase
+from . import planner, recognize, showcase
 from .youtube import VIDEO_ID, YouTube
 from .analyze import ANALYSIS_VERSION
 
@@ -411,6 +411,23 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                     return self._send(400, {"error": "bad video id"})
                 meta = {k: str(body[k]) for k in ("title", "artist", "album", "year") if body.get(k)}
                 return self._send(200, yt.start_import(video_id, meta, query))
+            if url.path.rstrip("/") == "/automix/v1/recognize":
+                if not auth.check(query):
+                    return self._send(401, {"error": "invalid credentials"})
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                if not 0 < length <= recognize.MAX_CLIP_BYTES:
+                    return self._send(413, {"error": "clip must be 1 byte to 2 MB"})
+                clip = self.rfile.read(length)
+                if clip[:4] != b"RIFF":
+                    return self._send(400, {"error": "clip must be a WAV file"})
+                try:
+                    return self._send(200, recognize.recognize(clip))
+                except recognize.RecognitionFailed as error:
+                    log.warning("recognition failed: %s", error)
+                    return self._send(502, {"error": str(error)})
             if url.path.rstrip("/") != "/automix/v1/plans":
                 return self._send(404, {"error": "not found"})
             if not auth.check(query):

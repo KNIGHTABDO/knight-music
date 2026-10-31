@@ -25,6 +25,7 @@ Runs next to Navidrome and gives Knight Music Apple-Music-style AutoMix: beat-ma
 | `GET plan?from=<songId>&to=<songId>` | one transition plan (`final: false` while a song is still being analysed) |
 | `POST plans` `{"pairs": [[a, b], ...]}` | up to 50 plans at once (the app prefetches the queue) |
 | `GET analysis/<songId>` | raw analysis |
+| `POST recognize` (WAV body, max 2 MB) | identifies a clip via Shazam's unofficial web API (`automix/recognize.py`): `{"match": false}` or title, artist, album, artwork; 502 when the lookup itself fails |
 
 Reachable at `https://<tailnet host>/automix/...` (Tailscale Funnel path, see `deploy/install.sh`) and on the LAN at
 `http://<host>:4534/automix/...`.

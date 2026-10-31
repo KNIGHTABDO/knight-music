@@ -1,5 +1,5 @@
 # Every push: compile for the simulator (the compiler gate — there is no Mac locally).
-# Screenshots (never on release tags): on main, on commits containing [shots], or by hand (Run workflow → screens: true).
+# Screenshots (never on release tags): on main, on commits containing [shots] or [shots:a,b] (quick: those screens, iPhone only), or by hand (Run workflow → screens: true).
 #   Simulator screenshots of every screen (iPhone + iPad) against demo.navidrome.org → artifact "screens".
 # Tags v*: unsigned KnightMusic.ipa attached to a GitHub Release (install with SideStore).
 name: iOS
@@ -66,8 +66,13 @@ jobs:
           echo "BUILD OK"
 
       - name: Screenshots
-        if: github.ref_type != 'tag' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[shots]') || inputs.screens)
-        run: bash scripts/screens.sh build/dd/Build/Products/Debug-iphonesimulator/KnightMusic.app screens
+        if: github.ref_type != 'tag' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[shots]') || contains(github.event.head_commit.message, '[shots:') || inputs.screens)
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          # [shots:a,b] = only those screens, iPhone only.
+          export SHOT_SCREENS="$(printf '%s' "$COMMIT_MESSAGE" | sed -n 's/.*\[shots:\([a-z,-]*\)\].*/\1/p' | head -1)"
+          bash scripts/screens.sh build/dd/Build/Products/Debug-iphonesimulator/KnightMusic.app screens
 
       - name: CarPlay screenshots
         if: github.ref_type != 'tag' && contains(github.event.head_commit.message, '[carplay]')

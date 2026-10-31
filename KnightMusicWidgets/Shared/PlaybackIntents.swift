@@ -1,11 +1,5 @@
 import AppIntents
 import Foundation
-#if canImport(ShazamKit)
-import ShazamKit
-#endif
-#if canImport(AVFoundation)
-import AVFoundation
-#endif
 
 @MainActor
 public protocol IntentPlaybackHandling: AnyObject {
@@ -115,7 +109,9 @@ public struct PlayFavoriteSongIntent: AudioPlaybackIntent {
 
 @MainActor
 public protocol IntentRecognitionHandling: AnyObject {
-    func startRecognition()
+    /// Runs to the end of recognition. false when iOS refused to start from the background.
+    func recognizeInBackground() async -> Bool
+    func recognizeInForeground() async
 }
 
 public enum IntentRecognitionBridge {
@@ -125,110 +121,17 @@ public enum IntentRecognitionBridge {
 public struct RecognizeMusicIntent: AudioRecordingIntent, LiveActivityIntent {
     public static var title: LocalizedStringResource = "Recognize Music"
     public static var description = IntentDescription("Identifies music playing around you using Knight Music.")
-    public static var openAppWhenRun: Bool = false
+    /// Stays in the current app when iOS allows the mic to start there, and opens Knight Music only when it doesn't.
+    public static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
 
     public init() {}
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        // Also inform in-app handler if the main app is running
-        IntentRecognitionBridge.handler?.startRecognition()
-
-        // Start Live Activity immediately on tap
-        RecognitionActivityManager.shared.startListening()
-
-        #if canImport(ShazamKit)
-        if #available(iOS 17.0, *) {
-            #if canImport(AVFoundation)
-            let audioSession = AVAudioSession.sharedInstance()
-            try? audioSession.setCategory(
-                .playAndRecord,
-                mode: .default,
-                options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth]
-            )
-            try? audioSession.setActive(true)
-            #endif
-
-            do {
-                let session = SHManagedSession()
-                await session.prepare()
-
-                var hasMatched = false
-                let timeoutTask = Task {
-                    try? await Task.sleep(nanoseconds: 20_000_000_000)
-                    if !Task.isCancelled && !hasMatched {
-                        session.cancel()
-                    }
-                }
-
-                for await result in session.results {
-                    switch result {
-                    case .match(let match):
-                        hasMatched = true
-                        timeoutTask.cancel()
-                        session.cancel()
-
-                        if let item = match.mediaItems.first {
-                            let title = item.title ?? "Unknown Title"
-                            let artist = item.artist ?? "Unknown Artist"
-                            let track = RecognizedTrack(
-                                id: item.shazamID ?? UUID().uuidString,
-                                title: title,
-                                artist: artist,
-                                album: item.subtitle,
-                                artworkURL: item.artworkURL,
-                                appleMusicURL: item.appleMusicURL,
-                                isrc: item.isrc
-                            )
-                            RecognizedTracksStore.shared.add(track)
-
-                            await RecognitionActivityManager.shared.updateMatched(
-                                title: title,
-                                artist: artist,
-                                artworkURL: item.artworkURL,
-                                localSongId: nil
-                            )
-                        } else {
-                            await RecognitionActivityManager.shared.updateNotFound()
-                        }
-                        return .result()
-
-                    case .noMatch:
-                        // Window buffer did not match; continue listening until 20s timeout
-                        continue
-
-                    case .error(let error, _):
-                        let nsError = error as NSError
-                        if nsError.domain == "com.apple.ShazamKit" && nsError.code == 202 {
-                            // 202 = matchAttemptFailed (audio window didn't yield a match yet); continue listening!
-                            continue
-                        } else {
-                            hasMatched = true
-                            timeoutTask.cancel()
-                            session.cancel()
-                            await RecognitionActivityManager.shared.updateError("Recognition failed: \(error.localizedDescription)")
-                            return .result()
-                        }
-
-                    @unknown default:
-                        continue
-                    }
-                }
-
-                timeoutTask.cancel()
-                if !hasMatched {
-                    await RecognitionActivityManager.shared.updateNotFound()
-                }
-            } catch {
-                await RecognitionActivityManager.shared.updateError("Capture error: \(error.localizedDescription)")
-            }
-        } else {
-            await RecognitionActivityManager.shared.updateError("Requires iOS 17+")
-        }
-        #else
-        await RecognitionActivityManager.shared.updateError("ShazamKit not supported")
-        #endif
-
+        guard let handler = IntentRecognitionBridge.handler else { return .result() }
+        if await handler.recognizeInBackground() { return .result() }
+        try await continueInForeground(alwaysConfirm: false)
+        await handler.recognizeInForeground()
         return .result()
     }
 }

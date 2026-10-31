@@ -18,7 +18,9 @@ public final class RecognitionActivityManager {
 
     private init() {}
 
-    public func startListening() {
+    /// false when no Live Activity could start, which AudioRecordingIntent requires to keep recording.
+    @discardableResult
+    public func startListening() -> Bool {
         dismissTask?.cancel()
         dismissTask = nil
 
@@ -33,11 +35,11 @@ public final class RecognitionActivityManager {
                     )
                 )
             }
-            return
+            return true
         }
 
         // Check if device supports Live Activities
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
 
         let attributes = MusicRecognitionAttributes()
         let initialContent = ActivityContent(
@@ -51,8 +53,10 @@ public final class RecognitionActivityManager {
                 content: initialContent,
                 pushType: nil
             )
+            return true
         } catch {
             print("Failed to start MusicRecognition Live Activity: \(error)")
+            return false
         }
     }
 
