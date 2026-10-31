@@ -229,9 +229,7 @@ public struct MusicRecognitionLiveActivity: Widget {
     }
 
     private func deepLinkURL(songId: String?) -> URL {
-        if let songId, !songId.isEmpty {
-            return URL(string: "knightmusic://song/\(songId)") ?? URL(string: "knightmusic://recognize")!
-        }
-        return URL(string: "knightmusic://recognize")!
+        // Opens the sheet on the current state; it never restarts listening or loses the match.
+        URL(string: "knightmusic://recognize")!
     }
 }

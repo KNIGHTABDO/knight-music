@@ -166,7 +166,7 @@ struct IdentifiedSongsView: View {
 
     private func handleTap(track: RecognizedTrack) {
         Task {
-            if let song = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist, library: library) {
+            if let song = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist) {
                 await MainActor.run {
                     Haptics.impact(.medium)
                     player.play([song], startAt: 0, shuffle: false)

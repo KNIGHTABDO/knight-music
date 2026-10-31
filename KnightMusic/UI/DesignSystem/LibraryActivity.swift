@@ -33,7 +33,7 @@ extension View {
             .onOpenURL { url in
                 guard url.scheme?.lowercased() == "knightmusic", let host = url.host?.lowercased() else { return }
                 if host == "recognize" {
-                    NotificationCenter.default.post(name: .startMusicRecognition, object: nil)
+                    NotificationCenter.default.post(name: .showMusicRecognition, object: nil)
                     return
                 }
                 let id = url.pathComponents.dropFirst().first ?? ""

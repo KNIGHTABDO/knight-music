@@ -9,6 +9,7 @@ if [ ! -x "$ROOT/.venv/bin/python" ]; then
   uv pip install -q --python "$ROOT/.venv/bin/python" torch torchaudio --index-url https://download.pytorch.org/whl/cpu
   uv pip install -q --python "$ROOT/.venv/bin/python" "git+https://github.com/CPJKU/beat_this" librosa soundfile soxr numpy scipy
 fi
+uv pip install -q --python "$ROOT/.venv/bin/python" shazamio
 rsync -a --delete "$HERE/automix/" "$ROOT/app/automix/"
 sudo install -m 644 "$HERE/deploy/knight-automix.service" /etc/systemd/system/knight-automix.service
 sudo systemctl daemon-reload

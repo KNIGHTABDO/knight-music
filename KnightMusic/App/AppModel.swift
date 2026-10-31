@@ -77,6 +77,7 @@ final class AppModel {
         installServiceWiring()
         hermes.configure(app: self, library: library, artwork: artwork)
         WidgetBridge.shared.start(app: self)
+        shazam.configure(app: self)
         discord.start(app: self)
     }
 
@@ -124,6 +125,9 @@ final class AppModel {
     }
 
     func handleForeground() {
+        if shazam.consumeBroadcastResult() {
+            NotificationCenter.default.post(name: .showMusicRecognition, object: nil)
+        }
         if started {
             updates.checkIfDue()
             autoMixShowcase?.refreshIfDue()
@@ -290,10 +294,6 @@ final class AppModel {
     }
 
 
-    func startRecognition() {
-        NotificationCenter.default.post(name: .startMusicRecognition, object: nil)
-    }
-
     private func stopReachabilityRecovery() {
         recoveryTask?.cancel()
         recoveryTask = nil
@@ -458,5 +458,5 @@ final class AppModel {
 }
 
 extension Notification.Name {
-    static let startMusicRecognition = Notification.Name("knightmusic.startMusicRecognition")
+    static let showMusicRecognition = Notification.Name("knightmusic.showMusicRecognition")
 }

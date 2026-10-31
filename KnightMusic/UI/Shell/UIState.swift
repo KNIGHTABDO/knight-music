@@ -29,7 +29,11 @@ final class UIState {
     /// Whether the music recognition sheet is presented.
     var isRecognitionPresented = false
 
+    /// Set when the sheet should begin a new recognition instead of showing the one in progress or just finished.
+    var recognitionShouldStart = false
+
     func startRecognition() {
+        recognitionShouldStart = true
         isRecognitionPresented = true
     }
 

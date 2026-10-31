@@ -60,8 +60,8 @@ struct RootView: View {
         .sheet(isPresented: $ui.isRecognitionPresented) {
             MusicRecognitionSheet()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .startMusicRecognition)) { _ in
-            ui.startRecognition()
+        .onReceive(NotificationCenter.default.publisher(for: .showMusicRecognition)) { _ in
+            ui.isRecognitionPresented = true
         }
         .tint(LookStore.shared.accent)
         .environment(ui)

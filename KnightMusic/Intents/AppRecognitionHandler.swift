@@ -8,9 +8,16 @@ final class AppRecognitionHandler: IntentRecognitionHandling {
         self.app = app
     }
 
-    func startRecognition() {
+    func recognizeInBackground() async -> Bool {
+        guard let app = app ?? AppModel.shared else { return false }
+        app.startIfNeeded()
+        return await app.shazam.recognizeInBackground()
+    }
+
+    func recognizeInForeground() async {
         guard let app = app ?? AppModel.shared else { return }
         app.startIfNeeded()
-        app.startRecognition()
+        NotificationCenter.default.post(name: .showMusicRecognition, object: nil)
+        await app.shazam.recognizeInForeground()
     }
 }
