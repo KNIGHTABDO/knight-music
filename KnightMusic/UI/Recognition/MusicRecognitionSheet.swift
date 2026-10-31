@@ -16,23 +16,26 @@ struct MusicRecognitionSheet: View {
             ZStack {
                 Theme.background.ignoresSafeArea()
 
-                VStack(spacing: 24) {
-                    Spacer(minLength: 16)
-
-                    switch app.shazam.state {
-                    case .idle, .listening:
-                        listeningView
-                    case .matched(let track):
-                        matchedView(track: track)
-                    case .notFound:
-                        notFoundView
-                    case .error(let message):
-                        errorView(message: message)
+                // Scrolls only when the content is taller than the sheet; otherwise stays vertically centered.
+                ScrollView {
+                    Group {
+                        switch app.shazam.state {
+                        case .idle, .listening:
+                            listeningView
+                        case .matched(let track):
+                            matchedView(track: track)
+                        case .notFound:
+                            notFoundView
+                        case .error(let message):
+                            errorView(message: message)
+                        }
                     }
-
-                    Spacer(minLength: 16)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 24)
+                .defaultScrollAnchor(.center, for: .alignment)
+                .scrollBounceBehavior(.basedOnSize)
             }
             .navigationTitle("Music Recognition")
             .navigationBarTitleDisplayMode(.inline)
