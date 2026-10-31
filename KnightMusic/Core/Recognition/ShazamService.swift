@@ -69,6 +69,8 @@ final class ShazamService {
         let store = RecognizedTracksStore.shared
         store.reload()
         guard let track = store.tracks.first(where: { $0.id == id }) else { return false }
+        // The sheet's mic run is usually still going; left alone, its outcome would overwrite this match.
+        stopListening()
         currentTrack = track
         state = .matched(track)
         return true
