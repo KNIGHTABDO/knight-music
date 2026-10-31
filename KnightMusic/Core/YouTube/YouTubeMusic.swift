@@ -83,6 +83,17 @@ actor YouTubeMusic {
         return results
     }
 
+    /// Songs only, for lookups that don't need the other four searches `search` runs.
+    func searchSongs(_ query: String) async throws -> [YTSong] {
+        let params = await store.current().searchParams
+        guard let items = await searchItems(query, params: params["songs"]) else {
+            // The filtered search failed: report the real error.
+            _ = try await call("search", ["query": query])
+            return []
+        }
+        return items.compactMap { if case .song(var s) = $0 { s.isVideo = false; return s } else { return nil } }
+    }
+
     private func searchItems(_ query: String, params: String?) async -> [YTItem]? {
         var body: JSON = ["query": query]
         if let params { body["params"] = params }

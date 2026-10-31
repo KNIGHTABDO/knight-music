@@ -50,8 +50,19 @@ final class SampleHandler: RPBroadcastSampleHandler {
         content.title = track.title
         content.body = track.artist
         content.sound = .default
+        if let poster = await posterAttachment(for: track) { content.attachments = [poster] }
         let request = UNNotificationRequest(identifier: "recognized-\(track.id)", content: content, trigger: nil)
         try? await UNUserNotificationCenter.current().add(request)
+    }
+
+    private func posterAttachment(for track: RecognizedTrack) async -> UNNotificationAttachment? {
+        guard let url = track.artworkURL else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        guard (try? data.write(to: file)) != nil else { return nil }
+        return try? UNNotificationAttachment(identifier: "poster", url: file)
     }
 
     /// ReplayKit's only way to end a broadcast is with an error, whose reason iOS shows to the user.

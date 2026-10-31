@@ -57,7 +57,12 @@ struct RootView: View {
                 .environment(\.colorScheme, .dark)
                 .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
         }
-        .sheet(isPresented: $ui.isRecognitionPresented) {
+        .sheet(isPresented: $ui.isRecognitionPresented, onDismiss: {
+            if ui.playerAfterRecognition {
+                ui.playerAfterRecognition = false
+                ui.isPlayerPresented = true
+            }
+        }) {
             MusicRecognitionSheet()
         }
         .onReceive(NotificationCenter.default.publisher(for: .showMusicRecognition)) { _ in

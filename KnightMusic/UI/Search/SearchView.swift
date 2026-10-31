@@ -83,7 +83,7 @@ struct SearchView: View {
                     Haptics.impact(.light)
                     ui?.startRecognition()
                 } label: {
-                    Image(systemName: "shazam.logo.fill")
+                    Image(systemName: "waveform.circle.fill")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Theme.accent)
                 }
@@ -159,7 +159,7 @@ struct SearchView: View {
                         Circle()
                             .fill(Theme.accent)
                             .frame(width: 44, height: 44)
-                        Image(systemName: "shazam.logo.fill")
+                        Image(systemName: "waveform.circle.fill")
                             .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(.white)
                     }

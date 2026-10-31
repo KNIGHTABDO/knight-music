@@ -37,7 +37,7 @@ struct RecognizeMusicControlWidget: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: Self.kind) {
             ControlWidgetButton(action: RecognizeMusicIntent()) {
-                Label("Recognize Music", systemImage: "shazam.logo.fill")
+                Label("Recognize Music", systemImage: "waveform.circle.fill")
             }
         }
         .displayName("Recognize Music")

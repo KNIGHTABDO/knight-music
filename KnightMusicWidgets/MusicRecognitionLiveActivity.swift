@@ -2,6 +2,8 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
+private let brandRed = Color(red: 250 / 255, green: 45 / 255, blue: 72 / 255)
+
 public struct MusicRecognitionLiveActivity: Widget {
     private let appGroupIdentifier = "group.com.knightabdo.knightmusic"
 
@@ -15,31 +17,27 @@ public struct MusicRecognitionLiveActivity: Widget {
                 case .matched(let title, let artist, _, let artworkFileName, let localSongId):
                     Link(destination: deepLinkURL(songId: localSongId)) {
                         HStack(spacing: 12) {
-                            artworkView(filename: artworkFileName, size: 48, cornerRadius: 8)
+                            artworkView(filename: artworkFileName, size: 64, cornerRadius: 12)
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(title)
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(.system(size: 16, weight: .semibold))
                                     .foregroundStyle(.white)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
                                 Text(artist)
-                                    .font(.system(size: 13, weight: .regular))
+                                    .font(.system(size: 14, weight: .regular))
                                     .foregroundStyle(Color(white: 0.7))
                                     .lineLimit(1)
                             }
 
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color(white: 0.5))
+                            Spacer(minLength: 0)
                         }
                     }
                 case .listening:
                     HStack(spacing: 12) {
-                        Image(systemName: "shazam.logo.fill")
+                        Image(systemName: "waveform.circle.fill")
                             .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(Color.blue)
+                            .foregroundStyle(brandRed)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Listening for music...")
@@ -54,7 +52,7 @@ public struct MusicRecognitionLiveActivity: Widget {
 
                         Image(systemName: "waveform")
                             .font(.system(size: 16))
-                            .foregroundStyle(Color.blue)
+                            .foregroundStyle(brandRed)
                     }
                 case .notFound:
                     HStack(spacing: 12) {
@@ -89,15 +87,15 @@ public struct MusicRecognitionLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     switch context.state.phase {
                     case .matched(_, _, _, let artworkFileName, _):
-                        artworkView(filename: artworkFileName, size: 52, cornerRadius: 12)
+                        artworkView(filename: artworkFileName, size: 60, cornerRadius: 12)
                             .padding(.leading, 8)
                             .padding(.top, 4)
                     case .listening:
                         ZStack {
-                            Circle().fill(Color.blue.opacity(0.2)).frame(width: 44, height: 44)
-                            Image(systemName: "shazam.logo.fill")
+                            Circle().fill(brandRed.opacity(0.2)).frame(width: 44, height: 44)
+                            Image(systemName: "waveform.circle.fill")
                                 .font(.system(size: 20, weight: .semibold))
-                                .foregroundStyle(Color.blue)
+                                .foregroundStyle(brandRed)
                         }
                         .padding(.leading, 8)
                     default:
@@ -115,7 +113,7 @@ public struct MusicRecognitionLiveActivity: Widget {
                             Text(title)
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.white)
-                                .lineLimit(1)
+                                .lineLimit(2)
                             Text(artist)
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundStyle(Color(white: 0.7))
@@ -154,7 +152,7 @@ public struct MusicRecognitionLiveActivity: Widget {
                     case .listening:
                         Image(systemName: "waveform")
                             .font(.system(size: 16))
-                            .foregroundStyle(Color.blue)
+                            .foregroundStyle(brandRed)
                             .padding(.trailing, 8)
                     default:
                         EmptyView()
@@ -165,9 +163,9 @@ public struct MusicRecognitionLiveActivity: Widget {
                 case .matched(_, _, _, let artworkFileName, _):
                     artworkView(filename: artworkFileName, size: 18, cornerRadius: 4)
                 case .listening:
-                    Image(systemName: "shazam.logo.fill")
+                    Image(systemName: "waveform.circle.fill")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.blue)
+                        .foregroundStyle(brandRed)
                 default:
                     Image(systemName: "xmark")
                         .font(.system(size: 11))
@@ -184,7 +182,7 @@ public struct MusicRecognitionLiveActivity: Widget {
                 case .listening:
                     Image(systemName: "waveform")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.blue)
+                        .foregroundStyle(brandRed)
                 default:
                     EmptyView()
                 }
@@ -193,9 +191,9 @@ public struct MusicRecognitionLiveActivity: Widget {
                 case .matched(_, _, _, let artworkFileName, _):
                     artworkView(filename: artworkFileName, size: 14, cornerRadius: 3)
                 default:
-                    Image(systemName: "shazam.logo.fill")
+                    Image(systemName: "waveform.circle.fill")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.blue)
+                        .foregroundStyle(brandRed)
                 }
             }
             .widgetURL(deepLinkURL(songId: context.state.localSongId))
