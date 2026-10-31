@@ -58,12 +58,23 @@ struct RootView: View {
                 .navigationTransition(.zoom(sourceID: "nowPlayingArtwork", in: playerZoomNamespace))
         }
         .sheet(isPresented: $ui.isRecognitionPresented, onDismiss: {
-            if ui.playerAfterRecognition {
-                ui.playerAfterRecognition = false
+            let followUp = ui.recognitionFollowUpAccountId == app.activeAccount?.id ? ui.recognitionFollowUp : nil
+            ui.recognitionFollowUp = nil
+            ui.recognitionFollowUpAccountId = nil
+            ui.recognitionTrack = nil
+            ui.recognitionAction = nil
+            switch followUp {
+            case .player:
                 ui.isPlayerPresented = true
+            case .playlist(let song):
+                ui.playlistPicker = PlaylistPickerRequest(songs: [song])
+            case .importSong(let song):
+                NavidromeImportCenter.shared.add(song, app: app, ui: ui)
+            case nil:
+                break
             }
         }) {
-            MusicRecognitionSheet()
+            MusicRecognitionSheet(savedTrack: ui.recognitionTrack, initialAction: ui.recognitionAction)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showMusicRecognition)) { _ in
             ui.isRecognitionPresented = true

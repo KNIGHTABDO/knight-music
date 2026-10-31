@@ -31,11 +31,32 @@ final class UIState {
 
     /// Set when the sheet should begin a new recognition instead of showing the one in progress or just finished.
     var recognitionShouldStart = false
-    /// iOS drops a cover requested while a sheet is still dismissing, so RootView presents it from onDismiss.
-    var playerAfterRecognition = false
+    var recognitionTrack: RecognizedTrack?
+    var recognitionAction: RecognizedSongAction?
+    /// Present the next screen only after the recognition sheet has finished dismissing.
+    enum RecognitionFollowUp {
+        case player
+        case playlist(Song)
+        case importSong(Song)
+    }
+    var recognitionFollowUp: RecognitionFollowUp?
+    var recognitionFollowUpAccountId: UUID?
 
     func startRecognition() {
+        recognitionTrack = nil
+        recognitionAction = nil
+        recognitionFollowUp = nil
+        recognitionFollowUpAccountId = nil
         recognitionShouldStart = true
+        isRecognitionPresented = true
+    }
+
+    func openRecognition(_ track: RecognizedTrack, action: RecognizedSongAction? = nil) {
+        recognitionTrack = track
+        recognitionAction = action
+        recognitionFollowUp = nil
+        recognitionFollowUpAccountId = nil
+        recognitionShouldStart = false
         isRecognitionPresented = true
     }
 

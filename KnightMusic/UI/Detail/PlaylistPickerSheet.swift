@@ -6,6 +6,8 @@ struct PlaylistPickerRequest: Identifiable {
     var songs: [Song]
     /// Pre-filled name for "New Playlist" (e.g. when saving the queue).
     var suggestedName: String = ""
+    var targetPlaylist: Playlist? = nil
+    var createNew = false
 }
 
 /// "Add to Playlist" sheet: a new playlist or any existing one (2x2 collages), works for many songs at once.
@@ -13,6 +15,7 @@ struct PlaylistPickerSheet: View {
     let request: PlaylistPickerRequest
 
     @Environment(LibraryRepository.self) private var library
+    @Environment(AppModel.self) private var app
     @Environment(UIState.self) private var ui
     @Environment(\.dismiss) private var dismiss
     @State private var newName = ""
@@ -20,6 +23,7 @@ struct PlaylistPickerSheet: View {
     @State private var isSaving = false
     @State private var playlistToFork: Playlist?
     @State private var showForkAlert = false
+    @State private var didApplyRequest = false
     @FocusState private var nameFocused: Bool
 
     var body: some View {
@@ -116,11 +120,28 @@ struct PlaylistPickerSheet: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: { playlist in
-                Text("'\(playlist.name)' is managed by the server or shared by another user. Would you like to create your own editable copy with this song added?")
+                Text("'\(playlist.name)' is managed by the server or shared by another user. Create your own editable copy with \(request.songs.count == 1 ? "this song" : "these songs") added?")
             }
             .overlay { if isSaving { ProgressView() } }
         }
         .observing(playlists)
+        .onChange(of: app.activeAccount?.id) { _, _ in dismiss() }
+        .task {
+            guard !didApplyRequest else { return }
+            didApplyRequest = true
+            if let target = request.targetPlaylist {
+                if target.isOwned(by: library.currentUsername) {
+                    add(to: target)
+                } else {
+                    playlistToFork = target
+                    showForkAlert = true
+                }
+            } else if request.createNew {
+                newName = request.suggestedName
+                isCreating = true
+                nameFocused = true
+            }
+        }
     }
 
     private var trimmedName: String { newName.trimmingCharacters(in: .whitespacesAndNewlines) }

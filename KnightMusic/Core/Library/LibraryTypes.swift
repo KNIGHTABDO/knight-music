@@ -51,12 +51,14 @@ enum LibraryError: LocalizedError {
     case notSignedIn
     case offline
     case notFound
+    case accountChanged
 
     var errorDescription: String? {
         switch self {
         case .notSignedIn: return "You are not signed in to a server."
         case .offline: return "You are offline. Go online to make this change."
         case .notFound: return "That item is no longer in your library."
+        case .accountChanged: return "The server changed. Try the action again on the intended server."
         }
     }
 }

@@ -1,9 +1,6 @@
 import SwiftUI
 
 struct IdentifiedSongsView: View {
-    @Environment(AppModel.self) private var app
-    @Environment(LibraryRepository.self) private var library
-    @Environment(PlayerEngine.self) private var player
     @Environment(UIState.self) private var ui
 
     @State private var store = RecognizedTracksStore.shared
@@ -25,7 +22,7 @@ struct IdentifiedSongsView: View {
                 List {
                     ForEach(store.tracks) { track in
                         Button {
-                            handleTap(track: track)
+                            ui.openRecognition(track, action: .play)
                         } label: {
                             HStack(spacing: 12) {
                                 if let url = track.artworkURL {
@@ -88,20 +85,36 @@ struct IdentifiedSongsView: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button {
-                                handleTap(track: track)
+                                ui.openRecognition(track, action: .play)
                             } label: {
                                 Label("Play Song", systemImage: "play.fill")
                             }
 
                             Button {
-                                ui.askKnight("Download song \(track.title) by \(track.artist) to my library")
+                                ui.openRecognition(track, action: .playNext)
                             } label: {
-                                Label("Download to Library", systemImage: "arrow.down.circle")
+                                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+                            }
+
+                            Button {
+                                ui.openRecognition(track, action: .addToQueue)
+                            } label: {
+                                Label("Add to Queue", systemImage: "text.append")
+                            }
+
+                            Button {
+                                ui.openRecognition(track, action: .addToLibrary)
+                            } label: {
+                                Label("Add to Library", systemImage: "plus.circle")
                             }
 
                             if let shareURL = track.appleMusicURL {
                                 ShareLink(item: shareURL) {
                                     Label("Share Link", systemImage: "square.and.arrow.up")
+                                }
+                            } else {
+                                ShareLink(item: "\(track.title) — \(track.artist)") {
+                                    Label("Share Song", systemImage: "square.and.arrow.up")
                                 }
                             }
 
@@ -164,19 +177,4 @@ struct IdentifiedSongsView: View {
         }
     }
 
-    private func handleTap(track: RecognizedTrack) {
-        Task {
-            if let song = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist) {
-                await MainActor.run {
-                    Haptics.impact(.medium)
-                    player.play([song], startAt: 0, shuffle: false)
-                }
-            } else {
-                await MainActor.run {
-                    Haptics.impact(.light)
-                    ui.askKnight("Play \(track.title) by \(track.artist) from YouTube Music")
-                }
-            }
-        }
-    }
 }

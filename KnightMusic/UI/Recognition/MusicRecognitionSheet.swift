@@ -1,6 +1,13 @@
 import SwiftUI
 
+enum RecognizedSongAction {
+    case play, playNext, addToQueue, addToLibrary
+}
+
 struct MusicRecognitionSheet: View {
+    var savedTrack: RecognizedTrack? = nil
+    var initialAction: RecognizedSongAction? = nil
+
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
@@ -12,6 +19,14 @@ struct MusicRecognitionSheet: View {
     @State private var isResolvingLocal = false
     @State private var youTube = YouTubeState.idle
     @State private var youTubeSearch: Task<Void, Never>?
+    @State private var pendingAction: RecognizedSongAction = .play
+    @State private var didApplyInitialAction = false
+
+    private var track: RecognizedTrack? { savedTrack ?? app.shazam.currentTrack }
+
+    private var recognitionState: ShazamService.RecognitionState {
+        savedTrack.map { .matched($0) } ?? app.shazam.state
+    }
 
     private enum YouTubeState: Equatable {
         case idle
@@ -28,7 +43,7 @@ struct MusicRecognitionSheet: View {
                 // Scrolls only when the content is taller than the sheet; otherwise stays vertically centered.
                 ScrollView {
                     Group {
-                        switch app.shazam.state {
+                        switch recognitionState {
                         case .idle, .listening:
                             listeningView
                         case .matched(let track):
@@ -61,24 +76,35 @@ struct MusicRecognitionSheet: View {
         .presentationCornerRadius(Theme.Radius.hero)
         .onAppear {
             isPulsing = true
-            if ui.recognitionShouldStart || app.shazam.state == .idle {
+            if savedTrack == nil, ui.recognitionShouldStart || app.shazam.state == .idle {
                 ui.recognitionShouldStart = false
                 app.shazam.startListening()
             }
         }
         .onDisappear {
             youTubeSearch?.cancel()
-            app.shazam.stopListening()
+            if savedTrack == nil { app.shazam.stopListening() }
         }
         // .task, not onChange: the sheet can open on a match found while the app was in the background.
-        .task(id: app.shazam.currentTrack?.id) {
+        .task(id: track?.id) {
             localMatch = nil
             youTubeSearch?.cancel()
             youTube = .idle
-            guard let track = app.shazam.currentTrack else { return }
+            pendingAction = .play
+            isResolvingLocal = false
+            guard let track else { return }
             isResolvingLocal = true
             localMatch = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist)
+            guard !Task.isCancelled else { return }
             isResolvingLocal = false
+            if !didApplyInitialAction, let initialAction {
+                didApplyInitialAction = true
+                perform(initialAction, track: track)
+            }
+        }
+        .onChange(of: app.sessionRevision) { _, _ in
+            youTubeSearch?.cancel()
+            dismiss()
         }
     }
 
@@ -180,7 +206,7 @@ struct MusicRecognitionSheet: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
 
-                if let local = localMatch {
+                if localMatch != nil {
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 13, weight: .semibold))
@@ -198,7 +224,9 @@ struct MusicRecognitionSheet: View {
 
             // Action Buttons
             VStack(spacing: 10) {
-                if let local = localMatch {
+                if isResolvingLocal {
+                    ProgressView("Checking Your Library…")
+                } else if let local = localMatch {
                     Button {
                         startPlaying(local)
                     } label: {
@@ -213,8 +241,9 @@ struct MusicRecognitionSheet: View {
                     .buttonStyle(.glassProminent)
 
                     Button {
+                        ui.recognitionFollowUp = .playlist(local)
+                        ui.recognitionFollowUpAccountId = app.activeAccount?.id
                         dismiss()
-                        ui.playlistPicker = PlaylistPickerRequest(songs: [local])
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "plus")
@@ -229,20 +258,49 @@ struct MusicRecognitionSheet: View {
                     youTubeSection(track: track)
                 }
 
-                // Recognize another
-                Button {
-                    localMatch = nil
-                    app.shazam.startListening()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise")
-                        Text("Identify Another Song")
+                Menu {
+                    Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+                        perform(.playNext, track: track)
                     }
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.secondaryLabel)
-                    .padding(.top, 4)
+                    Button("Add to Queue", systemImage: "text.append") {
+                        perform(.addToQueue, track: track)
+                    }
+                    if localMatch == nil {
+                        Button("Add to Library", systemImage: "plus.circle") {
+                            perform(.addToLibrary, track: track)
+                        }
+                    }
+                    if let url = track.appleMusicURL {
+                        ShareLink(item: url) {
+                            Label("Share Song", systemImage: "square.and.arrow.up")
+                        }
+                    } else {
+                        ShareLink(item: "\(track.title) — \(track.artist)") {
+                            Label("Share Song", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .disabled(isResolvingLocal || youTube == .searching)
+
+                // Recognize another
+                if savedTrack == nil {
+                    Button {
+                        localMatch = nil
+                        app.shazam.startListening()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Identify Another Song")
+                        }
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Theme.secondaryLabel)
+                        .padding(.top, 4)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.top, 4)
         }
@@ -258,7 +316,7 @@ struct MusicRecognitionSheet: View {
                 .foregroundStyle(Theme.secondaryLabel)
             ForEach(songs) { song in
                 Button {
-                    startPlaying(song.song)
+                    complete(pendingAction, song: song.song)
                 } label: {
                     choiceRow(song)
                 }
@@ -267,7 +325,7 @@ struct MusicRecognitionSheet: View {
         } else {
             let isSearching = youTube == .searching
             Button {
-                playOnYouTube(track)
+                perform(pendingAction, track: track)
             } label: {
                 HStack(spacing: 8) {
                     if isSearching {
@@ -275,7 +333,7 @@ struct MusicRecognitionSheet: View {
                     } else {
                         Image(systemName: "play.fill")
                     }
-                    Text("Play on YouTube Music")
+                    Text(actionTitle)
                 }
                 .font(.system(size: 16, weight: .semibold))
                 .frame(maxWidth: .infinity)
@@ -319,15 +377,31 @@ struct MusicRecognitionSheet: View {
         .contentShape(Rectangle())
     }
 
-    private func playOnYouTube(_ track: RecognizedTrack) {
+    private var actionTitle: String {
+        switch pendingAction {
+        case .play: "Play on YouTube Music"
+        case .playNext: "Find Song to Play Next"
+        case .addToQueue: "Find Song to Add to Queue"
+        case .addToLibrary: "Find Song to Add to Library"
+        }
+    }
+
+    private func perform(_ action: RecognizedSongAction, track: RecognizedTrack) {
+        pendingAction = action
+        if let localMatch {
+            complete(action, song: localMatch)
+            return
+        }
+        youTubeSearch?.cancel()
         youTube = .searching
+        let accountId = app.activeAccount?.id
         youTubeSearch = Task {
             do {
                 let result = try await YouTubeTrackMatcher.lookup(title: track.title, artist: track.artist)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, app.activeAccount?.id == accountId else { return }
                 switch result {
                 case .match(let song):
-                    startPlaying(song)
+                    complete(action, song: song)
                 case .choices(let songs):
                     youTube = songs.isEmpty ? .failed("This song isn't on YouTube Music.") : .choices(songs)
                 }
@@ -340,9 +414,29 @@ struct MusicRecognitionSheet: View {
     }
 
     private func startPlaying(_ song: Song) {
+        complete(.play, song: song)
+    }
+
+    private func complete(_ action: RecognizedSongAction, song: Song) {
         Haptics.impact(.medium)
-        player.play([song], startAt: 0, shuffle: false)
-        ui.playerAfterRecognition = true
+        ui.recognitionFollowUpAccountId = app.activeAccount?.id
+        switch action {
+        case .play:
+            player.play([song], startAt: 0, shuffle: false)
+            ui.recognitionFollowUp = .player
+        case .playNext:
+            player.enqueue([song], next: true)
+            ui.showToast("Playing Next")
+        case .addToQueue:
+            player.enqueue([song], next: false)
+            ui.showToast("Added to Queue")
+        case .addToLibrary:
+            if song.isYouTube {
+                ui.recognitionFollowUp = .importSong(song)
+            } else {
+                ui.showToast("Already in Your Library")
+            }
+        }
         dismiss()
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import SwiftUI
 
 /// Adds YouTube Music songs to Navidrome through Knight (the Hermes agent), so they arrive tagged, with art and
@@ -13,7 +14,10 @@ final class NavidromeImportCenter {
         let id = UUID()
         let song: Song
         let force: Bool
+        let accountId: UUID
+        let existingSongIds: Set<String>
         var conversationId: String?
+        var importedSong: Song?
         var state: State = .waiting
         var stage = "Waiting…"
 
@@ -33,6 +37,7 @@ final class NavidromeImportCenter {
         let song: Song
         let matches: [Song]
         let kind: Kind
+        let accountId: UUID
     }
 
     private(set) var jobs: [Job] = []
@@ -50,6 +55,15 @@ final class NavidromeImportCenter {
     }
 
     func add(_ song: Song, app: AppModel, ui: UIState) {
+        guard song.isYouTube, let accountId = app.activeAccount?.id else {
+            ui.showToast("Sign in to your server to add this song.")
+            return
+        }
+        if self.app !== app {
+            app.addSessionObserver(fireImmediately: false) { [weak self] app in
+                self?.sessionChanged(app)
+            }
+        }
         self.app = app
         self.ui = ui
         guard !isBusy(song) else {
@@ -60,7 +74,7 @@ final class NavidromeImportCenter {
         let matches = existingCopies(of: song, in: app)
         if !matches.isEmpty {
             let sameVersion = matches.contains { Self.versionTags($0.title) == Self.versionTags(song.title) }
-            confirmation = Confirmation(song: song, matches: matches, kind: sameVersion ? .same : .similar)
+            confirmation = Confirmation(song: song, matches: matches, kind: sameVersion ? .same : .similar, accountId: accountId)
             return
         }
         enqueue(song, force: false)
@@ -68,6 +82,10 @@ final class NavidromeImportCenter {
 
     func resolve(_ confirmation: Confirmation, addAnyway: Bool) {
         self.confirmation = nil
+        guard app?.activeAccount?.id == confirmation.accountId else {
+            ui?.showToast("The server changed. Add the song again on the intended server.")
+            return
+        }
         if addAnyway {
             enqueue(confirmation.song, force: true)
         } else {
@@ -82,21 +100,51 @@ final class NavidromeImportCenter {
     // MARK: - Queue
 
     private func enqueue(_ song: Song, force: Bool) {
-        withAnimation(.smooth) { jobs.append(Job(song: song, force: force)) }
-        ui?.showToast("Sending \u{201C}\(song.title)\u{201D} to Knight…")
+        guard let app, let accountId = app.activeAccount?.id, let database = app.database else { return }
+        do {
+            let ids = try database.pool.read { db in Set(try String.fetchAll(db, sql: "SELECT id FROM song")) }
+            withAnimation(.smooth) {
+                jobs.append(Job(song: song, force: force, accountId: accountId, existingSongIds: ids))
+            }
+        } catch {
+            Log.database.error("Couldn't prepare import: \(error.localizedDescription)")
+            ui?.showToast("Couldn't read your library. Try adding the song again.")
+            return
+        }
+        ui?.showToast("Adding \u{201C}\(song.title)\u{201D}…")
+        startRunnerIfNeeded()
+    }
+
+    private func startRunnerIfNeeded() {
         guard runner == nil else { return }
         runner = Task { [weak self] in
-            await self?.drain()
-            self?.runner = nil
+            guard let self else { return }
+            await drain()
+            runner = nil
+            if jobs.contains(where: { $0.state == .waiting }) { startRunnerIfNeeded() }
+        }
+    }
+
+    private func sessionChanged(_ app: AppModel) {
+        if confirmation?.accountId != app.activeAccount?.id { confirmation = nil }
+        let outdated = jobs.filter { !$0.isFinished && $0.accountId != app.activeAccount?.id }
+        guard !outdated.isEmpty else { return }
+        runner?.cancel()
+        for job in outdated {
+            update(job.id) {
+                $0.state = .failed("The server changed. Add the song again on the intended server.")
+                $0.stage = "Stopped after switching servers"
+            }
         }
     }
 
     private func drain() async {
-        while true {
-            while let index = jobs.firstIndex(where: { $0.state == .waiting }) {
+        while !Task.isCancelled {
+            while !Task.isCancelled, let index = jobs.firstIndex(where: { $0.state == .waiting }) {
                 await run(jobs[index].id)
             }
             try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
             if !jobs.contains(where: { $0.state == .waiting }) {
                 withAnimation(.smooth) { dismissFinished() }
                 return
@@ -112,13 +160,16 @@ final class NavidromeImportCenter {
     private func job(_ id: UUID) -> Job? { jobs.first { $0.id == id } }
 
     private func run(_ id: UUID) async {
-        guard let app, let ui, let song = job(id)?.song else { return }
+        guard let app, let ui, let job = job(id), let client = app.client else { return }
+        guard app.activeAccount?.id == job.accountId, !Task.isCancelled else { return }
+        let song = job.song
         let hermes = app.hermes
 
         guard hermes.settings.isConfigured else {
             update(id) { $0.state = .working; $0.stage = "Downloading on the server…" }
-            switch await YouTubeImporter.add(song) {
-            case .added: finish(id, .done)
+            switch await YouTubeImporter.add(song, client: client) {
+            case .downloaded(let path):
+                await confirmArrival(id, expectedPath: path)
             case .failed(let message): finish(id, .failed(message))
             }
             return
@@ -126,13 +177,17 @@ final class NavidromeImportCenter {
 
         // Knight runs one conversation at a time; never cut off one the user started.
         update(id) { $0.stage = "Waiting for Knight…" }
+        let waitDeadline = Date().addingTimeInterval(600)
         while hermes.isRunning {
             try? await Task.sleep(for: .seconds(1))
+            guard isCurrent(id) else { return }
+            if Date() >= waitDeadline { return finish(id, .failed("Knight is still busy. Try adding this song again later.")) }
         }
+        guard isCurrent(id) else { return }
 
         let conversationId = "km-\(UUID().uuidString.lowercased())"
         update(id) { $0.conversationId = conversationId; $0.state = .working; $0.stage = "Knight is on it…" }
-        hermes.sendMessage(conversationId: conversationId, text: prompt(for: song, force: job(id)?.force ?? false),
+        hermes.sendMessage(conversationId: conversationId, text: prompt(for: song, force: job.force),
                            app: app, library: app.library, artwork: app.artwork, ui: ui)
 
         var sawRun = false
@@ -140,6 +195,10 @@ final class NavidromeImportCenter {
         var lastRecovery = Date()
         while true {
             try? await Task.sleep(for: .seconds(1))
+            guard isCurrent(id) else { return }
+            if Date().timeIntervalSince(started) >= 600 {
+                return finish(id, .failed("Knight hasn't confirmed the download yet. Open Knight to check its progress."))
+            }
             let active = hermes.isRunning && hermes.activeConversationId == conversationId
             if active {
                 sawRun = true
@@ -166,25 +225,55 @@ final class NavidromeImportCenter {
             if reply.status == "failed" || reply.status == "stopped" {
                 return finish(id, .failed("Knight couldn't finish the import"))
             }
-            if reply.addedTracks.isEmpty && reply.matchedSongIds.isEmpty {
-                return finish(id, .failed("Knight couldn't add \u{201C}\(song.title)\u{201D}. Open Knight for details."))
-            }
-            if !reply.matchedSongIds.isEmpty || !(hermes.matchedSongs[reply.id] ?? []).isEmpty {
-                return finish(id, .done)
-            }
-            switch hermes.importStatus[reply.id] {
-            case "Not found yet":
-                return finish(id, .failed("Knight added it, but Navidrome hasn't picked it up yet"))
-            case nil where Date().timeIntervalSince(started) > 20:
-                return finish(id, .done)
-            default:
-                update(id) { $0.state = .importing; $0.stage = "Waiting for Navidrome to scan…" }
-            }
+            await confirmArrival(id)
+            return
         }
     }
 
+    private func isCurrent(_ id: UUID) -> Bool {
+        guard !Task.isCancelled, let job = job(id), !job.isFinished else { return false }
+        return app?.activeAccount?.id == job.accountId
+    }
+
+    private func confirmArrival(_ id: UUID, expectedPath: String? = nil) async {
+        guard isCurrent(id), let app, let job = job(id), let database = app.database else { return }
+        update(id) { $0.state = .importing; $0.stage = "Scanning your library…" }
+        do {
+            try await app.client?.startScan(fullScan: false)
+        } catch {
+            Log.sync.warning("Import scan request failed: \(error.localizedDescription)")
+        }
+
+        let deadline = Date().addingTimeInterval(180)
+        var attempt = 0
+        while isCurrent(id), Date() < deadline {
+            // A full pass also covers servers whose scan token doesn't change. Other polls use incremental sync.
+            await app.refresh(force: attempt % 6 == 0)
+            guard isCurrent(id) else { return }
+            do {
+                if let song = try await ImportedSongMatcher.find(job.song, in: database,
+                                                               excluding: job.existingSongIds, expectedPath: expectedPath) {
+                    guard isCurrent(id) else { return }
+                    update(id) { $0.importedSong = song }
+                    app.artwork.prefetch(for: [song])
+                    finish(id, .done)
+                    return
+                }
+            } catch {
+                Log.database.warning("Confirming import failed: \(error.localizedDescription)")
+            }
+            update(id) { $0.stage = "Waiting for the song to appear…" }
+            attempt += 1
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+        }
+        guard isCurrent(id) else { return }
+        finish(id, .failed("The song hasn't appeared in your library yet. Check Navidrome's scan and try again."))
+    }
+
     private func finish(_ id: UUID, _ state: Job.State) {
-        guard let title = job(id)?.song.title else { return }
+        guard isCurrent(id), let job = job(id) else { return }
+        if case .done = state, job.importedSong == nil { return }
+        let title = job.song.title
         update(id) {
             $0.state = state
             if case .done = state { $0.stage = "Added to your library" }
@@ -237,14 +326,14 @@ final class NavidromeImportCenter {
         }
     }
 
-    private static let versionWords = [
+    private nonisolated static let versionWords = [
         "slowed", "reverb", "sped up", "speed up", "nightcore", "remix", "live", "acoustic", "instrumental",
         "remaster", "remastered", "extended", "radio edit", "edit", "cover", "version", "mix", "8d", "bass boosted",
         "unplugged", "demo", "a cappella", "acapella", "karaoke", "orchestral", "piano",
     ]
 
     /// The version markers in a title ("slowed", "reverb", "remix"…), so "Song" and "Song (Slowed + Reverb)" differ.
-    static func versionTags(_ title: String) -> Set<String> {
+    nonisolated static func versionTags(_ title: String) -> Set<String> {
         let lower = title.lowercased()
         return Set(versionWords.filter { word in
             lower.range(of: "\\b\(NSRegularExpression.escapedPattern(for: word))\\b", options: .regularExpression) != nil

@@ -90,7 +90,7 @@ struct SongActionsMenu: View {
 
         Menu {
             Button {
-                ui.playlistPicker = PlaylistPickerRequest(songs: [song])
+                ui.playlistPicker = PlaylistPickerRequest(songs: [song], createNew: true)
             } label: {
                 Label("New Playlist…", systemImage: "plus")
             }
@@ -98,11 +98,7 @@ struct SongActionsMenu: View {
                 Divider()
                 ForEach(playlists) { pl in
                     Button(pl.name) {
-                        Task {
-                            if (try? await library.addToPlaylist(id: pl.id, songIds: [song.id])) != nil {
-                                ui.showToast("Added to \(pl.name)")
-                            }
-                        }
+                        ui.playlistPicker = PlaylistPickerRequest(songs: [song], targetPlaylist: pl)
                     }
                 }
             }

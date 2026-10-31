@@ -6,6 +6,7 @@ struct ShellBannersPresenter: ViewModifier {
     var insidePlayer: Bool
 
     @Environment(UIState.self) private var ui
+    @Environment(PlayerEngine.self) private var player
 
     private var imports: NavidromeImportCenter { .shared }
     private var isActive: Bool { ui.isPlayerPresented == insidePlayer }
@@ -21,6 +22,11 @@ struct ShellBannersPresenter: ViewModifier {
                         }
                         if let job = imports.visibleJob {
                             ImportProgressPill(job: job) {
+                                if let song = job.importedSong, job.state == .done {
+                                    player.play([song], startAt: 0, shuffle: false)
+                                    ui.isPlayerPresented = true
+                                    return
+                                }
                                 guard let conversationId = job.conversationId else { return }
                                 ui.isPlayerPresented = false
                                 ui.knightConversation = conversationId
@@ -122,7 +128,9 @@ private struct ImportProgressPill: View {
     @ViewBuilder private var statusIcon: some View {
         switch job.state {
         case .done:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.system(size: 20))
+            Label("Play", systemImage: "play.fill")
+                .foregroundStyle(Theme.accent)
+                .font(.system(size: 14, weight: .semibold))
         case .failed:
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Theme.accent).font(.system(size: 20))
         default:
