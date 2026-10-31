@@ -140,6 +140,13 @@ enum DebugLaunch {
             RecognizedTracksStore.shared.add(track)
             ui.openRecognition(track)
         case "identified":
+            if RecognizedTracksStore.shared.tracks.isEmpty, let database = app.database,
+               let song = try? await database.pool.read({ db in try Song.fetchOne(db) }) {
+                RecognizedTracksStore.shared.add(RecognizedTrack(
+                    id: song.id, title: song.title, artist: song.artist ?? "Unknown Artist", album: song.album,
+                    artworkURL: song.coverArt.flatMap { app.client?.coverArtURL(id: $0, size: 120) }
+                ))
+            }
             if isRegular {
                 ui.selectedTab = .section(.identifiedSongs)
             } else {

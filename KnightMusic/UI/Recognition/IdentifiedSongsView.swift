@@ -76,56 +76,23 @@ struct IdentifiedSongsView: View {
 
                                 Spacer()
 
-                                Image(systemName: "ellipsis")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(Theme.tertiaryLabel)
+                                Color.clear.frame(width: 44, height: 44)
                             }
                             .padding(.vertical, 4)
                         }
                         .buttonStyle(.plain)
-                        .contextMenu {
-                            Button {
-                                ui.openRecognition(track, action: .play)
+                        .overlay(alignment: .trailing) {
+                            Menu {
+                                historyActions(track)
                             } label: {
-                                Label("Play Song", systemImage: "play.fill")
+                                Image(systemName: "ellipsis")
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
                             }
-
-                            Button {
-                                ui.openRecognition(track, action: .playNext)
-                            } label: {
-                                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-                            }
-
-                            Button {
-                                ui.openRecognition(track, action: .addToQueue)
-                            } label: {
-                                Label("Add to Queue", systemImage: "text.append")
-                            }
-
-                            Button {
-                                ui.openRecognition(track, action: .addToLibrary)
-                            } label: {
-                                Label("Add to Library", systemImage: "plus.circle")
-                            }
-
-                            if let shareURL = track.appleMusicURL {
-                                ShareLink(item: shareURL) {
-                                    Label("Share Link", systemImage: "square.and.arrow.up")
-                                }
-                            } else {
-                                ShareLink(item: "\(track.title) — \(track.artist)") {
-                                    Label("Share Song", systemImage: "square.and.arrow.up")
-                                }
-                            }
-
-                            Divider()
-
-                            Button(role: .destructive) {
-                                store.remove(id: track.id)
-                            } label: {
-                                Label("Remove from History", systemImage: "trash")
-                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Actions for \(track.title)")
                         }
+                        .contextMenu { historyActions(track) }
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
                                 store.remove(id: track.id)
@@ -174,6 +141,51 @@ struct IdentifiedSongsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to delete all identified songs from history?")
+        }
+    }
+
+    @ViewBuilder
+    private func historyActions(_ track: RecognizedTrack) -> some View {
+        Button {
+            ui.openRecognition(track, action: .play)
+        } label: {
+            Label("Play Song", systemImage: "play.fill")
+        }
+
+        Button {
+            ui.openRecognition(track, action: .playNext)
+        } label: {
+            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+        }
+
+        Button {
+            ui.openRecognition(track, action: .addToQueue)
+        } label: {
+            Label("Add to Queue", systemImage: "text.append")
+        }
+
+        Button {
+            ui.openRecognition(track, action: .addToLibrary)
+        } label: {
+            Label("Add to Library", systemImage: "plus.circle")
+        }
+
+        if let shareURL = track.appleMusicURL {
+            ShareLink(item: shareURL) {
+                Label("Share Link", systemImage: "square.and.arrow.up")
+            }
+        } else {
+            ShareLink(item: "\(track.title) — \(track.artist)") {
+                Label("Share Song", systemImage: "square.and.arrow.up")
+            }
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            store.remove(id: track.id)
+        } label: {
+            Label("Remove from History", systemImage: "trash")
         }
     }
 

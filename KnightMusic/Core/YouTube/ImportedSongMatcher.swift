@@ -32,6 +32,9 @@ enum ImportedSongMatcher {
                       NavidromeImportCenter.versionTags(candidate.title) == NavidromeImportCenter.versionTags(source.title),
                       let artist = source.artist, let other = candidate.artist,
                       ArrivalWatcher.artistOverlaps(trackArtist: artist, songArtist: other) else { return false }
+                if let album = source.album, !album.isEmpty,
+                   let actualAlbum = candidate.album, !actualAlbum.isEmpty,
+                   ArrivalWatcher.normalize(album) != ArrivalWatcher.normalize(actualAlbum) { return false }
                 if let duration = source.duration, duration > 0, let actual = candidate.duration, actual > 0 {
                     return abs(duration - actual) <= max(10, duration / 20)
                 }

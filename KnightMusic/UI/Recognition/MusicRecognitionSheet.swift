@@ -94,15 +94,17 @@ struct MusicRecognitionSheet: View {
             isResolvingLocal = false
             guard let track else { return }
             isResolvingLocal = true
-            localMatch = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist)
-            guard !Task.isCancelled else { return }
+            let accountId = app.activeAccount?.id
+            let match = await app.shazam.resolveLocalMatch(title: track.title, artist: track.artist)
+            guard !Task.isCancelled, accountId == app.activeAccount?.id else { return }
+            localMatch = match
             isResolvingLocal = false
             if !didApplyInitialAction, let initialAction {
                 didApplyInitialAction = true
                 perform(initialAction, track: track)
             }
         }
-        .onChange(of: app.sessionRevision) { _, _ in
+        .onChange(of: app.activeAccount?.id) { _, _ in
             youTubeSearch?.cancel()
             dismiss()
         }

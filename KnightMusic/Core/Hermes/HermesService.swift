@@ -577,6 +577,8 @@ final class HermesService {
         ui: UIState
     ) {
         importStatus[messageId] = "Importing to library…"
+        // Managed imports verify the requested version and exclude pre-existing songs before reporting success.
+        guard !NavidromeImportCenter.shared.manages(conversationId: conversationId) else { return }
         ArrivalWatcher.shared.watch(
             conversationId: conversationId,
             messageId: messageId,

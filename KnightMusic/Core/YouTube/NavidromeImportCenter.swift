@@ -54,6 +54,10 @@ final class NavidromeImportCenter {
         jobs.contains { $0.song.id == song.id && !$0.isFinished }
     }
 
+    func manages(conversationId: String) -> Bool {
+        jobs.contains { $0.conversationId == conversationId && !$0.isFinished }
+    }
+
     func add(_ song: Song, app: AppModel, ui: UIState) {
         guard song.isYouTube, let accountId = app.activeAccount?.id else {
             ui.showToast("Sign in to your server to add this song.")
@@ -255,6 +259,11 @@ final class NavidromeImportCenter {
                                                                excluding: job.existingSongIds, expectedPath: expectedPath) {
                     guard isCurrent(id) else { return }
                     update(id) { $0.importedSong = song }
+                    if let conversationId = job.conversationId,
+                       let reply = app.hermes.store.conversation(for: conversationId)?.messages.last(where: { $0.role == .assistant }) {
+                        app.hermes.appendMatchedSong(conversationId: conversationId, messageId: reply.id, song: song)
+                        app.hermes.importStatus[reply.id] = nil
+                    }
                     app.artwork.prefetch(for: [song])
                     finish(id, .done)
                     return
@@ -284,6 +293,10 @@ final class NavidromeImportCenter {
             Haptics.success()
             ui?.showToast("\u{201C}\(title)\u{201D} is in your library")
         case .failed(let message):
+            if let conversationId = job.conversationId,
+               let reply = app?.hermes.store.conversation(for: conversationId)?.messages.last(where: { $0.role == .assistant }) {
+                app?.hermes.importStatus[reply.id] = "Not found yet"
+            }
             Haptics.error()
             Log.api.warning("Navidrome import of \(title) failed: \(message)")
             ui?.showToast(message)
