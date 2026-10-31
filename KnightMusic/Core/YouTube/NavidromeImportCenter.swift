@@ -48,7 +48,10 @@ final class NavidromeImportCenter {
     @ObservationIgnored private var runner: Task<Void, Never>?
 
     /// The job the progress pill shows: the running one, else the latest finished one.
-    var visibleJob: Job? { jobs.first { !$0.isFinished } ?? jobs.last }
+    var visibleJob: Job? {
+        let current = jobs.filter { $0.accountId == app?.activeAccount?.id }
+        return current.first { !$0.isFinished } ?? current.last
+    }
 
     func isBusy(_ song: Song) -> Bool {
         jobs.contains { $0.song.id == song.id && !$0.isFinished }
@@ -164,8 +167,12 @@ final class NavidromeImportCenter {
     private func job(_ id: UUID) -> Job? { jobs.first { $0.id == id } }
 
     private func run(_ id: UUID) async {
-        guard let app, let ui, let job = job(id), let client = app.client else { return }
-        guard app.activeAccount?.id == job.accountId, !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return }
+        guard let app, let ui, let job = self.job(id), let client = app.client,
+              app.activeAccount?.id == job.accountId else {
+            update(id) { $0.state = .failed("Sign in to the intended server and add the song again."); $0.stage = "Import stopped" }
+            return
+        }
         let song = job.song
         let hermes = app.hermes
 
