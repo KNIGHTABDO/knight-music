@@ -135,11 +135,29 @@ enum DebugLaunch {
         case "recognize":
             ui.startRecognition()
         case "recognized":
-            // Goes through the real broadcast hand-off, so the shot shows what a match actually looks like.
+            // Use the history entry point: unsigned simulators cannot share the broadcast mailbox's App Group.
             let track = RecognizedTrack(id: "demo", title: "New Person, Same Old Mistakes", artist: "Tame Impala", album: "Currents")
             RecognizedTracksStore.shared.add(track)
-            BroadcastResultMailbox.post(trackID: track.id)
-            ui.isRecognitionPresented = app.shazam.consumeBroadcastResult()
+            ui.openRecognition(track)
+        case "identified":
+            if RecognizedTracksStore.shared.tracks.isEmpty, let database = app.database,
+               let song = try? await database.pool.read({ db in try Song.fetchOne(db) }) {
+                RecognizedTracksStore.shared.add(RecognizedTrack(
+                    id: song.id, title: song.title, artist: song.artist ?? "Unknown Artist", album: song.album,
+                    artworkURL: song.coverArt.flatMap { app.client?.coverArtURL(id: $0, size: 120) }
+                ))
+            }
+            if isRegular {
+                ui.selectedTab = .section(.identifiedSongs)
+            } else {
+                ui.selectedTab = .library
+                nav.library.append(Route.identifiedSongs)
+            }
+        case "playlist-picker":
+            if let database = app.database,
+               let song = try? await database.pool.read({ db in try Song.fetchOne(db) }) {
+                ui.playlistPicker = PlaylistPickerRequest(songs: [song])
+            }
         case "settings":
             ui.selectedTab = .settings
         case "customize", "icons":

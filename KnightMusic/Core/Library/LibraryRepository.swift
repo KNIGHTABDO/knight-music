@@ -536,23 +536,23 @@ final class LibraryRepository {
 
     @discardableResult
     func duplicatePlaylist(id: String, newName: String? = nil, additionalSongIds: [String] = []) async throws -> Playlist {
+        let client = try requireClient()
         let database = try requireDatabase()
-        var existingSongIds = (try? await playlistSongIds(database, id: id)) ?? []
-        if existingSongIds.isEmpty, let client = try? requireClient() {
-            if let (_, songs) = try? await client.getPlaylist(id: id) {
-                existingSongIds = songs.map(\.id)
+        do {
+            // Copy the complete current playlist. A partial mirror or a failed read must never create an empty copy.
+            let (source, songs) = try await client.getPlaylist(id: id)
+            guard self.database === database else { throw LibraryError.accountChanged }
+            var combined = songs.map(\.id)
+            for sid in additionalSongIds {
+                if !combined.contains(sid) {
+                    combined.append(sid)
+                }
             }
+            return try await createPlaylist(name: newName ?? "\(source.name) (My Copy)", songIds: combined)
+        } catch {
+            report(error, "Could not duplicate playlist")
+            throw error
         }
-        var combined = existingSongIds
-        for sid in additionalSongIds {
-            if !combined.contains(sid) {
-                combined.append(sid)
-            }
-        }
-        let current = try? await database.pool.read { db in try Playlist.fetchOne(db, id: id) }
-        let baseName = current?.name ?? "Playlist"
-        let targetName = newName ?? "\(baseName) (My Copy)"
-        return try await createPlaylist(name: targetName, songIds: combined)
     }
 
     func addToPlaylist(id: String, songIds: [String]) async throws {

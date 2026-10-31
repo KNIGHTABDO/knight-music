@@ -33,7 +33,7 @@
 
 Knight Music is an open-source, native client for [Navidrome](https://www.navidrome.org/) and OpenSubsonic personal music servers, with **YouTube Music** built in next to your own library. It is designed around Apple's Liquid Glass on iOS and iPadOS 26 and pairs an offline-first library, beat-matched **AutoMix** transitions, animated Apple Music artwork, an AI music assistant, CarPlay, widgets and Siri.
 
-**Latest release: [v0.6.0](https://github.com/KNIGHTABDO/knight-music/releases/latest)**: YouTube Music search and playback, Add to Navidrome, self-updating YouTube clients, and AutoMix tempo changes with no audible cut.
+**Latest release: [v0.8.6](https://github.com/KNIGHTABDO/knight-music/releases/latest)**: consistent recognition history actions, confirmed library imports with one-tap playback, and shared-playlist copying across menus, the picker and drag and drop.
 
 ## Screenshots
 

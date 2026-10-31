@@ -119,22 +119,7 @@ struct PlaylistDetailView: View {
         .background(Theme.background.ignoresSafeArea())
         .environment(\.editMode, $editMode)
         .libraryDropDestination { dropped in
-            do {
-                try await library.addToPlaylist(id: playlistId, songIds: dropped.map(\.id))
-                ui.showToast(dropped.count == 1 ? "Added to Playlist" : "Added \(dropped.count) Songs to Playlist")
-            } catch LibraryRepository.PlaylistEditError.notOwner {
-                Task {
-                    do {
-                        let copy = try await library.duplicatePlaylist(id: playlistId, additionalSongIds: dropped.map(\.id))
-                        ui.showToast("Created \"\(copy.name)\"")
-                    } catch {
-                        ui.showToast("Couldn't Add to Playlist")
-                    }
-                }
-            } catch {
-                Log.sync.error("Add dropped songs to playlist failed: \(error)")
-                ui.showToast("Couldn't Add to Playlist")
-            }
+            ui.playlistPicker = PlaylistPickerRequest(songs: dropped, targetPlaylist: playlist)
         }
         .toolbar {
             toolbarItems(playlist: playlist, songs: songs)

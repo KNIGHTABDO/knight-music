@@ -4,13 +4,13 @@ import Foundation
 /// with the YouTube Music metadata and starts a scan, so it becomes a normal library song.
 enum YouTubeImporter {
     enum Outcome {
-        case added(path: String?)
+        case downloaded(path: String?)
         case failed(String)
     }
 
-    static func add(_ song: Song) async -> Outcome {
+    static func add(_ song: Song, client: SubsonicClient) async -> Outcome {
         guard let videoId = song.youTubeVideoId else { return .failed("Not a YouTube Music song.") }
-        guard let url = await YouTubeConfigStore.shared.server("yt/import") else {
+        guard let url = client.autoMixURL(path: "yt/import") else {
             return .failed("Connect to your Navidrome server first.")
         }
         var meta: [String: Any] = ["videoId": videoId, "title": song.title]
@@ -26,11 +26,11 @@ enum YouTubeImporter {
             // yt-dlp takes a few seconds to a minute; poll until it settles.
             for _ in 0..<120 where job.state == "queued" || job.state == "downloading" {
                 try await Task.sleep(for: .seconds(2))
-                guard let statusURL = await YouTubeConfigStore.shared.server("yt/import/\(videoId)") else { break }
+                guard let statusURL = client.autoMixURL(path: "yt/import/\(videoId)") else { break }
                 job = try await send(URLRequest(url: statusURL, timeoutInterval: 20))
             }
             switch job.state {
-            case "done": return .added(path: job.path)
+            case "done": return .downloaded(path: job.path)
             case "failed": return .failed(job.error ?? "The server could not download this song.")
             default: return .failed("The server is still downloading this song.")
             }
