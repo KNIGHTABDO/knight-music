@@ -176,6 +176,7 @@ struct YTGridView: View {
                     YTItemTile(item: item)
                 }
                 .padding(.vertical, 16)
+                .modifier(YouTubeLibraryMatching(songs: grid.items.compactMap { if case .song(let song) = $0 { return song.song }; return nil }))
             }
         }
         .navigationTitle(title)

@@ -9,8 +9,14 @@ import SwiftUI
 struct PlayerTransportBar: View {
     @Environment(PlayerEngine.self) private var player
 
+    @State private var showSleepTimer = false
     @State private var prevTapCount = 0
     @State private var nextTapCount = 0
+
+    private func seek(by seconds: TimeInterval) {
+        Haptics.impact(.light)
+        player.seek(to: player.currentTime + seconds)
+    }
 
     var body: some View {
         HStack {
@@ -42,6 +48,10 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
+            .highPriorityGesture(LongPressGesture().onEnded { _ in seek(by: -30) })
+            .help("Long-press to skip back 30 seconds")
+            .accessibilityLabel("Previous Song")
+            .accessibilityAction(named: "Skip Back 30 Seconds") { seek(by: -30) }
             .buttonStyle(TransportButtonStyle())
 
             Spacer()
@@ -57,6 +67,18 @@ struct PlayerTransportBar: View {
                     .contentTransition(.symbolEffect(.replace))
                     .frame(minWidth: 64, minHeight: 64)
                     .contentShape(Rectangle())
+            }
+            .highPriorityGesture(LongPressGesture().onEnded { _ in showSleepTimer = true })
+            .help("Long-press for sleep timer")
+            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            .accessibilityAction(named: "Sleep Timer") { showSleepTimer = true }
+            .confirmationDialog("Sleep Timer", isPresented: $showSleepTimer, titleVisibility: .visible) {
+                ForEach([15, 30, 45, 60], id: \.self) { minutes in
+                    Button("\(minutes) Minutes") { player.sleepTimer.start(minutes: minutes) }
+                }
+                Button("End of Song") { player.sleepTimer.startEndOfSong() }
+                Button("Off") { player.sleepTimer.cancel() }
+                Button("Cancel", role: .cancel) {}
             }
             .buttonStyle(TransportButtonStyle())
 
@@ -75,6 +97,10 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
+            .highPriorityGesture(LongPressGesture().onEnded { _ in seek(by: 30) })
+            .help("Long-press to skip forward 30 seconds")
+            .accessibilityLabel("Next Song")
+            .accessibilityAction(named: "Skip Forward 30 Seconds") { seek(by: 30) }
             .buttonStyle(TransportButtonStyle())
 
             Spacer()

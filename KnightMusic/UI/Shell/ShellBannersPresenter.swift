@@ -17,7 +17,11 @@ struct ShellBannersPresenter: ViewModifier {
                 if isActive {
                     VStack(spacing: 8) {
                         if let toast = ui.toast {
-                            ToastCapsule(text: toast)
+                            ToastCapsule(text: toast, actionTitle: ui.toastActionTitle) {
+                                let action = ui.toastAction
+                                ui.dismissToast()
+                                action?()
+                            }
                                 .transition(.move(edge: .top).combined(with: .opacity))
                         }
                         if let job = imports.visibleJob {
@@ -74,6 +78,8 @@ struct ShellBannersPresenter: ViewModifier {
 
 private struct ToastCapsule: View {
     let text: String
+    let actionTitle: String?
+    let action: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -84,6 +90,11 @@ private struct ToastCapsule: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.label)
                 .lineLimit(2)
+            if let actionTitle {
+                Button(actionTitle, action: action)
+                    .font(.system(size: 14, weight: .bold))
+                    .tint(Theme.accent)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

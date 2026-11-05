@@ -18,6 +18,9 @@ struct LyricsView: View {
     @Environment(PlayerEngine.self) private var player
     @Environment(LookStore.self) private var looks
 
+    @State private var sharedCard: LyricCardShare?
+    @Environment(UIState.self) private var ui
+
     @State private var offsetStore = LyricsOffsetStore.shared
     @State private var lyricsList: [StructuredLyrics] = []
     @State private var identifiedLines: [IdentifiedLyricLine] = []
@@ -30,6 +33,35 @@ struct LyricsView: View {
     @State private var showSyncedToast = false
     @State private var syncToastTrigger = 0
     @State private var syncedLineIndex: Int?
+
+    @ViewBuilder private func lyricActions(_ line: String) -> some View {
+        Button("Copy Line", systemImage: "doc.on.doc") { copy(line) }
+        Button("Copy All Lyrics", systemImage: "doc.on.doc.fill") {
+            copy(identifiedLines.map(\.text).joined(separator: "\n"))
+        }
+        Button("Share Lyric Card", systemImage: "square.and.arrow.up") { shareCard(line) }
+    }
+
+    private func copy(_ text: String) {
+        UIPasteboard.general.string = text
+        Haptics.success()
+        ui.showToast("Copied")
+    }
+
+    private func shareCard(_ line: String) {
+        Task {
+            let artwork = await ArtworkLoader.shared.image(coverArt: song.coverArt, size: 600)
+            let palette = await ArtworkPalette.palette(for: song.coverArt)
+            let renderer = ImageRenderer(content: LyricCardView(song: song, line: line, artwork: artwork, palette: palette))
+            renderer.scale = 2
+            guard let image = renderer.uiImage else {
+                ui.showToast("Couldn't render lyric card")
+                Log.app.error("Lyric card rendering failed")
+                return
+            }
+            sharedCard = LyricCardShare(image: image)
+        }
+    }
 
     private var isIPad: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -84,6 +116,9 @@ struct LyricsView: View {
                     .foregroundStyle(Theme.secondaryLabel)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .sheet(item: $sharedCard) { card in
+            LyricCardShareSheet(image: card.image)
         }
         .task(id: song.id) {
             isLoading = true
@@ -158,6 +193,11 @@ struct LyricsView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .contextMenu { lyricActions(item.text) }
+                            .help("Tap to seek; long-press to copy or share")
+                            .accessibilityAction(named: "Copy Line") { copy(item.text) }
+                            .accessibilityAction(named: "Copy All Lyrics") { copy(identifiedLines.map(\.text).joined(separator: "\n")) }
+                            .accessibilityAction(named: "Share Lyric Card") { shareCard(item.text) }
                             .id(index)
                         }
 
@@ -436,6 +476,11 @@ struct LyricsView: View {
                         .foregroundStyle(Color.white.opacity(0.9))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, alignment: .center)
+                        .contextMenu { lyricActions(item.text) }
+                        .help("Long-press to copy or share")
+                        .accessibilityAction(named: "Copy Line") { copy(item.text) }
+                        .accessibilityAction(named: "Copy All Lyrics") { copy(identifiedLines.map(\.text).joined(separator: "\n")) }
+                        .accessibilityAction(named: "Share Lyric Card") { shareCard(item.text) }
                 }
             }
             .padding(.horizontal, Theme.margin + 8)

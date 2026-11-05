@@ -85,15 +85,23 @@ struct YTItemTile: View {
     let item: YTItem
 
     @Environment(PlayerEngine.self) private var player
+    @Environment(\.youTubeLibraryMatches) private var matches
 
     var body: some View {
         switch item {
         case .song(let s):
             Button {
                 Haptics.impact(.medium)
-                Task { await player.startStation(from: s.song) }
+                if let local = matches[s.song.id] {
+                    player.play([local])
+                } else {
+                    Task { await player.startStation(from: s.song) }
+                }
             } label: {
-                AlbumTile(coverArt: s.thumbnail, title: s.title, subtitle: s.artistLine)
+                VStack(alignment: .leading, spacing: 4) {
+                    AlbumTile(coverArt: s.thumbnail, title: s.title, subtitle: s.artistLine)
+                    if matches[s.song.id] != nil { InLibraryBadge() }
+                }
             }
             .buttonStyle(.plain)
             .contextMenu { SongActionsMenu(song: s.song) }
@@ -142,6 +150,16 @@ struct YTSongList: View {
     let songs: [Song]
     var numbered = false
 
+    var body: some View {
+        YTSongListContent(songs: songs, numbered: numbered)
+            .modifier(YouTubeLibraryMatching(songs: songs))
+    }
+}
+
+private struct YTSongListContent: View {
+    let songs: [Song]
+    let numbered: Bool
+    @Environment(\.youTubeLibraryMatches) private var matches
     @Environment(PlayerEngine.self) private var player
 
     var body: some View {
@@ -149,12 +167,17 @@ struct YTSongList: View {
             ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
                 Button {
                     Haptics.selection()
-                    player.play(songs, startAt: index, shuffle: false)
+                    player.play(songs.map { matches[$0.id] ?? $0 }, startAt: index, shuffle: false)
                 } label: {
-                    SongRow(title: song.title, subtitle: song.artist, duration: song.durationSeconds,
-                            leading: numbered ? .trackNumber(index + 1) : .artwork(song.coverArt),
-                            isPlaying: player.currentSong?.id == song.id, isPaused: !player.isPlaying) {
-                        SongActionsMenu(song: song)
+                    VStack(alignment: .leading, spacing: 2) {
+                        SongRow(title: song.title, subtitle: song.artist, duration: song.durationSeconds,
+                                leading: numbered ? .trackNumber(index + 1) : .artwork(song.coverArt),
+                                isPlaying: player.currentSong?.id == (matches[song.id] ?? song).id, isPaused: !player.isPlaying) {
+                            SongActionsMenu(song: song)
+                        }
+                        if matches[song.id] != nil {
+                            InLibraryBadge().padding(.leading, numbered ? 40 : 60)
+                        }
                     }
                     .padding(.vertical, 6)
                     .padding(.horizontal, Theme.margin)
@@ -284,6 +307,7 @@ struct YTShelfView: View {
             YTItemTile(item: item)
         }
         .scrollClipDisabled()
+        .modifier(YouTubeLibraryMatching(songs: shelf.items.compactMap { if case .song(let song) = $0 { return song.song }; return nil }))
     }
 }
 
@@ -291,6 +315,17 @@ struct YTShelfView: View {
 struct YTSongColumnsShelf: View {
     let shelf: YTShelf
     var onHeaderTap: (() -> Void)? = nil
+
+    var body: some View {
+        YTSongColumnsContent(shelf: shelf, onHeaderTap: onHeaderTap)
+            .modifier(YouTubeLibraryMatching(songs: shelf.items.compactMap { if case .song(let song) = $0 { return song.song }; return nil }))
+    }
+}
+
+private struct YTSongColumnsContent: View {
+    let shelf: YTShelf
+    var onHeaderTap: (() -> Void)? = nil
+    @Environment(\.youTubeLibraryMatches) private var matches
 
     @Environment(PlayerEngine.self) private var player
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -317,17 +352,20 @@ struct YTSongColumnsShelf: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHGrid(rows: Array(repeating: GridItem(.fixed(56), spacing: 4), count: rowCount), spacing: 18) {
+                LazyHGrid(rows: Array(repeating: GridItem(.fixed(matches.isEmpty ? 56 : 76), spacing: 4), count: rowCount), spacing: 18) {
                     ForEach(Array(songs.enumerated()), id: \.offset) { index, song in
                         Button {
                             Haptics.impact(.light)
-                            player.play(songs, startAt: index, shuffle: false)
+                            player.play(songs.map { matches[$0.id] ?? $0 }, startAt: index, shuffle: false)
                         } label: {
-                            SongRow(
-                                song: song,
-                                isPlaying: player.currentSong?.id == song.id,
-                                isPaused: !player.isPlaying
-                            )
+                            VStack(alignment: .leading, spacing: 2) {
+                                SongRow(
+                                    song: song,
+                                    isPlaying: player.currentSong?.id == (matches[song.id] ?? song).id,
+                                    isPaused: !player.isPlaying
+                                )
+                                if matches[song.id] != nil { InLibraryBadge().padding(.leading, 60) }
+                            }
                         }
                         .buttonStyle(.plain)
                         .frame(width: columnWidth)

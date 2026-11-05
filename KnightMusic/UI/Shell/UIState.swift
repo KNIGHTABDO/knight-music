@@ -15,6 +15,9 @@ final class UIState {
     var playerPanel: PlayerPanel = .artwork
     /// Transient message shown as a toast by the shell (errors, "Added to queue", …).
     var toast: String?
+    var toastID = UUID()
+    var toastActionTitle: String?
+    var toastAction: (@MainActor () -> Void)?
     /// Draft prompt to pre-fill when switching to Knight tab.
     var knightDraft: String?
     /// Knight conversation to open when switching to the Knight tab (e.g. a Navidrome import).
@@ -62,7 +65,22 @@ final class UIState {
 
     func open(_ route: Route) { pendingRoute = route }
 
-    func showToast(_ message: String) { toast = message }
+    func showToast(_ message: String) {
+        showToast(message, actionTitle: nil, action: nil)
+    }
+
+    func showToast(_ message: String, actionTitle: String?, action: (@MainActor () -> Void)?) {
+        toastActionTitle = actionTitle
+        toastAction = action
+        toastID = UUID()
+        toast = message
+    }
+
+    func dismissToast() {
+        toast = nil
+        toastActionTitle = nil
+        toastAction = nil
+    }
 
     func askKnight(_ prompt: String) {
         knightDraft = prompt

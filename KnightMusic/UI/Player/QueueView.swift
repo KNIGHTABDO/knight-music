@@ -73,8 +73,10 @@ struct QueueView: View {
                             player.move(fromOffsets: source, toOffset: destination)
                         }
                         .onDelete { indexSet in
-                            for offset in indexSet.sorted().reversed() {
-                                player.remove(at: offset)
+                            changeQueue(message: "Removed from Queue") {
+                                for offset in indexSet.sorted().reversed() {
+                                    player.remove(at: offset)
+                                }
                             }
                         }
                         .listRowBackground(Color.clear)
@@ -94,6 +96,24 @@ struct QueueView: View {
         .libraryDropDestination { songs in
             player.enqueue(songs)
             ui?.showToast(songs.count == 1 ? "Added to Queue" : "Added \(songs.count) Songs to Queue")
+        }
+    }
+
+    private func changeQueue(message: String, edit: () -> Void) {
+        let previous = player.upcoming.map(\.song)
+        let currentID = player.currentEntry?.id
+        edit()
+        let editedIDs = player.upcoming.map(\.id)
+        ui?.showToast(message, actionTitle: "Undo") {
+            guard player.currentRadio == nil,
+                  player.currentEntry?.id == currentID,
+                  player.upcoming.map(\.id) == editedIDs else {
+                ui?.showToast("Queue changed; unable to undo")
+                return
+            }
+            player.clearUpcoming()
+            player.enqueue(previous)
+            ui?.showToast("Queue Restored")
         }
     }
 
@@ -136,7 +156,7 @@ struct QueueView: View {
 
                     Button("Clear") {
                         Haptics.impact(.light)
-                        player.clearUpcoming()
+                        changeQueue(message: "Queue Cleared") { player.clearUpcoming() }
                     }
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.accent)
@@ -294,7 +314,7 @@ struct QueueView: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 Haptics.impact(.light)
-                player.remove(at: offset)
+                changeQueue(message: "Removed from Queue") { player.remove(at: offset) }
             } label: {
                 Label("Delete", systemImage: "trash")
             }

@@ -21,7 +21,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             config.delegateClass = CarPlaySceneDelegate.self
             return config
         }
-        return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        config.delegateClass = QuickActionSceneDelegate.self
+        return config
     }
 
     func application(
@@ -42,6 +44,8 @@ struct KnightMusicApp: App {
     init() {
         let model = AppModel()
         AppModel.shared = model
+        QuickActionIntentBridge.handle = { AppActionRouter.shared.submit($0) }
+        AppActionRouter.installShortcuts()
         _app = State(initialValue: model)
         // BGTaskScheduler registration must happen before launch finishes.
         BackgroundSync.register(
@@ -75,7 +79,9 @@ struct KnightMusicApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active: app.handleForeground()
-            case .background: app.scheduleBackgroundSync()
+            case .background:
+                app.scheduleBackgroundSync()
+                AppActionRouter.installShortcuts()
             default: break
             }
         }

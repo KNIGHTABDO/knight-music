@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Title (marquee, opens the album) and artist (opens the artist) for the full player.
 struct PlayerSongTitles: View {
@@ -8,6 +9,22 @@ struct PlayerSongTitles: View {
 
     @Environment(UIState.self) private var ui
 
+    private func copyTitle() {
+        UIPasteboard.general.string = "\(song.title) — \(song.artist ?? "")"
+        Haptics.success()
+        ui.showToast("Copied")
+    }
+
+    private func openArtist() {
+        if let id = song.artistId, !id.isEmpty {
+            ui.open(.artist(id))
+        } else if let artist = song.artist, !artist.isEmpty {
+            UIPasteboard.general.string = artist
+            Haptics.success()
+            ui.showToast("Copied")
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Button {
@@ -16,7 +33,9 @@ struct PlayerSongTitles: View {
                 MarqueeText(text: song.title, font: .system(size: titleSize, weight: .bold))
             }
             .buttonStyle(.plain)
-            .disabled(song.albumId == nil)
+            .highPriorityGesture(LongPressGesture().onEnded { _ in copyTitle() })
+            .help("Long-press to copy title and artist")
+            .accessibilityAction(named: "Copy Title & Artist", copyTitle)
             .accessibilityHint(song.albumId == nil ? "" : "Opens the album")
 
             Button {
@@ -29,7 +48,9 @@ struct PlayerSongTitles: View {
                 )
             }
             .buttonStyle(.plain)
-            .disabled(song.artistId == nil)
+            .highPriorityGesture(LongPressGesture().onEnded { _ in openArtist() })
+            .help("Long-press to open artist or copy name")
+            .accessibilityAction(named: "Open Artist or Copy Name", openArtist)
             .accessibilityHint(song.artistId == nil ? "" : "Opens the artist")
         }
         .id(song.id)

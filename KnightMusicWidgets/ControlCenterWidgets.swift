@@ -44,3 +44,17 @@ struct RecognizeMusicControlWidget: ControlWidget {
         .description("Identifies songs playing around you with Knight Music.")
     }
 }
+
+struct LoveCurrentSongControlWidget: ControlWidget {
+    static let kind = "com.knightabdo.knightmusic.widgets.control.love"
+
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: Self.kind) {
+            ControlWidgetButton(action: LoveCurrentSongIntent()) {
+                Label("Love Current Song", systemImage: "heart.fill")
+            }
+        }
+        .displayName("Love Current Song")
+        .description("Loves the library song playing in Knight Music.")
+    }
+}

@@ -213,6 +213,7 @@ struct FullPlayerView: View {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .modifier(SkipSwipeModifier(movesContent: false))
+                    .modifier(ArtworkLoveGesture())
                     .overlay(alignment: .bottom) {
                         // Anchor for the matched geometry transition to the panel header.
                         Color.clear
