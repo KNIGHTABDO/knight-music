@@ -30,6 +30,9 @@ struct YTAlbumView: View {
                 .padding(.bottom, 24)
             }
             .navigationTitle(page.title)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { YTAddAllMenu(songs: songs) }
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -56,6 +59,9 @@ struct YTPlaylistView: View {
                 .padding(.bottom, 24)
             }
             .navigationTitle(page.title)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { YTAddAllMenu(songs: songs) }
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)

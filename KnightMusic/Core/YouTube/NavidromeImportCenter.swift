@@ -108,6 +108,33 @@ final class NavidromeImportCenter {
         enqueue(song, force: false)
     }
 
+    /// Adds a whole YouTube album or playlist. Songs with a same-version copy in the library, or already
+    /// being added, are skipped; similar-but-different versions are added (the user asked for all of them).
+    func addAll(_ songs: [Song], app: AppModel, ui: UIState) {
+        guard app.activeAccount?.id != nil else {
+            ui.showToast("Sign in to your server to add these songs.")
+            return
+        }
+        attach(app, ui)
+        var seen = Set<String>()
+        var skipped = 0
+        let fresh = songs.filter { song in
+            guard song.isYouTube, seen.insert(song.id).inserted else { return false }
+            let owned = existingCopies(of: song, in: app)
+                .contains { Self.versionTags($0.title) == Self.versionTags(song.title) }
+            if owned || isBusy(song) { skipped += 1; return false }
+            return true
+        }
+        guard !fresh.isEmpty else {
+            ui.showToast(skipped > 0 ? "Already in your library" : "Nothing to add")
+            return
+        }
+        Haptics.impact(.light)
+        guard enqueue(fresh, force: false) else { return }
+        let skippedNote = skipped > 0 ? " · \(skipped) already there" : ""
+        ui.showToast("Adding \(KMFormat.songCount(fresh.count))\(skippedNote)…")
+    }
+
     func resolve(_ confirmation: Confirmation, addAnyway: Bool) {
         self.confirmation = nil
         guard app?.activeAccount?.id == confirmation.accountId else {
@@ -136,20 +163,28 @@ final class NavidromeImportCenter {
     // MARK: - Queue
 
     private func enqueue(_ song: Song, force: Bool) {
-        guard let app, let accountId = app.activeAccount?.id, let database = app.database else { return }
+        guard enqueue([song], force: force) else { return }
+        ui?.showToast("Adding \u{201C}\(song.title)\u{201D}…")
+    }
+
+    @discardableResult
+    private func enqueue(_ songs: [Song], force: Bool) -> Bool {
+        guard let app, let accountId = app.activeAccount?.id, let database = app.database else { return false }
         do {
             let ids = try database.pool.read { db in Set(try String.fetchAll(db, sql: "SELECT id FROM song")) }
             withAnimation(.smooth) {
-                jobs.append(Job(song: song, force: force, accountId: accountId, existingSongIds: ids))
+                jobs.append(contentsOf: songs.map {
+                    Job(song: $0, force: force, accountId: accountId, existingSongIds: ids)
+                })
             }
             persist()
         } catch {
             Log.database.error("Couldn't prepare import: \(error.localizedDescription)")
-            ui?.showToast("Couldn't read your library. Try adding the song again.")
-            return
+            ui?.showToast("Couldn't read your library. Try adding again.")
+            return false
         }
-        ui?.showToast("Adding \u{201C}\(song.title)\u{201D}…")
         startRunnerIfNeeded()
+        return true
     }
 
     private func startRunnerIfNeeded() {
@@ -321,6 +356,7 @@ final class NavidromeImportCenter {
             app.hermes.importStatus[reply.id] = nil
         }
         app.artwork.prefetch(for: [song])
+        app.player.replaceUpcoming(youTubeSongId: job.song.id, with: song)
         finish(id, .done)
     }
 
