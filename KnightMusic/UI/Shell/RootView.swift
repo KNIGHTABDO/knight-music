@@ -7,6 +7,7 @@ struct RootView: View {
     @State private var hasAppliedDebugRouting = false
     @Namespace private var playerZoomNamespace
 
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
     @Environment(PlayerEngine.self) private var player
@@ -82,8 +83,8 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showMusicRecognition)) { _ in
             ui.isRecognitionPresented = true
         }
-        .task(id: "\(actions.requests.first?.id.uuidString ?? "")|\(app.sessionRevision)") {
-            guard app.session == .ready, let request = actions.requests.first else { return }
+        .task(id: "\(actions.requests.first?.id.uuidString ?? "")|\(app.sessionRevision)|\(scenePhase == .active)") {
+            guard scenePhase == .active, app.session == .ready, let request = actions.requests.first else { return }
             await actions.handle(request, app: app, ui: ui)
         }
         .tint(LookStore.shared.accent)

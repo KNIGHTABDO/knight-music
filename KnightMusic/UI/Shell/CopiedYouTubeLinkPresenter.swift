@@ -21,6 +21,7 @@ struct CopiedYouTubeLinkPresenter: ViewModifier {
         let count = pasteboard.changeCount
         guard count != checkedChangeCount else { return }
         checkedChangeCount = count
+        guard pasteboard.numberOfItems > 0 else { return }
         // Detection inspects patterns without reading clipboard content or asking for paste access.
         pasteboard.detectPatterns(for: [.probableWebURL]) { result in
             Task { @MainActor in

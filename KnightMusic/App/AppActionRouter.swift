@@ -11,11 +11,17 @@ final class AppActionRouter {
         let action: String
     }
     var requests: [Request] = []
+    @ObservationIgnored private var handlingRequests = Set<UUID>()
 
     func submit(_ action: String) { requests.append(Request(action: action)) }
 
     func handle(_ request: Request, app: AppModel, ui: UIState) async {
-        defer { requests.removeAll { $0.id == request.id } }
+        guard requests.contains(where: { $0.id == request.id }),
+              handlingRequests.insert(request.id).inserted else { return }
+        defer {
+            handlingRequests.remove(request.id)
+            requests.removeAll { $0.id == request.id }
+        }
         do {
             switch request.action {
             case "resume":
