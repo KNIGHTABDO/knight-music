@@ -5,7 +5,7 @@ struct CopiedYouTubeLinkPresenter: ViewModifier {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(AppModel.self) private var app
     @Environment(UIState.self) private var ui
-    @State private var checkedChangeCount: Int?
+    @AppStorage("km.lastOfferedLinkChangeCount") private var checkedChangeCount = -1
 
     func body(content: Content) -> some View {
         content
