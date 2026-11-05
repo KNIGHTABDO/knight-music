@@ -523,6 +523,7 @@ final class LibraryRepository {
         let client = try requireClient()
         let database = try requireDatabase()
         do {
+            try await trashSyncedFile(id, client: client, database: database)
             try await client.deletePlaylist(id: id)
             try await database.pool.write { db in
                 try db.execute(sql: "DELETE FROM playlistEntry WHERE playlistId = ?", arguments: [id])
@@ -569,15 +570,21 @@ final class LibraryRepository {
         do {
             try await client.updatePlaylist(id: id, songIdsToAdd: songIds)
             try await refreshPlaylist(id: id)
-        } catch let error as SubsonicError {
-            if case .server(let code, _) = error, code == 50 {
-                if let playlist = try? await database.pool.read({ db in try Playlist.fetchOne(db, id: id) }) {
-                    throw PlaylistEditError.notOwner(playlist: playlist)
-                }
-            }
-            report(error, "Could not add to playlist")
-            throw error
         } catch {
+            do {
+                let before = try await playlistSongIds(database, id: id)
+                if try await editSyncedFile(id, after: error, client: client, database: database, expected: before + songIds,
+                                            { try await SyncedPlaylistEditor.add(songIds, to: id, client: client) }) {
+                    return
+                }
+            } catch let fileError {
+                report(fileError, "Could not add to playlist")
+                throw fileError
+            }
+            if case .server(let code, _)? = error as? SubsonicError, code == 50,
+               let playlist = try? await database.pool.read({ db in try Playlist.fetchOne(db, id: id) }) {
+                throw PlaylistEditError.notOwner(playlist: playlist)
+            }
             report(error, "Could not add to playlist")
             throw error
         }
@@ -594,13 +601,23 @@ final class LibraryRepository {
         do {
             try await client.updatePlaylist(id: id, songIndexesToRemove: indexes)
         } catch {
+            let after = before.enumerated().filter { !removed.contains($0.offset) }.map(\.element)
+            var failure = error
+            do {
+                if try await editSyncedFile(id, after: error, client: client, database: database, expected: after,
+                                            { try await SyncedPlaylistEditor.remove(indexes: indexes, from: id, client: client) }) {
+                    return
+                }
+            } catch let fileError {
+                failure = fileError
+            }
             do {
                 try await replaceEntries(database, playlistId: id, songIds: before)
             } catch let rollbackError {
                 Log.database.error("Rollback removeFromPlaylist failed for \(id): \(rollbackError)")
             }
-            report(error, "Could not remove from playlist")
-            throw error
+            report(failure, "Could not remove from playlist")
+            throw failure
         }
     }
 
@@ -618,13 +635,22 @@ final class LibraryRepository {
         do {
             try await client.createPlaylist(playlistId: id, songIds: items)
         } catch {
+            var failure = error
+            do {
+                if try await editSyncedFile(id, after: error, client: client, database: database, expected: items,
+                                            { try await SyncedPlaylistEditor.replace(id, with: items, client: client) }) {
+                    return
+                }
+            } catch let fileError {
+                failure = fileError
+            }
             do {
                 try await replaceEntries(database, playlistId: id, songIds: before)
             } catch let rollbackError {
                 Log.database.error("Rollback movePlaylistEntries failed for \(id): \(rollbackError)")
             }
-            report(error, "Could not reorder playlist")
-            throw error
+            report(failure, "Could not reorder playlist")
+            throw failure
         }
     }
 
@@ -670,6 +696,49 @@ final class LibraryRepository {
             try await syncEngine?.refreshHomeLists()
         } catch {
             Log.sync.warning("refreshHomeLists failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - File-synced playlists
+
+    /// Navidrome refuses track edits on playlists it syncs from .m3u8 files (Knight writes those). When the user
+    /// owns the playlist, the AutoMix server edits the file instead. False when that doesn't apply, so the
+    /// original error stands; throws when the file edit itself failed.
+    private func editSyncedFile(_ id: String, after error: Error, client: SubsonicClient, database: LibraryDatabase,
+                                expected: [String],
+                                _ edit: () async throws -> SyncedPlaylistEditor.Result) async throws -> Bool {
+        guard case .server? = error as? SubsonicError,
+              let playlist = try? await database.pool.read({ db in try Playlist.fetchOne(db, id: id) }),
+              playlist.isOwned(by: client.username) else { return false }
+        let result: SyncedPlaylistEditor.Result
+        do {
+            result = try await edit()
+        } catch SyncedPlaylistEditor.Failure.notApplicable {
+            return false
+        }
+        guard self.database === database else { throw LibraryError.accountChanged }
+        if result.imported {
+            do {
+                try await refreshPlaylist(id: id)
+                return true
+            } catch {
+                Log.sync.warning("Playlist \(id) edited, refresh failed: \(error.localizedDescription)")
+            }
+        }
+        try await replaceEntries(database, playlistId: id, songIds: expected)
+        return true
+    }
+
+    /// A deleted playlist whose .m3u8 is still there comes straight back on the next scan, so the file goes to the
+    /// library's .trash/playlists first. Playlists without a file (or an unreachable AutoMix server) delete as usual.
+    private func trashSyncedFile(_ id: String, client: SubsonicClient, database: LibraryDatabase) async throws {
+        guard let playlist = try? await database.pool.read({ db in try Playlist.fetchOne(db, id: id) }),
+              playlist.isOwned(by: client.username) else { return }
+        do {
+            try await SyncedPlaylistEditor.trashFile(of: id, client: client)
+        } catch SyncedPlaylistEditor.Failure.notApplicable {
+        } catch let error as URLError {
+            Log.api.warning("Couldn't reach AutoMix to remove the file of playlist \(id): \(error.localizedDescription)")
         }
     }
 
