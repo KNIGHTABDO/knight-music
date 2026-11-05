@@ -35,6 +35,7 @@ struct PlaybackSettings: Equatable, Sendable {
     var gapless: Bool = true
     /// Apple-Music-style AutoMix: beat-matched transitions planned by the server.
     var autoMix: Bool = true
+    var autoMixKeepsAlbums: Bool = true
     var replayGain: ReplayGainMode = .off
     var scrobblingEnabled: Bool = true
     var offlineMode: Bool = false

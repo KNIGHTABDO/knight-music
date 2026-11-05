@@ -105,10 +105,13 @@ extension PlayerEngine {
             return
         }
         let target = order[index]
-        // The AutoMix server only analyzes library songs: YouTube songs get a plain crossfade.
-        if settings.autoMix, tracked.entry.song.isYouTube || target.song.isYouTube {
-            let seconds = settings.crossfadeSeconds > 0 ? Double(settings.crossfadeSeconds) : 6
-            installPlan(crossfadePlan(from: tracked, seconds: seconds), trackedEntry: tracked.entry.id, target: target)
+        // YouTube songs never mix: a blend needs the whole next song downloaded first, which YouTube shouldn't do.
+        if tracked.entry.song.isYouTube || target.song.isYouTube {
+            if settings.autoMix { autoMixNote = "AutoMix is for library songs" }
+            return
+        }
+        if let note = contextSkipNote(from: tracked.entry.song, to: target.song) {
+            autoMixNote = note
             return
         }
         guard settings.autoMix else {
@@ -127,6 +130,15 @@ extension PlayerEngine {
             self.installPlan(plan, trackedEntry: trackedEntry, target: target)
         }
         prefetchUpcomingPlans(provider)
+    }
+
+    /// Album tracks played back to back in order keep the album's own transitions (live sets, segues, gapless masters).
+    private func contextSkipNote(from current: Song, to next: Song) -> String? {
+        guard settings.autoMix, settings.autoMixKeepsAlbums, !shuffleEnabled,
+              let album = current.albumId, !album.isEmpty, album == next.albumId,
+              let track = current.track, next.track == track + 1,
+              (current.discNumber ?? 1) == (next.discNumber ?? 1) else { return nil }
+        return "Playing the album as recorded"
     }
 
     /// Plain equal-power crossfade over the last `seconds` of the current song (AutoMix off, crossfade on).

@@ -61,10 +61,14 @@ struct PlaybackSettingsView: View {
             Section {
                 Toggle("AutoMix", isOn: $settings.autoMixEnabled)
                     .tint(Theme.accent)
+                if settings.autoMixEnabled {
+                    Toggle("Play Albums as Recorded", isOn: $settings.autoMixKeepsAlbums)
+                        .tint(Theme.accent)
+                }
                 Button("See How AutoMix Blends the Next Song") { isShowingAutoMix = true }
                     .foregroundStyle(Theme.accent)
             } footer: {
-                Text("Songs blend into each other like a DJ set: beats are matched and tempos eased together, using an analysis of your library made by the AutoMix service on your server. Continuous albums stay gapless.")
+                Text("Songs blend into each other like a DJ set: beats are matched and tempos eased together, using an analysis of your library made by the AutoMix service on your server. With Play Albums as Recorded, an album played in order keeps its own transitions; playlists and shuffle still mix. YouTube songs never mix.")
             }
 
             AudioEffectsSection()

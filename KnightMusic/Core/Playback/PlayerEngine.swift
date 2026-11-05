@@ -82,6 +82,8 @@ final class PlayerEngine {
     var autoMixNote: String?
     /// The song a running station (endless similar-songs queue) was started from.
     var stationSeed: Song?
+    /// Set while YouTube songs play over a library queue; offered as "Back to your queue".
+    var stashedLibraryQueue: StashedQueue?
     /// True from the moment the next song comes in until the previous one has faded out.
     var autoMixActive = false
     /// Songs being saved for playback right now (stream cache), for the transfers indicator.
@@ -271,6 +273,7 @@ final class PlayerEngine {
 
     func play(_ songs: [Song], startAt: Int? = nil, shuffle: Bool = false) {
         guard !songs.isEmpty else { return }
+        stashLibraryQueue(replacingWith: songs)
         let entries = songs.map(QueueEntry.init)
         endStation()
         currentRadio = nil

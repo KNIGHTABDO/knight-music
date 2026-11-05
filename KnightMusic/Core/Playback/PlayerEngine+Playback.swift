@@ -366,7 +366,8 @@ extension PlayerEngine {
             }
             let depth = services.network == .cellular ? 2 : 3
             let upper = min(order.count, currentIndex + depth)
-            let songs = order[currentIndex..<upper].map(\.song)
+            // YouTube songs stream on demand; saving them ahead is what "Add to Navidrome" is for.
+            let songs = order[currentIndex..<upper].map(\.song).filter { !$0.isYouTube }
             streamCache.retainOnly(Set(songs.map(\.id) + (plannedMix.map { [$0.to.id] } ?? [])))
             let quality = currentQuality()
             for song in songs where downloads?.localFileURL(for: song.id) == nil && !streamCache.contains(song.id) {
@@ -397,7 +398,7 @@ extension PlayerEngine {
 
         let start = currentIndex + 1
         let upper = min(order.count, start + 2)
-        let songs = start < upper ? Array(order[start..<upper].map(\.song)) : []
+        let songs = start < upper ? Array(order[start..<upper].map(\.song)).filter { !$0.isYouTube } : []
         let keep = Set(songs.map(\.id) + (plannedMix.map { [$0.to.id] } ?? []))
         streamCache.retainOnly(keep)
         let quality = currentQuality()
