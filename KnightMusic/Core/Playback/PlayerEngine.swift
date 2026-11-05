@@ -84,6 +84,9 @@ final class PlayerEngine {
     var stationSeed: Song?
     /// Set while YouTube songs play over a library queue; offered as "Back to your queue".
     var stashedLibraryQueue: StashedQueue?
+    /// One-off message for the shell to show as a toast (e.g. "Resumed at 34:12"); cleared by the shell.
+    var playerNotice: String?
+    @ObservationIgnored let longTrackPositions = LongTrackPositions()
     /// True from the moment the next song comes in until the previous one has faded out.
     var autoMixActive = false
     /// Songs being saved for playback right now (stream cache), for the transfers indicator.

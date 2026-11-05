@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import planner, playlists, recognize, showcase
+from . import planner, playlists, recognize, showcase, songs
 from .youtube import VIDEO_ID, YouTube
 from .analyze import ANALYSIS_VERSION
 
@@ -323,7 +323,7 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                     return
                 return self._send(404, {"error": "not found"})
             if path == "/automix/v1/health":
-                return self._send(200, {"ok": True, "features": ["playlistEdit"]})
+                return self._send(200, {"ok": True, "features": ["playlistEdit", "songEdit"]})
             if not path.startswith("/automix/v1/"):
                 return self._send(404, {"error": "not found"})
             if not auth.check(query):
@@ -408,6 +408,38 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
             log.info("playlist %s rewritten: %d songs, imported=%s", playlist_id, result["songCount"], synced)
             return self._send(200, {"ok": True, "songCount": result["songCount"], "imported": synced})
 
+        def _song_post(self, path: str, query: dict[str, str]):
+            """POST /automix/v1/songs/<id>/tags (JSON {field: value}, see songs.FIELDS) or /<id>/trash."""
+            parts = path.split("/")
+            if len(parts) != 6 or parts[5] not in ("tags", "trash"):
+                return self._send(404, {"error": "not found"})
+            if not auth.check(query):
+                return self._send(401, {"error": "invalid credentials"})
+            song_id, action, user = parts[4], parts[5], query["u"]
+            try:
+                if action == "trash":
+                    result = songs.trash(NAVIDROME_DB, song_id, user)
+                    log.info("song %s trashed to %s", song_id, result["trashedTo"])
+                    return self._send(200, result)
+                length = min(int(self.headers.get("Content-Length", "0")), 1 << 16)
+                body = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(body, dict):
+                    raise ValueError("body must be an object")
+                result = songs.retag(NAVIDROME_DB, song_id, user, body)
+            except songs.SongError as error:
+                return self._send(error.code, {"error": str(error)})
+            except (ValueError, TypeError) as error:
+                return self._send(400, {"error": f"bad body: {error}"})
+            except Exception as error:
+                log.warning("song %s %s failed: %s", song_id, action, error)
+                return self._send(500, {"error": str(error)})
+            rescanned = songs.wait_for_rescan(NAVIDROME_DB, song_id, result["updated"], 15)
+            if not rescanned:
+                playlists.trigger_scan(NAVIDROME_URL, query)
+                rescanned = songs.wait_for_rescan(NAVIDROME_DB, song_id, result["updated"], 30)
+            log.info("song %s retagged %s, rescanned=%s", song_id, sorted(body), rescanned)
+            return self._send(200, {"ok": True, "rescanned": rescanned})
+
         def do_POST(self):
             url = urllib.parse.urlparse(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
@@ -443,6 +475,8 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                     return self._send(400, {"error": "bad video id"})
                 meta = {k: str(body[k]) for k in ("title", "artist", "album", "year") if body.get(k)}
                 return self._send(200, yt.start_import(video_id, meta, query))
+            if url.path.startswith("/automix/v1/songs/"):
+                return self._song_post(url.path.rstrip("/"), query)
             if url.path.startswith("/automix/v1/playlists/"):
                 return self._playlist_post(url.path.rstrip("/"), query)
             if url.path.rstrip("/") == "/automix/v1/recognize":

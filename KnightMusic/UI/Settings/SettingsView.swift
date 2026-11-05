@@ -144,6 +144,7 @@ struct SettingsView: View {
             Section {
                 NavigationLink("Playback", destination: PlaybackSettingsView())
                 NavigationLink("Storage", destination: StorageView())
+                NavigationLink("Duplicate Songs", destination: DuplicateSongsView())
                 NavigationLink(destination: HermesSettingsView()) {
                     Label("Knight AI (Hermes)", systemImage: "sparkles")
                 }

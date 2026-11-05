@@ -9,6 +9,7 @@ struct SongInfoView: View {
     @Environment(DownloadManager.self) private var downloads
     @Environment(\.dismiss) private var dismiss
     @State private var song: Song?
+    @State private var editing = false
 
     var body: some View {
         let song = song ?? fallback
@@ -69,9 +70,17 @@ struct SongInfoView: View {
             .navigationTitle("Song Info")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if !song.isYouTube {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Edit") { editing = true }
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", systemImage: "checkmark") { dismiss() }
                 }
+            }
+            .navigationDestination(isPresented: $editing) {
+                SongTagEditorView(song: song) { self.song = $0 }
             }
         }
         .task(id: songId) {

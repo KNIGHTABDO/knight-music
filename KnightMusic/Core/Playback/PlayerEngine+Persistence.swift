@@ -59,6 +59,7 @@ extension PlayerEngine {
 
     func savePositionNow(synchronous: Bool = false) {
         guard currentRadio == nil, !order.isEmpty else { return }
+        if let song = currentSong { longTrackPositions.record(song, at: currentTime) }
         let now = Date()
         localSavedAt = now
         queueStore.save(SavedPosition(currentIndex: currentIndex, position: currentTime, savedAt: now),

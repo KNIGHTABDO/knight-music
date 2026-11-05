@@ -76,6 +76,11 @@ struct RootView: View {
         }) {
             MusicRecognitionSheet(savedTrack: ui.recognitionTrack, initialAction: ui.recognitionAction)
         }
+        .onChange(of: app.player.playerNotice) { _, notice in
+            guard let notice else { return }
+            ui.showToast(notice)
+            app.player.playerNotice = nil
+        }
         .onChange(of: app.session == .ready, initial: true) { _, ready in
             if ready { NavidromeImportCenter.shared.resumePending(app: app, ui: ui) }
         }

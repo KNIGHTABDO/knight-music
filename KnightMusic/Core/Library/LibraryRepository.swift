@@ -742,6 +742,89 @@ final class LibraryRepository {
         }
     }
 
+    // MARK: - Music files (tags, duplicates)
+
+    /// Rewrites the song's tags on the server, shows the new values right away, then re-syncs so albums and artists
+    /// follow (a new album name moves the song to another album). Returns the locally updated song.
+    @discardableResult
+    func editTags(of song: Song, _ changes: SongFileEditor.TagChanges) async throws -> Song {
+        let client = try requireClient()
+        let rescanned: Bool
+        do {
+            rescanned = try await SongFileEditor.retag(song.id, changes, client: client)
+        } catch {
+            report(error, "Couldn’t save the tags")
+            throw error
+        }
+        var updated = song
+        func text(_ value: String?, _ old: String?) -> String? { value.map { $0.isEmpty ? nil : $0 } ?? old }
+        func number(_ value: String?, _ old: Int?) -> Int? { value.map { Int($0) } ?? old }
+        updated.title = changes.title.flatMap { $0.isEmpty ? nil : $0 } ?? song.title
+        updated.artist = text(changes.artist, song.artist)
+        updated.album = text(changes.album, song.album)
+        updated.year = number(changes.year, song.year)
+        updated.genre = text(changes.genre, song.genre)
+        updated.track = number(changes.track, song.track)
+        updated.discNumber = number(changes.disc, song.discNumber)
+        if let database {
+            do {
+                try await database.pool.write { [updated] db in try updated.update(db) }
+            } catch {
+                Log.sync.error("couldn't store edited tags of \(song.id): \(error)")
+            }
+        }
+        dropCaches()
+        if rescanned {
+            await syncEngine?.sync()
+        } else {
+            Log.sync.info("tags of \(song.id) saved; Navidrome will pick them up on its next scan")
+        }
+        return updated
+    }
+
+    /// Moves each song's file to the library's .trash/songs on the server and drops it from the mirror.
+    /// Returns how many were moved; stops at the first failure (already moved ones stay moved).
+    @discardableResult
+    func trashSongFiles(_ songs: [Song]) async throws -> Int {
+        let client = try requireClient()
+        var moved: [String] = []
+        var failure: Error?
+        for song in songs {
+            do {
+                try await SongFileEditor.trash(song.id, client: client)
+                moved.append(song.id)
+            } catch {
+                report(error, "Couldn’t remove “\(song.title)”")
+                failure = error
+                break
+            }
+        }
+        if !moved.isEmpty, let database {
+            do {
+                try await database.pool.write { [moved] db in _ = try Song.deleteAll(db, keys: moved) }
+            } catch {
+                Log.sync.error("couldn't drop trashed songs from the mirror: \(error)")
+            }
+            dropCaches()
+            Task { await self.syncEngine?.sync() }
+        }
+        if let failure { throw failure }
+        return moved.count
+    }
+
+    /// Library songs that look like the same recording: same title and artist (case, accents, punctuation and
+    /// "feat." credits ignored) and durations within 3 seconds. Biggest groups first.
+    func duplicateSongGroups() async -> [[Song]] {
+        guard let database else { return [] }
+        do {
+            let songs = try await database.pool.read { db in try Song.fetchAll(db) }
+            return DuplicateSongFinder.groups(in: songs)
+        } catch {
+            Log.sync.error("duplicate scan failed: \(error)")
+            return []
+        }
+    }
+
     // MARK: - Helpers
 
     func report(_ error: Error, _ prefix: String) {

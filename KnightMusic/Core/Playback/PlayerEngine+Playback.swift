@@ -148,6 +148,12 @@ extension PlayerEngine {
         trackedBaseURL = services.currentBaseURL?()
         let prepared = makePrepared(entry: entry, resolved: resolved)
         tracked = prepared
+        var startAt = startAt
+        if startAt == 0, entry.song.id != currentSong?.id,
+           let resume = longTrackPositions.resumePosition(for: entry.song) {
+            startAt = resume
+            playerNotice = "Resumed at \(KMFormat.duration(resume))"
+        }
         player.pause()
         player.removeAllItems()
         player.insert(prepared.item, after: nil)
@@ -168,6 +174,9 @@ extension PlayerEngine {
 
     func publishCurrent(_ p: PreparedItem, startAt: TimeInterval, playing: Bool) {
         let song = p.entry.song
+        if let outgoing = currentSong, outgoing.id != song.id {
+            longTrackPositions.record(outgoing, at: currentTime)
+        }
         currentSong = song
         source = p.resolved.kind
         formatDescription = p.resolved.description
