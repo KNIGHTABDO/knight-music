@@ -30,7 +30,7 @@ struct ArtworkLoveGesture: ViewModifier {
     }
 
     private func love() {
-        guard let song = player.currentSong else { return }
+        guard let song = player.currentSong, player.currentRadio == nil else { return }
         // YouTube streams have no server star endpoint; the menu offers importing them first.
         guard !song.isYouTube else {
             ui.showToast("Add to Navidrome to love this song")

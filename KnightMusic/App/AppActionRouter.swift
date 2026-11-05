@@ -30,6 +30,10 @@ final class AppActionRouter {
                 guard !songs.isEmpty else { ui.showToast("No favorite songs yet"); return }
                 app.player.play(songs, shuffle: true)
             case "recognize":
+                if ui.isRecognitionPresented {
+                    ui.isRecognitionPresented = false
+                    try await Task.sleep(for: .milliseconds(450))
+                }
                 if ui.isPlayerPresented {
                     ui.isPlayerPresented = false
                     try await Task.sleep(for: .milliseconds(450))
@@ -38,6 +42,7 @@ final class AppActionRouter {
                 ui.startRecognition()
             case "downloads": ui.open(.songList(.downloaded))
             case "love":
+                guard app.player.currentRadio == nil else { ui.showToast("Choose a library song to love"); return }
                 guard let song = app.player.currentSong else { ui.showToast("No song is playing"); return }
                 guard !song.isYouTube else { ui.showToast("Add to Navidrome to love this song"); return }
                 if song.starred == nil {
@@ -53,6 +58,7 @@ final class AppActionRouter {
                 NavidromeImportCenter.shared.add(song, app: app, ui: ui)
             default: break
             }
+        } catch is CancellationError {
         } catch {
             Log.app.error("Quick action failed: \(error.localizedDescription)")
             ui.showToast(error.localizedDescription)

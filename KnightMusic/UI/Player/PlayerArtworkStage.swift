@@ -104,7 +104,7 @@ struct SkipSwipeModifier: ViewModifier {
                         let committed = horizontal && (abs(dx) > Self.threshold || abs(value.predictedEndTranslation.width) > 220)
                         if committed {
                             Haptics.impact(.light)
-                            // The new card slides in on its own; drop the offset without animating back.
+                            // Let the incoming cover follow through, then spring back to center.
                             dragX = dx < 0 ? -24 : 24
                             withAnimation(.spring(response: 0.32, dampingFraction: 0.7)) { dragX = 0 }
                             if dx < 0 {

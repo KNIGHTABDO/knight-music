@@ -15,7 +15,7 @@ struct PlayerTransportBar: View {
 
     private func seek(by seconds: TimeInterval) {
         Haptics.impact(.light)
-        player.seek(to: min(max(0, player.currentTime + seconds), max(0, player.duration)))
+        player.seek(to: player.currentTime + seconds)
     }
 
     var body: some View {
@@ -48,7 +48,6 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
-
             .highPriorityGesture(LongPressGesture().onEnded { _ in seek(by: -30) })
             .help("Long-press to skip back 30 seconds")
             .accessibilityLabel("Previous Song")
@@ -69,7 +68,6 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 64, minHeight: 64)
                     .contentShape(Rectangle())
             }
-
             .highPriorityGesture(LongPressGesture().onEnded { _ in showSleepTimer = true })
             .help("Long-press for sleep timer")
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
@@ -99,7 +97,6 @@ struct PlayerTransportBar: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
-
             .highPriorityGesture(LongPressGesture().onEnded { _ in seek(by: 30) })
             .help("Long-press to skip forward 30 seconds")
             .accessibilityLabel("Next Song")

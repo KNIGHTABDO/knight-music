@@ -197,7 +197,7 @@ struct LyricsView: View {
                             .help("Tap to seek; long-press to copy or share")
                             .accessibilityAction(named: "Copy Line") { copy(item.text) }
                             .accessibilityAction(named: "Copy All Lyrics") { copy(identifiedLines.map(\.text).joined(separator: "\n")) }
-                        .accessibilityAction(named: "Share Lyric Card") { shareCard(item.text) }
+                            .accessibilityAction(named: "Share Lyric Card") { shareCard(item.text) }
                             .id(index)
                         }
 

@@ -170,14 +170,14 @@ private struct YTSongListContent: View {
                     player.play(songs.map { matches[$0.id] ?? $0 }, startAt: index, shuffle: false)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                    SongRow(title: song.title, subtitle: song.artist, duration: song.durationSeconds,
-                            leading: numbered ? .trackNumber(index + 1) : .artwork(song.coverArt),
-                            isPlaying: player.currentSong?.id == (matches[song.id] ?? song).id, isPaused: !player.isPlaying) {
-                        SongActionsMenu(song: song)
-                    }
-                    if matches[song.id] != nil {
-                        InLibraryBadge().padding(.leading, numbered ? 40 : 60)
-                    }
+                        SongRow(title: song.title, subtitle: song.artist, duration: song.durationSeconds,
+                                leading: numbered ? .trackNumber(index + 1) : .artwork(song.coverArt),
+                                isPlaying: player.currentSong?.id == (matches[song.id] ?? song).id, isPaused: !player.isPlaying) {
+                            SongActionsMenu(song: song)
+                        }
+                        if matches[song.id] != nil {
+                            InLibraryBadge().padding(.leading, numbered ? 40 : 60)
+                        }
                     }
                     .padding(.vertical, 6)
                     .padding(.horizontal, Theme.margin)
@@ -359,12 +359,12 @@ private struct YTSongColumnsContent: View {
                             player.play(songs.map { matches[$0.id] ?? $0 }, startAt: index, shuffle: false)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                            SongRow(
-                                song: song,
-                                isPlaying: player.currentSong?.id == (matches[song.id] ?? song).id,
-                                isPaused: !player.isPlaying
-                            )
-                            if matches[song.id] != nil { InLibraryBadge().padding(.leading, 60) }
+                                SongRow(
+                                    song: song,
+                                    isPlaying: player.currentSong?.id == (matches[song.id] ?? song).id,
+                                    isPaused: !player.isPlaying
+                                )
+                                if matches[song.id] != nil { InLibraryBadge().padding(.leading, 60) }
                             }
                         }
                         .buttonStyle(.plain)

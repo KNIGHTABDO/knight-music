@@ -27,8 +27,10 @@ struct DownloadMostPlayedButton: View {
             }
             let songs = stats.topSongs.map(\.song).filter { !$0.isYouTube }
             guard !songs.isEmpty else { ui.showToast("No library plays in the last seven days"); return }
-            downloads.download(songs: songs)
-            ui.showToast("Downloading \(songs.count) Most Played Songs")
+            let pending = songs.filter { !downloads.isDownloaded($0.id) }
+            guard !pending.isEmpty else { ui.showToast("Most played songs are already downloaded"); return }
+            downloads.download(songs: pending)
+            ui.showToast("Downloading \(pending.count) Most Played Songs")
         } catch {
             Log.database.error("Most played downloads failed: \(error.localizedDescription)")
             ui.showToast(error.localizedDescription)
