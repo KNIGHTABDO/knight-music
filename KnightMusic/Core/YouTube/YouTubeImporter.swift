@@ -6,6 +6,9 @@ enum YouTubeImporter {
     enum Outcome {
         case downloaded(path: String?)
         case failed(String)
+        /// The server accepted the job but stopped answering about it (app suspended, service restarted):
+        /// the song may well be in the library already.
+        case unknown
     }
 
     static func add(_ song: Song, client: SubsonicClient) async -> Outcome {
@@ -27,7 +30,12 @@ enum YouTubeImporter {
             for _ in 0..<120 where job.state == "queued" || job.state == "downloading" {
                 try await Task.sleep(for: .seconds(2))
                 guard let statusURL = client.autoMixURL(path: "yt/import/\(videoId)") else { break }
-                job = try await send(URLRequest(url: statusURL, timeoutInterval: 20))
+                do {
+                    job = try await send(URLRequest(url: statusURL, timeoutInterval: 20))
+                } catch {
+                    Log.api.info("Add to Navidrome \(videoId): lost track of the server job (\(error.localizedDescription))")
+                    return .unknown
+                }
             }
             switch job.state {
             case "done": return .downloaded(path: job.path)

@@ -76,6 +76,9 @@ struct RootView: View {
         }) {
             MusicRecognitionSheet(savedTrack: ui.recognitionTrack, initialAction: ui.recognitionAction)
         }
+        .onChange(of: app.session == .ready, initial: true) { _, ready in
+            if ready { NavidromeImportCenter.shared.resumePending(app: app, ui: ui) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showMusicRecognition)) { _ in
             ui.isRecognitionPresented = true
         }

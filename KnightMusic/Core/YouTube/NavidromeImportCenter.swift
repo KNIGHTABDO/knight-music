@@ -46,6 +46,7 @@ final class NavidromeImportCenter {
     @ObservationIgnored private weak var app: AppModel?
     @ObservationIgnored private weak var ui: UIState?
     @ObservationIgnored private var runner: Task<Void, Never>?
+    @ObservationIgnored private var didResume = false
 
     /// The job the progress pill shows: the running one, else the latest finished one.
     var visibleJob: Job? {
@@ -61,11 +62,7 @@ final class NavidromeImportCenter {
         jobs.contains { $0.conversationId == conversationId && !$0.isFinished }
     }
 
-    func add(_ song: Song, app: AppModel, ui: UIState) {
-        guard song.isYouTube, let accountId = app.activeAccount?.id else {
-            ui.showToast("Sign in to your server to add this song.")
-            return
-        }
+    private func attach(_ app: AppModel, _ ui: UIState) {
         if self.app !== app {
             app.addSessionObserver(fireImmediately: false) { [weak self] app in
                 self?.sessionChanged(app)
@@ -73,6 +70,30 @@ final class NavidromeImportCenter {
         }
         self.app = app
         self.ui = ui
+    }
+
+    /// Picks up imports that were still running when iOS suspended or closed the app.
+    func resumePending(app: AppModel, ui: UIState) {
+        guard !didResume else { return }
+        didResume = true
+        attach(app, ui)
+        let saved = PendingImportsFile.load()
+        guard !saved.isEmpty else { return }
+        for item in saved where !jobs.contains(where: { $0.song.id == item.song.id && !$0.isFinished }) {
+            jobs.append(Job(song: item.song, force: item.force, accountId: item.accountId,
+                            existingSongIds: item.existingSongIds, conversationId: item.conversationId,
+                            stage: "Resuming…"))
+        }
+        Log.api.info("Resuming \(saved.count) Navidrome import(s)")
+        startRunnerIfNeeded()
+    }
+
+    func add(_ song: Song, app: AppModel, ui: UIState) {
+        guard song.isYouTube, let accountId = app.activeAccount?.id else {
+            ui.showToast("Sign in to your server to add this song.")
+            return
+        }
+        attach(app, ui)
         guard !isBusy(song) else {
             ui.showToast("\u{201C}\(song.title)\u{201D} is already being added")
             return
@@ -102,6 +123,14 @@ final class NavidromeImportCenter {
 
     func dismissFinished() {
         jobs.removeAll { $0.isFinished }
+        persist()
+    }
+
+    private func persist() {
+        PendingImportsFile.save(jobs.filter { !$0.isFinished }.map {
+            PendingImport(song: $0.song, force: $0.force, accountId: $0.accountId,
+                          existingSongIds: $0.existingSongIds, conversationId: $0.conversationId)
+        })
     }
 
     // MARK: - Queue
@@ -113,6 +142,7 @@ final class NavidromeImportCenter {
             withAnimation(.smooth) {
                 jobs.append(Job(song: song, force: force, accountId: accountId, existingSongIds: ids))
             }
+            persist()
         } catch {
             Log.database.error("Couldn't prepare import: \(error.localizedDescription)")
             ui?.showToast("Couldn't read your library. Try adding the song again.")
@@ -161,7 +191,9 @@ final class NavidromeImportCenter {
 
     private func update(_ id: UUID, _ change: (inout Job) -> Void) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        let before = jobs[index]
         withAnimation(.smooth) { change(&jobs[index]) }
+        if before.conversationId != jobs[index].conversationId || before.isFinished != jobs[index].isFinished { persist() }
     }
 
     private func job(_ id: UUID) -> Job? { jobs.first { $0.id == id } }
@@ -181,8 +213,17 @@ final class NavidromeImportCenter {
             switch await YouTubeImporter.add(song, client: client) {
             case .downloaded(let path):
                 await confirmArrival(id, expectedPath: path)
+            case .unknown:
+                await confirmArrival(id, failure: "The server stopped answering about this song. Add it again if it doesn't show up.")
             case .failed(let message): finish(id, .failed(message))
             }
+            return
+        }
+
+        // Sent before the app was suspended or closed: only follow it, never ask Knight twice.
+        if let conversationId = job.conversationId {
+            update(id) { $0.state = .working; $0.stage = "Checking with Knight…" }
+            await watchKnight(id, conversationId: conversationId, resumed: true)
             return
         }
 
@@ -200,15 +241,24 @@ final class NavidromeImportCenter {
         update(id) { $0.conversationId = conversationId; $0.state = .working; $0.stage = "Knight is on it…" }
         hermes.sendMessage(conversationId: conversationId, text: prompt(for: song, force: job.force),
                            app: app, library: app.library, artwork: app.artwork, ui: ui)
+        await watchKnight(id, conversationId: conversationId, resumed: false)
+    }
 
-        var sawRun = false
+    /// Follows Knight's run. Whatever goes wrong with the connection (suspended app, a run the server already
+    /// forgot), the library is checked before anything is reported as failed: the song usually made it.
+    private func watchKnight(_ id: UUID, conversationId: String, resumed: Bool) async {
+        guard let app else { return }
+        let hermes = app.hermes
+        var sawRun = resumed
         let started = Date()
-        var lastRecovery = Date()
+        var lastRecovery = Date.distantPast
+        var lastLibraryCheck = Date()
         while true {
             try? await Task.sleep(for: .seconds(1))
             guard isCurrent(id) else { return }
             if Date().timeIntervalSince(started) >= 600 {
-                return finish(id, .failed("Knight hasn't confirmed the download yet. Open Knight to check its progress."))
+                return await confirmArrival(id, within: 90,
+                                            failure: "Knight hasn't confirmed the download yet. Open Knight to check its progress.")
             }
             let active = hermes.isRunning && hermes.activeConversationId == conversationId
             if active {
@@ -221,7 +271,7 @@ final class NavidromeImportCenter {
             let reply = hermes.store.conversation(for: conversationId)?.messages.last(where: { $0.role == .assistant })
             guard let reply else {
                 if !sawRun && Date().timeIntervalSince(started) < 30 { continue }
-                return finish(id, .failed("Knight didn't answer"))
+                return await confirmArrival(id, within: 60, failure: "Knight didn't answer")
             }
             // The app was in the background: the run may have finished on the server without us hearing it.
             if reply.status == "running" {
@@ -230,11 +280,16 @@ final class NavidromeImportCenter {
                     lastRecovery = Date()
                     await hermes.recoverRunningMessages()
                 }
+                if Date().timeIntervalSince(lastLibraryCheck) > 20 {
+                    lastLibraryCheck = Date()
+                    if await foundInLibrary(id) { return }
+                }
                 continue
             }
 
             if reply.status == "failed" || reply.status == "stopped" {
-                return finish(id, .failed("Knight couldn't finish the import"))
+                // A dropped stream (e.g. a 404 for a run the server already finished) also ends up "failed".
+                return await confirmArrival(id, within: 60, failure: "Knight couldn't finish the import")
             }
             await confirmArrival(id)
             return
@@ -246,7 +301,31 @@ final class NavidromeImportCenter {
         return app?.activeAccount?.id == job.accountId
     }
 
-    private func confirmArrival(_ id: UUID, expectedPath: String? = nil) async {
+    /// One incremental sync and a lookup, without starting a scan or waiting.
+    private func foundInLibrary(_ id: UUID) async -> Bool {
+        guard isCurrent(id), let app, let job = job(id), let database = app.database else { return false }
+        await app.refresh(force: false)
+        guard isCurrent(id),
+              let song = try? await ImportedSongMatcher.find(job.song, in: database, excluding: job.existingSongIds,
+                                                            expectedPath: nil) else { return false }
+        arrived(id, song: song)
+        return true
+    }
+
+    private func arrived(_ id: UUID, song: Song) {
+        guard let app, let job = job(id) else { return }
+        update(id) { $0.importedSong = song }
+        if let conversationId = job.conversationId,
+           let reply = app.hermes.store.conversation(for: conversationId)?.messages.last(where: { $0.role == .assistant }) {
+            app.hermes.appendMatchedSong(conversationId: conversationId, messageId: reply.id, song: song)
+            app.hermes.importStatus[reply.id] = nil
+        }
+        app.artwork.prefetch(for: [song])
+        finish(id, .done)
+    }
+
+    private func confirmArrival(_ id: UUID, expectedPath: String? = nil, within seconds: TimeInterval = 180,
+                                failure: String = "The song hasn't appeared in your library yet. Check Navidrome's scan and try again.") async {
         guard isCurrent(id), let app, let job = job(id), let database = app.database else { return }
         update(id) { $0.state = .importing; $0.stage = "Scanning your library…" }
         do {
@@ -255,7 +334,7 @@ final class NavidromeImportCenter {
             Log.sync.warning("Import scan request failed: \(error.localizedDescription)")
         }
 
-        let deadline = Date().addingTimeInterval(180)
+        let deadline = Date().addingTimeInterval(seconds)
         var attempt = 0
         while isCurrent(id), Date() < deadline {
             // A full pass also covers servers whose scan token doesn't change. Other polls use incremental sync.
@@ -265,14 +344,7 @@ final class NavidromeImportCenter {
                 if let song = try await ImportedSongMatcher.find(job.song, in: database,
                                                                excluding: job.existingSongIds, expectedPath: expectedPath) {
                     guard isCurrent(id) else { return }
-                    update(id) { $0.importedSong = song }
-                    if let conversationId = job.conversationId,
-                       let reply = app.hermes.store.conversation(for: conversationId)?.messages.last(where: { $0.role == .assistant }) {
-                        app.hermes.appendMatchedSong(conversationId: conversationId, messageId: reply.id, song: song)
-                        app.hermes.importStatus[reply.id] = nil
-                    }
-                    app.artwork.prefetch(for: [song])
-                    finish(id, .done)
+                    arrived(id, song: song)
                     return
                 }
             } catch {
@@ -283,7 +355,7 @@ final class NavidromeImportCenter {
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
         }
         guard isCurrent(id) else { return }
-        finish(id, .failed("The song hasn't appeared in your library yet. Check Navidrome's scan and try again."))
+        finish(id, .failed(failure))
     }
 
     private func finish(_ id: UUID, _ state: Job.State) {
