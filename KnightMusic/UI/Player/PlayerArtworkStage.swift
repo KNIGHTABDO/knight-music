@@ -35,6 +35,7 @@ struct PlayerArtworkStage: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.7), value: player.isPlaying)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: song.id)
         .modifier(SkipSwipeModifier(movesContent: true))
+        .modifier(ArtworkLoveGesture())
         .onChange(of: song.id, initial: true) { _, newId in
             shownSongId = newId
         }
@@ -89,7 +90,7 @@ struct SkipSwipeModifier: ViewModifier {
             .offset(x: movesContent ? dragX : 0)
             .rotationEffect(.degrees(movesContent ? Double(dragX / 40) : 0))
             .contentShape(Rectangle())
-            .gesture(
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 16)
                     .onChanged { value in
                         let dx = value.translation.width
@@ -104,9 +105,8 @@ struct SkipSwipeModifier: ViewModifier {
                         if committed {
                             Haptics.impact(.light)
                             // The new card slides in on its own; drop the offset without animating back.
-                            var reset = Transaction()
-                            reset.disablesAnimations = true
-                            withTransaction(reset) { dragX = 0 }
+                            dragX = dx < 0 ? -24 : 24
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.7)) { dragX = 0 }
                             if dx < 0 {
                                 player.next()
                             } else {
@@ -117,6 +117,7 @@ struct SkipSwipeModifier: ViewModifier {
                         }
                     }
             )
+            .help("Swipe left for next song; right for previous song")
             .accessibilityAction(named: "Next Song") { player.next() }
             .accessibilityAction(named: "Previous Song") { player.previous() }
     }

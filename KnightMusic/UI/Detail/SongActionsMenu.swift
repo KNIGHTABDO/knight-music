@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Action menu items for a song: used inside `.contextMenu { SongActionsMenu(song: song) }`
 /// and inside `Menu { SongActionsMenu(song: song) } label: { … }` (the ••• button on rows).
@@ -17,6 +18,15 @@ struct SongActionsMenu: View {
         let isDownloaded = downloads.isDownloaded(song.id)
         let downloadStatus = downloads.status(for: song.id)
         let playlists = library.playlists()
+
+        Button {
+            UIPasteboard.general.string = "\(song.title) — \(song.artist ?? "")"
+            Haptics.success()
+            ui.showToast("Copied")
+        } label: {
+            Label("Copy Title & Artist", systemImage: "doc.on.doc")
+        }
+
 
         Button {
             player.enqueue([song], next: true)
@@ -48,6 +58,10 @@ struct SongActionsMenu: View {
 
     @ViewBuilder private var youTubeActions: some View {
         Divider()
+
+        Button("Play YouTube Version", systemImage: "play.rectangle") {
+            player.play([song])
+        }
 
         Button {
             NavidromeImportCenter.shared.add(song, app: app, ui: ui)

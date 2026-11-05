@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
+    @State private var actions = AppActionRouter.shared
     @State private var ui = UIState()
     @State private var nav = TabNavigationModel()
     @State private var hasAppliedDebugRouting = false
@@ -29,6 +30,7 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var ui = ui
+        let youTubeIndex = library.youTubeLibraryIndex()
 
         Group {
             if shouldShowLogin {
@@ -47,6 +49,7 @@ struct RootView: View {
         }
         .animation(.smooth, value: updates.showsBanner)
         .focusedSceneValue(\.windowUIState, ui)
+        .modifier(CopiedYouTubeLinkPresenter())
         .modifier(SongInfoPresenter(insidePlayer: false))
         .modifier(ShellBannersPresenter(insidePlayer: false))
         .fullScreenCover(isPresented: $ui.isPlayerPresented) {
@@ -79,14 +82,20 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showMusicRecognition)) { _ in
             ui.isRecognitionPresented = true
         }
+        .task(id: "\(actions.requests.first?.id.uuidString ?? "")|\(app.sessionRevision)") {
+            guard app.session == .ready, let request = actions.requests.first else { return }
+            await actions.handle(request, app: app, ui: ui)
+        }
         .tint(LookStore.shared.accent)
+        .environment(\.youTubeLibraryIndex, youTubeIndex.value)
+        .observing(youTubeIndex)
         .environment(ui)
         .environment(nav)
-        .task(id: ui.toast) {
+        .task(id: ui.toastID) {
             guard ui.toast != nil else { return }
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            do { try await Task.sleep(for: .seconds(ui.toastAction == nil ? 2.5 : 8)) } catch { return }
             withAnimation(.smooth) {
-                ui.toast = nil
+                ui.dismissToast()
             }
         }
         .onChange(of: library.lastError) { _, newError in

@@ -111,6 +111,8 @@ struct SongListView: View {
                         let size = StorageManager.format(downloads.completedBytes)
                         Text("\(count) \(count == 1 ? "song" : "songs") • \(size)")
 
+                        DownloadMostPlayedButton()
+
                         Button(role: .destructive) {
                             showDeleteAllConfirmation = true
                         } label: {

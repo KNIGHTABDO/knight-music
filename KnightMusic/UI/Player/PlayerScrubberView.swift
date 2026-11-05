@@ -8,6 +8,7 @@ import SwiftUI
 struct PlayerScrubberView: View {
     @Environment(PlayerEngine.self) private var player
 
+    @AppStorage("km.showTotalTime") private var showTotalTime = false
     @State private var isDragging = false
     @State private var scrubTime: TimeInterval = 0
     @State private var lastX: CGFloat = 0
@@ -113,7 +114,13 @@ struct PlayerScrubberView: View {
                 Spacer()
 
                 let remaining = max(0, player.duration - displayTime)
-                Text(player.duration > 0 ? "-\(KMFormat.duration(remaining))" : "--:--")
+                Text(player.duration > 0 ? (showTotalTime ? KMFormat.duration(player.duration) : "-\(KMFormat.duration(remaining))") : "--:--")
+                    .contentShape(Rectangle())
+                    .onTapGesture { showTotalTime.toggle() }
+                    .help("Tap to switch remaining time and duration")
+                    .accessibilityLabel(showTotalTime ? "Total Duration" : "Remaining Time")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction(named: "Toggle Total Duration") { showTotalTime.toggle() }
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Color.white.opacity(isDragging ? 1 : 0.85))

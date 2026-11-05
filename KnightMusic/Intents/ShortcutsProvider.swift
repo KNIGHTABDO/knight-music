@@ -63,16 +63,6 @@ public struct KnightMusicShortcuts: AppShortcutsProvider {
             systemImageName: "heart.fill"
         )
         AppShortcut(
-            intent: PlayDownloadsIntent(),
-            phrases: [
-                "Play downloads on \(.applicationName)",
-                "Play downloaded songs in \(.applicationName)",
-                "Play offline music on \(.applicationName)"
-            ],
-            shortTitle: "Play Downloads",
-            systemImageName: "arrow.down.circle.fill"
-        )
-        AppShortcut(
             intent: ResumeIntent(),
             phrases: [
                 "Resume \(.applicationName)",
@@ -82,25 +72,15 @@ public struct KnightMusicShortcuts: AppShortcutsProvider {
             shortTitle: "Resume",
             systemImageName: "play.fill"
         )
-        AppShortcut(
-            intent: PauseIntent(),
-            phrases: [
-                "Pause \(.applicationName)",
-                "Stop \(.applicationName)"
-            ],
-            shortTitle: "Pause",
-            systemImageName: "pause.fill"
-        )
-        AppShortcut(
-            intent: NextTrackIntent(),
-            phrases: [
-                "Next song on \(.applicationName)",
-                "Next track in \(.applicationName)",
-                "Skip song on \(.applicationName)"
-            ],
-            shortTitle: "Next Song",
-            systemImageName: "forward.fill"
-        )
+        AppShortcut(intent: LoveCurrentSongIntent(),
+                    phrases: ["Love current song in \(.applicationName)", "Love this song on \(.applicationName)"],
+                    shortTitle: "Love Current Song", systemImageName: "heart.fill")
+        AppShortcut(intent: RecognizeSongIntent(),
+                    phrases: ["Recognize song with \(.applicationName)", "Identify this song with \(.applicationName)"],
+                    shortTitle: "Recognize Song", systemImageName: "waveform")
+        AppShortcut(intent: AddCurrentSongToNavidromeIntent(),
+                    phrases: ["Add current song to Navidrome with \(.applicationName)", "Save this YouTube song with \(.applicationName)"],
+                    shortTitle: "Add to Navidrome", systemImageName: "plus.circle")
     }
 
     public static func updateParameters() {
