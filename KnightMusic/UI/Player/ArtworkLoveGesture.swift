@@ -21,7 +21,14 @@ struct ArtworkLoveGesture: ViewModifier {
                 }
             }
             .help("Double-tap to toggle love")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Artwork for \(player.currentSong?.title ?? "current song")")
+            .accessibilityHint("Use actions to love this song or skip tracks")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(perform: love)
             .accessibilityAction(named: "Toggle Love", love)
+            .accessibilityAction(named: "Next Song") { player.next() }
+            .accessibilityAction(named: "Previous Song") { player.previous() }
             .task(id: burstID) {
                 guard burst else { return }
                 do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
