@@ -25,7 +25,7 @@ struct ArtworkLoveGesture: ViewModifier {
             .accessibilityLabel("Artwork for \(player.currentSong?.title ?? "current song")")
             .accessibilityHint("Use actions to love this song or skip tracks")
             .accessibilityAddTraits(.isButton)
-            .accessibilityAction(perform: love)
+            .accessibilityAction { love() }
             .accessibilityAction(named: "Toggle Love", love)
             .accessibilityAction(named: "Next Song") { player.next() }
             .accessibilityAction(named: "Previous Song") { player.previous() }
