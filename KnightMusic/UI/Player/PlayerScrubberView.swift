@@ -119,6 +119,7 @@ struct PlayerScrubberView: View {
                     .onTapGesture { showTotalTime.toggle() }
                     .help("Tap to switch remaining time and duration")
                     .accessibilityLabel(showTotalTime ? "Total Duration" : "Remaining Time")
+                    .accessibilityValue(player.duration > 0 ? KMFormat.duration(showTotalTime ? player.duration : remaining) : "Unknown")
                     .accessibilityAddTraits(.isButton)
                     .accessibilityAction(named: "Toggle Total Duration") { showTotalTime.toggle() }
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
