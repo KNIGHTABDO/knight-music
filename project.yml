@@ -42,9 +42,10 @@ targets:
         product: Nuke
       - package: Nuke
         product: NukeUI
-      # Streamora's player (Duet). Static xcframework fetched in CI by scripts/fetch-vlckit.sh.
+      # Streamora's player (Duet). Dynamic xcframework fetched in CI by scripts/fetch-vlckit.sh; must be embedded.
       - framework: Vendor/MobileVLCKit.xcframework
-        embed: false
+        embed: true
+        codeSign: true
       - sdk: AudioToolbox.framework
       - sdk: CoreMedia.framework
       - sdk: VideoToolbox.framework

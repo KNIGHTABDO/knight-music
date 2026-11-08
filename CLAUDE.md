@@ -75,7 +75,7 @@ The app's display name is **Duet**: Knight Music plus Streamora (`https://stream
 - `Streamora/`: `StreamoraStageController` (WKWebView), `StreamoraBridgeScript` (a fake `window.Capacitor` with
   `Plugins.StreamoraPlayer`), `StreamoraBridge` (ports the Capacitor plugin), `VlcEngine` +
   `StreamoraPlayerViewController` (MobileVLCKit). Keep the bridge's method/event names in sync with Streamora's web.
-- MobileVLCKit is a prebuilt static xcframework fetched in CI by `scripts/fetch-vlckit.sh` into `Vendor/`
+- MobileVLCKit is a prebuilt dynamic xcframework (embedded) fetched in CI by `scripts/fetch-vlckit.sh` into `Vendor/`
   (gitignored, cached). Never download it on the laptop.
 
 ## AutoMix (server/automix)
