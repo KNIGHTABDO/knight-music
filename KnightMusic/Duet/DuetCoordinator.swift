@@ -143,12 +143,20 @@ final class DuetCoordinator {
 
     func toggle() { open(pending.map(\.other) ?? world.other) }
 
-    private func showPrompt(for target: DuetWorld) {
+    /// After the Duet film: show once where the other side is, with the same pill a shake brings up.
+    func teachShake() {
+        guard !isSwitching, prompt == nil, LookStore.shared.shakeAction == .switchWorld else { return }
+        let target = world.other
+        showPrompt(for: target, title: target == .movies ? "Shake for Streamora" : "Shake for Knight Music",
+                   detail: target == .movies ? "Movies live on the other side of Duet" : "Your music lives on the other side of Duet")
+    }
+
+    private func showPrompt(for target: DuetWorld, title: String? = nil, detail: String? = nil) {
         guard let scene = currentScene() else { return }
         if target == .movies { ensureStage(in: scene).1.loadIfNeeded() }
         let hud = ensureHUD(in: scene)
-        let next = Prompt(target: target, title: target == .movies ? "Switch to Streamora?" : "Back to Knight Music?",
-                          detail: promptDetail(for: target))
+        let next = Prompt(target: target, title: title ?? (target == .movies ? "Switch to Streamora?" : "Back to Knight Music?"),
+                          detail: detail ?? promptDetail(for: target))
         withAnimation(.snappy) { prompt = next }
         hud.isHidden = false
         Haptics.impact(.light)

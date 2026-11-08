@@ -1,7 +1,7 @@
 # Every push: compile for the simulator (the compiler gate — there is no Mac locally).
 # Screenshots (never on release tags): on main, on commits containing [shots] or [shots:a,b] (quick: those screens, iPhone only), or by hand (Run workflow → screens: true).
 #   Simulator screenshots of every screen (iPhone + iPad) against demo.navidrome.org → artifact "screens".
-# Tags v*: unsigned KnightMusic.ipa attached to a GitHub Release (install with SideStore).
+# Tags v*: unsigned Duet.ipa attached to a GitHub Release (install with SideStore).
 name: iOS
 
 on:
@@ -51,6 +51,9 @@ jobs:
 
       - name: Fetch MobileVLCKit
         run: scripts/fetch-vlckit.sh
+
+      - name: Fetch the Duet film
+        run: scripts/fetch-intro.sh
 
       - name: Generate project
         run: |
@@ -112,10 +115,10 @@ jobs:
             archive > archive.log 2>&1 || { grep -E "error:" archive.log | sort -u | head -40; tail -20 archive.log; exit 1; }
           mkdir -p Payload
           cp -R build/KnightMusic.xcarchive/Products/Applications/KnightMusic.app Payload/
-          zip -qry KnightMusic.ipa Payload
-          ls -lh KnightMusic.ipa
+          zip -qry Duet.ipa Payload
+          ls -lh Duet.ipa
           git log -1 --pretty=%B | grep -viE '^(co-authored-by|\[shots\])' | sed -e 's/ \[shots\]//' > release-notes.txt || true
-          python3 scripts/make-source.py Payload/KnightMusic.app KnightMusic.ipa "$GITHUB_REF_NAME" release-notes.txt apps.json
+          python3 scripts/make-source.py Payload/KnightMusic.app Duet.ipa "$GITHUB_REF_NAME" release-notes.txt apps.json
 
       - name: Publish release
         if: github.ref_type == 'tag'
@@ -123,5 +126,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           printf '\n\n---\nUnsigned iPhone/iPad build. Install with SideStore (iOS/iPadOS 26+), or add the SideStore source:\nhttps://github.com/%s/releases/latest/download/apps.json\n' "$GITHUB_REPOSITORY" >> release-notes.txt
-          gh release create "$GITHUB_REF_NAME" KnightMusic.ipa apps.json --title "Knight Music $GITHUB_REF_NAME" \
+          gh release create "$GITHUB_REF_NAME" Duet.ipa apps.json --title "Duet $GITHUB_REF_NAME" \
             --notes-file release-notes.txt

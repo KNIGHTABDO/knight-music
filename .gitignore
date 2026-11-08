@@ -11,3 +11,5 @@ __pycache__/
 *.pyc
 KickLiveWidget/KickSecrets.swift
 Vendor/
+promo/duet/
+KnightMusic/Resources/Intro/

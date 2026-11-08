@@ -4,7 +4,7 @@
 SideStore refuses an install whose entitlements or privacy prompts aren't declared by the source, so
 both are read from the bundle (plus its extensions) instead of being maintained by hand.
 
-usage: make-source.py <Payload/KnightMusic.app> <KnightMusic.ipa> <tag> <notes-file> <out.json>
+usage: make-source.py <Payload/KnightMusic.app> <Duet.ipa> <tag> <notes-file> <out.json>
 """
 import datetime, glob, json, os, plistlib, re, subprocess, sys
 
@@ -37,30 +37,30 @@ for path in ENTITLEMENT_FILES:
         with open(path, "rb") as f:
             entitlements.update(plistlib.load(f).keys())
 
-notes = open(notes_file).read().strip() or f"Knight Music {tag}"
+notes = open(notes_file).read().strip() or f"Duet {tag}"
 base = f"https://github.com/{REPO}"
 version = {
     "version": main["CFBundleShortVersionString"],
     "buildVersion": str(main["CFBundleVersion"]),
     "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "localizedDescription": notes,
-    "downloadURL": f"{base}/releases/download/{tag}/KnightMusic.ipa",
+    "downloadURL": f"{base}/releases/download/{tag}/{os.path.basename(ipa)}",
     "size": os.path.getsize(ipa),
     "minOSVersion": main.get("MinimumOSVersion", "26.0"),
 }
 source = {
-    "name": "Knight Music",
-    "subtitle": "Native Navidrome player",
+    "name": "Duet",
+    "subtitle": "Music and movies. One app.",
     "sourceURL": f"{base}/releases/latest/download/apps.json",
-    "website": base,
+    "website": "https://streamora-5w5.pages.dev",
     "iconURL": f"https://raw.githubusercontent.com/{REPO}/main/KnightMusic/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
     "tintColor": "FA2D48",
     "apps": [{
-        "name": "Knight Music",
+        "name": "Duet",
         "bundleIdentifier": main["CFBundleIdentifier"],
         "developerName": "KNIGHTABDO",
-        "subtitle": "Native Navidrome player",
-        "localizedDescription": "A native Liquid Glass music player for your Navidrome server: offline library, downloads, synced lyrics and animated artwork.",
+        "subtitle": "Music and movies. One app.",
+        "localizedDescription": "Your Navidrome music and Streamora movies in one Liquid Glass app. Shake to switch. Offline library, AutoMix, synced lyrics, animated artwork, and a full movie player with VLC.",
         "iconURL": f"https://raw.githubusercontent.com/{REPO}/main/KnightMusic/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
         "tintColor": "FA2D48",
         "category": "entertainment",

@@ -19,6 +19,14 @@ struct DuetSettingsView: View {
                     Label("Open Streamora", systemImage: "film")
                         .foregroundStyle(Theme.accent)
                 }
+                if IntroFilm.isAvailable {
+                    Button {
+                        IntroFilm.shared.replay()
+                    } label: {
+                        Label("Play the Duet Film", systemImage: "play.rectangle")
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
             } footer: {
                 Text("Duet keeps Knight Music and Streamora in one app. Each side stays exactly where you left it while you use the other.")
             }

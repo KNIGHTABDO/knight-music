@@ -148,9 +148,14 @@ struct RootView: View {
             await applyDebugRoutingIfNeeded()
         }
         .modifier(LookEffects(ui: ui))
-        .onAppear { DuetCoordinator.shared.attach() }
+        .onAppear {
+            DuetCoordinator.shared.attach()
+            IntroFilm.shared.presentIfDue()
+        }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { DuetCoordinator.shared.attach() }
+            guard phase == .active else { return }
+            DuetCoordinator.shared.attach()
+            IntroFilm.shared.presentIfDue()
         }
         .onChange(of: player.isPlaying) { _, playing in
             // Music started from Siri, a widget or Control Center while a movie had focus: music wins.
