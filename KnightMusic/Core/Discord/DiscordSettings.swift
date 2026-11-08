@@ -51,6 +51,7 @@ final class DiscordSettings {
                     Log.app.error("Failed to save Discord token to Keychain: \(error)")
                 }
             }
+            if token != oldValue { NotificationCenter.default.post(name: .knightBackupContentChanged, object: nil) }
         }
     }
 
@@ -58,6 +59,17 @@ final class DiscordSettings {
 
     var isConfigured: Bool {
         isEnabled && !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Re-reads everything (after a backup restore wrote it).
+    func reload() {
+        let fresh = DiscordSettings()
+        isEnabled = fresh.isEnabled
+        showArtwork = fresh.showArtwork
+        clearOnPause = fresh.clearOnPause
+        activityName = fresh.activityName
+        applicationId = fresh.applicationId
+        token = fresh.token
     }
 
     init() {

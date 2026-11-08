@@ -17,6 +17,12 @@ final class LyricsOffsetStore {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        reload()
+    }
+
+    /// Re-reads offsets from UserDefaults (after a backup restore wrote them).
+    func reload() {
+        offsets = [:]
         if let stored = userDefaults.dictionary(forKey: Self.storageKey) {
             var parsed: [String: Int] = [:]
             for (key, val) in stored {

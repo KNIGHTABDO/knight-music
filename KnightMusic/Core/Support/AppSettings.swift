@@ -107,6 +107,40 @@ final class AppSettings {
         eqGains = storedGains.count == Equalizer.frequencies.count ? storedGains : Equalizer.flat
     }
 
+    /// Re-reads every value from UserDefaults (after a backup restore wrote them).
+    func reload() {
+        let fresh = AppSettings()
+        accentColorHex = fresh.accentColorHex
+        appearance = fresh.appearance
+        wifiMaxBitRate = fresh.wifiMaxBitRate
+        wifiFormat = fresh.wifiFormat
+        cellularMaxBitRate = fresh.cellularMaxBitRate
+        cellularFormat = fresh.cellularFormat
+        downloadMaxBitRate = fresh.downloadMaxBitRate
+        downloadFormat = fresh.downloadFormat
+        offlineMode = fresh.offlineMode
+        manualOfflineEnabled = fresh.manualOfflineEnabled
+        streamCacheLimitMB = fresh.streamCacheLimitMB
+        gaplessEnabled = fresh.gaplessEnabled
+        autoMixEnabled = fresh.autoMixEnabled
+        autoMixKeepsAlbums = fresh.autoMixKeepsAlbums
+        replayGainMode = fresh.replayGainMode
+        scrobblingEnabled = fresh.scrobblingEnabled
+        animatedArtworkEnabled = fresh.animatedArtworkEnabled
+        lockScreenAnimatedArtworkEnabled = fresh.lockScreenAnimatedArtworkEnabled
+        syncPlayQueueWithServer = fresh.syncPlayQueueWithServer
+        showRatings = fresh.showRatings
+        saveAheadMode = fresh.saveAheadMode
+        crossfadeSeconds = fresh.crossfadeSeconds
+        playbackSpeed = fresh.playbackSpeed
+        eqEnabled = fresh.eqEnabled
+        eqPreset = fresh.eqPreset
+        eqGains = fresh.eqGains
+        downloadOverCellular = fresh.downloadOverCellular
+        autoDownloadFavorites = fresh.autoDownloadFavorites
+        autoDownloadPlaylistIds = fresh.autoDownloadPlaylistIds
+    }
+
     /// Parameters for `SubsonicClient.streamURL` given the current network class.
     func streamParameters(onMeteredNetwork metered: Bool) -> (maxBitRate: Int?, format: String?) {
         let rate = metered ? cellularMaxBitRate : wifiMaxBitRate

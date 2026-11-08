@@ -265,7 +265,17 @@ actor SubsonicClient {
 
     // MARK: - Playlists
 
+    /// The user's playlists, without the hidden settings-backup playlist.
     func getPlaylists() async throws -> [Playlist] {
+        try await getAllPlaylists().filter { !BackupCodec.isBackup($0) }
+    }
+
+    /// Only the playlists that carry Knight Music's settings backup (see `AccountBackupService`).
+    func getBackupPlaylists() async throws -> [Playlist] {
+        try await getAllPlaylists().filter(BackupCodec.isBackup)
+    }
+
+    private func getAllPlaylists() async throws -> [Playlist] {
         let r: PlaylistsPayload = try await perform("getPlaylists")
         return (r.playlists?.playlist ?? []).map(\.cleaned)
     }
