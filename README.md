@@ -6,7 +6,8 @@
 
 <p align="center">
   <strong>Knight Music and Streamora in one native app for iPhone and iPad.</strong><br />
-  A Liquid Glass client for your Navidrome library, with movies one shake away.
+  A Liquid Glass client for your Navidrome library, with movies one shake away.<br />
+  <a href="https://streamora-5w5.pages.dev">streamora-5w5.pages.dev</a>: the film, the tour and the install guide
 </p>
 
 <p align="center">
