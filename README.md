@@ -38,7 +38,7 @@ Shake the phone to switch between them. Each side keeps its exact state while yo
 
 Duet is built entirely with Apple's own Liquid Glass APIs, without custom blur stacks. It ships as an unsigned IPA, so you can sideload it with a free Apple ID; no Mac is needed.
 
-> **Latest release: [v0.9.0](https://github.com/KNIGHTABDO/knight-music/releases/latest)**: the app is now **Duet**. Streamora lives inside Knight Music; shake to switch between music and movies, with one app and one SideStore slot.
+> **Latest release: [v0.9.1](https://github.com/KNIGHTABDO/knight-music/releases/latest)**: tapping the Duet switch prompt no longer reaches the app behind it. v0.9.0 made the app **Duet**: Streamora lives inside Knight Music; shake to switch between music and movies, with one app and one SideStore slot.
 
 ## Screenshots
 
