@@ -98,6 +98,7 @@ jobs:
         with:
           name: screens
           path: screens/
+          retention-days: 1
 
       - name: Archive unsigned IPA
         if: github.ref_type == 'tag'
