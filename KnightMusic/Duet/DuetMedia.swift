@@ -1,0 +1,94 @@
+import MediaPlayer
+import UIKit
+
+/// Decides who owns playback, the lock screen and the remote commands: Knight Music's music or a Streamora movie.
+/// A movie takes focus when it starts playing (music pauses); music gets it back when the movie closes or when
+/// you switch back to Knight Music (the movie pauses). Knight Music's RemoteCommands/NowPlayingCenter stay quiet
+/// while `movieHasFocus` is set, and the movie engine stays quiet otherwise.
+@MainActor
+final class DuetMedia {
+    static let shared = DuetMedia()
+
+    /// Read from remote-command handlers on any thread, written on the main actor only.
+    nonisolated(unsafe) static var movieHasFocus = false
+
+    enum Source: Hashable { case engine, classic, web }
+
+    /// Set by the Streamora bridge: pause whatever movie is playing (VLC engine, classic player or a <video>).
+    var pauseMovie: (() -> Void)?
+    /// Set by the Streamora bridge: put the movie back on the lock screen after music had it.
+    var reclaimMovie: (() -> Void)?
+
+    private(set) var activeSources: Set<Source> = []
+    /// Music that a movie interrupted; it resumes when the movie ends or you switch back (Intermission).
+    private(set) var musicPausedForMovie = false
+    private var releaseTask: Task<Void, Never>?
+
+    var hasMovie: Bool { !activeSources.isEmpty }
+    var interruptedSongTitle: String? { musicPausedForMovie ? AppModel.shared?.player.currentSong?.title : nil }
+
+    func movieStarted(_ source: Source) {
+        releaseTask?.cancel()
+        releaseTask = nil
+        activeSources.insert(source)
+        guard !Self.movieHasFocus else { return }
+        Self.movieHasFocus = true
+        if let player = AppModel.shared?.player, player.isPlaying {
+            player.pause()
+            musicPausedForMovie = DuetSettings.shared.intermission
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = false
+        MPRemoteCommandCenter.shared().previousTrackCommand.isEnabled = false
+        reclaimMovie?()
+        Log.app.info("duet: movie has focus (\(String(describing: source)))")
+    }
+
+    func movieStopped(_ source: Source) {
+        activeSources.remove(source)
+        guard activeSources.isEmpty, Self.movieHasFocus else { return }
+        // Debounced: the web player closes the engine and reopens it when switching episodes or sources.
+        releaseTask?.cancel()
+        releaseTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, let self, self.activeSources.isEmpty else { return }
+            self.giveFocusToMusic(resume: true)
+        }
+    }
+
+    /// Switching to Knight Music: the movie pauses and music gets the lock screen (and resumes if a movie stopped it).
+    func musicTakesFocus() {
+        releaseTask?.cancel()
+        releaseTask = nil
+        guard Self.movieHasFocus else { return }
+        pauseMovie?()
+        giveFocusToMusic(resume: true)
+    }
+
+    /// Music began playing on its own terms (Siri, a widget, the music UI) while a movie had focus.
+    func musicStartedPlaying() {
+        guard Self.movieHasFocus else { return }
+        releaseTask?.cancel()
+        pauseMovie?()
+        giveFocusToMusic(resume: false)
+    }
+
+    private func giveFocusToMusic(resume: Bool) {
+        releaseTask = nil
+        Self.movieHasFocus = false
+        guard let player = AppModel.shared?.player else { return }
+        let c = MPRemoteCommandCenter.shared()
+        c.playCommand.isEnabled = true
+        c.pauseCommand.isEnabled = true
+        c.togglePlayPauseCommand.isEnabled = true
+        c.skipForwardCommand.isEnabled = false
+        c.skipBackwardCommand.isEnabled = false
+        player.remote?.refresh()
+        player.nowPlaying.republish()
+        if resume, musicPausedForMovie, player.currentSong != nil, !player.isPlaying {
+            player.resume()
+        }
+        musicPausedForMovie = false
+        Log.app.info("duet: music has focus")
+    }
+}

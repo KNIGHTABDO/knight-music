@@ -142,6 +142,9 @@ struct SettingsView: View {
 
             // 4. Sub-settings navigation
             Section {
+                NavigationLink(destination: DuetSettingsView()) {
+                    Label("Duet · Streamora", systemImage: "film.stack")
+                }
                 NavigationLink("Playback", destination: PlaybackSettingsView())
                 NavigationLink("Storage", destination: StorageView())
                 NavigationLink("Duplicate Songs", destination: DuplicateSongsView())

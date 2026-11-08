@@ -65,6 +65,19 @@ KnightMusic/
     `previous()`, `seek(to:)`, `enqueue(_:next:)`, `currentSong`, `isPlaying`, `currentTime`, `duration`,
     `queue`, `repeatMode`, `shuffleEnabled`, `source: AudioSource`.
 
+## Duet (Knight Music + Streamora in one app)
+The app's display name is **Duet**: Knight Music plus Streamora (`https://streamora-5w5.pages.dev`), switched by a shake.
+- `Duet/DuetCoordinator`: Streamora lives in its own UIWindow above Knight Music's (`.normal+1`), shown or hidden so
+  neither side loses state; `DuetHUDWindow` (`.normal+2`, touch-through) shows the glass confirm pill and hosts the
+  page-curl switch (only Knight Music's window is snapshotted, never the web view).
+- `Duet/DuetMedia`: one lock screen / audio focus between music and movies (`movieHasFocus` guards RemoteCommands
+  and NowPlayingCenter; Intermission resumes paused music).
+- `Streamora/`: `StreamoraStageController` (WKWebView), `StreamoraBridgeScript` (a fake `window.Capacitor` with
+  `Plugins.StreamoraPlayer`), `StreamoraBridge` (ports the Capacitor plugin), `VlcEngine` +
+  `StreamoraPlayerViewController` (MobileVLCKit). Keep the bridge's method/event names in sync with Streamora's web.
+- MobileVLCKit is a prebuilt dynamic xcframework (embedded) fetched in CI by `scripts/fetch-vlckit.sh` into `Vendor/`
+  (gitignored, cached). Never download it on the laptop.
+
 ## AutoMix (server/automix)
 Beat-matched transitions are planned on the Navidrome host by `server/automix` (Python service `knight-automix`,
 see its README) and executed by the app. Tune mixing in `planner.py` (deploy with `deploy/install.sh`, no app

@@ -16,6 +16,8 @@ final class RemoteCommands {
                      _ handler: @escaping @MainActor (PlayerEngine, MPRemoteCommandEvent) -> Void) {
         command.isEnabled = true
         let token = command.addTarget { [weak self] event in
+            // A Streamora movie owns the lock screen and headset buttons while it has focus (see DuetMedia).
+            guard !DuetMedia.movieHasFocus else { return .commandFailed }
             Task { @MainActor in
                 guard let engine = self?.engine else { return }
                 handler(engine, event)

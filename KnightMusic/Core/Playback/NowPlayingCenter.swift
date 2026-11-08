@@ -65,7 +65,7 @@ final class NowPlayingCenter {
 
         info = next
         publish()
-        MPNowPlayingInfoCenter.default().playbackState = rate > 0 ? .playing : .paused
+        setPlaybackState(rate > 0 ? .playing : .paused)
 
         guard !isLive, let provider = artwork else { return }
         let id = song.id
@@ -90,9 +90,9 @@ final class NowPlayingCenter {
         }
         publish()
         if let state {
-            MPNowPlayingInfoCenter.default().playbackState = state
+            setPlaybackState(state)
         } else {
-            MPNowPlayingInfoCenter.default().playbackState = rate > 0 ? .playing : .paused
+            setPlaybackState(rate > 0 ? .playing : .paused)
         }
     }
 
@@ -114,8 +114,27 @@ final class NowPlayingCenter {
         currentSong = nil
         currentSongId = nil
         info = [:]
+        guard !DuetMedia.movieHasFocus else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
+    }
+
+    /// Duet: puts the current song back on the lock screen after a Streamora movie had it.
+    func republish() {
+        guard !DuetMedia.movieHasFocus else { return }
+        guard currentSongId != nil else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
+            return
+        }
+        publish()
+        let rate = info[MPNowPlayingInfoPropertyPlaybackRate] as? Double ?? 0
+        setPlaybackState(rate > 0 ? .playing : .paused)
+    }
+
+    private func setPlaybackState(_ state: MPNowPlayingPlaybackState) {
+        guard !DuetMedia.movieHasFocus else { return }
+        MPNowPlayingInfoCenter.default().playbackState = state
     }
 
     private func handleAnimatedArtworkReady(albumId: String) {
@@ -136,6 +155,7 @@ final class NowPlayingCenter {
     }
 
     private func publish() {
+        guard !DuetMedia.movieHasFocus else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         let keyList = info.keys.sorted().joined(separator: ", ")
         Log.artwork.info("published keys: \(keyList)")

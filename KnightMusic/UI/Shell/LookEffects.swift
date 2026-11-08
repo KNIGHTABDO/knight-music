@@ -42,8 +42,14 @@ struct LookEffects: ViewModifier {
     }
 
     private func handleShake() {
+        // Duet owns the shake while Streamora is open, while its prompt is up, or when set to switch apps.
+        let duet = DuetCoordinator.shared
+        if duet.wantsShake {
+            duet.handleShake()
+            return
+        }
         switch LookStore.shared.shakeAction {
-        case .off:
+        case .off, .switchWorld:
             return
         case .nextSong:
             guard player.currentSong != nil else { return }

@@ -174,6 +174,13 @@ enum DebugLaunch {
                 ui.selectedTab = .library
                 nav.library.append(Route.songList(.downloaded))
             }
+        case "streamora":
+            DuetCoordinator.shared.switchTo(.movies, animated: false)
+        case "duet-pill":
+            DuetCoordinator.shared.request(.movies, confirm: true)
+        case "duet":
+            ui.selectedTab = .settings
+            nav.settings.append(Route.duet)
         case "onboarding":
             // Handled in RootView by presenting LoginView regardless of session
             break

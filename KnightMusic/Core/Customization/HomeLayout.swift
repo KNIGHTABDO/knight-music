@@ -75,7 +75,7 @@ enum HapticsLevel: String, Codable, CaseIterable, Identifiable, Sendable {
 
 /// What shaking the phone does.
 enum ShakeAction: String, Codable, CaseIterable, Identifiable, Sendable {
-    case off, nextSong, shuffleLibrary, surpriseLook
+    case off, nextSong, shuffleLibrary, surpriseLook, switchWorld
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -83,6 +83,7 @@ enum ShakeAction: String, Codable, CaseIterable, Identifiable, Sendable {
         case .nextSong: "Next Song"
         case .shuffleLibrary: "Shuffle Everything"
         case .surpriseLook: "Surprise Look"
+        case .switchWorld: "Switch to Streamora"
         }
     }
 }
