@@ -23,7 +23,19 @@ struct AppIconChoice: Identifiable, Hashable, Sendable {
     var previewImage: String { "IconPreview-\(id)" }
 
     static let all: [AppIconChoice] = [
-        AppIconChoice(id: primaryId, name: "Knight Red", caption: "The original glass knight"),
+        AppIconChoice(id: primaryId, name: "Duet", caption: "Music and movies, interlocked"),
+        AppIconChoice(id: "Icon-KnightRed", name: "Knight Red", caption: "The original glass knight"),
+        AppIconChoice(id: "Icon-DuetSplit", name: "Split Screen", caption: "Half knight, half reel"),
+        AppIconChoice(id: "Icon-DuetMane", name: "Film Mane", caption: "A mane of 35mm film"),
+        AppIconChoice(id: "Icon-DuetDiscs", name: "Vinyl & Reel", caption: "Two discs, one glass"),
+        AppIconChoice(id: "Icon-DuetCurtain", name: "Premiere", caption: "Curtain up"),
+        AppIconChoice(id: "Icon-DuetFilmNote", name: "Film Note", caption: "Shot on 35mm"),
+        AppIconChoice(id: "Icon-DuetCozy", name: "Cozy Reel", caption: "Streamora's reel, knighted"),
+        AppIconChoice(id: "Icon-DuetMonogram", name: "Monogram", caption: "D for Duet"),
+        AppIconChoice(id: "Icon-DuetTicket", name: "Admit One", caption: "Music included"),
+        AppIconChoice(id: "Icon-DuetReelEye", name: "Reel Eye", caption: "A knight who watches"),
+        AppIconChoice(id: "Icon-DuetBalance", name: "Balance", caption: "Music and movies in balance"),
+        AppIconChoice(id: "Icon-DuetNeon", name: "Marquee", caption: "Open all night"),
         AppIconChoice(id: "Icon-Neon", name: "Neon Night", caption: "Cyan and magenta tubes"),
         AppIconChoice(id: "Icon-Zellige", name: "Zellige", caption: "Hand-cut Moroccan tiles"),
         AppIconChoice(id: "Icon-Vinyl", name: "Vinyl", caption: "Pressed at 33⅓"),
