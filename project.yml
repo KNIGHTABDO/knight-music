@@ -42,8 +42,25 @@ targets:
         product: Nuke
       - package: Nuke
         product: NukeUI
+      # Streamora's player (Duet). Static xcframework fetched in CI by scripts/fetch-vlckit.sh.
+      - framework: Vendor/MobileVLCKit.xcframework
+        embed: false
+      - sdk: AudioToolbox.framework
+      - sdk: CoreMedia.framework
+      - sdk: VideoToolbox.framework
+      - sdk: CoreText.framework
+      - sdk: OpenGLES.framework
+      - sdk: QuartzCore.framework
+      - sdk: Security.framework
+      - sdk: CFNetwork.framework
+      - sdk: libc++.tbd
+      - sdk: libiconv.tbd
+      - sdk: libz.tbd
+      - sdk: libbz2.tbd
+      - sdk: libxml2.tbd
     settings:
       base:
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
         PRODUCT_BUNDLE_IDENTIFIER: com.knightabdo.knightmusic
         PRODUCT_NAME: KnightMusic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -58,7 +75,7 @@ targets:
     info:
       path: KnightMusic/Resources/Info.plist
       properties:
-        CFBundleDisplayName: Knight Music
+        CFBundleDisplayName: Duet
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleURLTypes:

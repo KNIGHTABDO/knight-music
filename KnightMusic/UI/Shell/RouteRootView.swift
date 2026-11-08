@@ -52,6 +52,8 @@ struct RouteRootView: View {
             CustomizeView()
         case .appIcons:
             AppIconView()
+        case .duet:
+            DuetSettingsView()
         case .knightChat(let id, let draft):
             KnightChatView(conversationId: id, initialDraft: draft)
         case .youTubeGrid(let browseId, let params, let title):

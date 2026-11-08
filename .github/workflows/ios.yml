@@ -44,6 +44,14 @@ jobs:
           printf 'enum KickSecrets {\n    static let CLIENT_ID = #"%s"#\n    static let CLIENT_SECRET = #"%s"#\n}\n' \
             "$KICK_CLIENT_ID" "$KICK_CLIENT_SECRET" > KickLiveWidget/KickSecrets.swift
 
+      - uses: actions/cache@v4
+        with:
+          path: Vendor/MobileVLCKit.xcframework
+          key: vlckit-${{ hashFiles('scripts/fetch-vlckit.sh') }}
+
+      - name: Fetch MobileVLCKit
+        run: scripts/fetch-vlckit.sh
+
       - name: Generate project
         run: |
           brew install xcodegen >/dev/null

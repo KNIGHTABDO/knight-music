@@ -148,6 +148,14 @@ struct RootView: View {
             await applyDebugRoutingIfNeeded()
         }
         .modifier(LookEffects(ui: ui))
+        .onAppear { DuetCoordinator.shared.attach() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { DuetCoordinator.shared.attach() }
+        }
+        .onChange(of: player.isPlaying) { _, playing in
+            // Music started from Siri, a widget or Control Center while a movie had focus: music wins.
+            if playing { DuetMedia.shared.musicStartedPlaying() }
+        }
         .task(id: player.currentSong?.id) {
             // Extract the current and next palettes before the player opens, so its first frame
             // already has the right colours.

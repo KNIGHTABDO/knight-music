@@ -20,6 +20,7 @@ enum Route: Hashable {
     case identifiedSongs
     case customize
     case appIcons
+    case duet
     case knightChat(id: String, draft: String? = nil)
     case youTubeGrid(browseId: String, params: String?, title: String)
     case youTubeSongs(browseId: String, params: String?, title: String)

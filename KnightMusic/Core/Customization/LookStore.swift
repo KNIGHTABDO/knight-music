@@ -37,7 +37,7 @@ final class LookStore {
     private enum Keys {
         static let current = "look.current", saved = "look.saved", startTab = "look.startTab"
         static let homeOrder = "look.homeOrder", hiddenHome = "look.hiddenHome", greeting = "look.greeting"
-        static let haptics = "look.haptics", shake = "look.shake"
+        static let haptics = "look.haptics", shake = "look.shake", duetShake = "duet.shakeMigrated"
         static let scheduleOn = "look.schedule", dayLook = "look.dayLook", nightLook = "look.nightLook"
         static let dayHour = "look.dayHour", nightHour = "look.nightHour"
     }
@@ -69,6 +69,11 @@ final class LookStore {
         hiddenHomeSections = Set(decode([HomeSection].self, Keys.hiddenHome) ?? [])
         homeGreeting = d.object(forKey: Keys.greeting) as? Bool ?? true
         haptics = HapticsLevel(rawValue: d.string(forKey: Keys.haptics) ?? "") ?? .normal
+        if !d.bool(forKey: Keys.duetShake) {
+            // Duet: shaking switches between Knight Music and Streamora (other shake actions stay available).
+            d.set(true, forKey: Keys.duetShake)
+            d.set(ShakeAction.switchWorld.rawValue, forKey: Keys.shake)
+        }
         shakeAction = ShakeAction(rawValue: d.string(forKey: Keys.shake) ?? "") ?? .off
         scheduleEnabled = d.bool(forKey: Keys.scheduleOn)
         dayLookId = d.string(forKey: Keys.dayLook).flatMap(UUID.init(uuidString:)) ?? Look.builtIns[8].id

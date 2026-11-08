@@ -13,7 +13,17 @@ final class AppActionRouter {
     var requests: [Request] = []
     @ObservationIgnored private var handlingRequests = Set<UUID>()
 
-    func submit(_ action: String) { requests.append(Request(action: action)) }
+    func submit(_ action: String) {
+        switch action {
+        case "streamora": DuetCoordinator.shared.open(.movies)
+        case "music": DuetCoordinator.shared.open(.music)
+        case "switchapp": DuetCoordinator.shared.toggle()
+        default:
+            // Every other action is about music: bring Knight Music to the front first.
+            DuetCoordinator.shared.open(.music)
+            requests.append(Request(action: action))
+        }
+    }
 
     func handle(_ request: Request, app: AppModel, ui: UIState) async {
         guard requests.contains(where: { $0.id == request.id }),
@@ -73,6 +83,7 @@ final class AppActionRouter {
 
     static func installShortcuts() {
         let items = [("resume", "Resume", "play.fill"),
+                     ("streamora", "Streamora", "film"),
                      ("favorites", "Shuffle Favorites", "shuffle"),
                      ("recognize", "Recognize Song", "waveform"),
                      ("downloads", "Downloads", "arrow.down.circle")]

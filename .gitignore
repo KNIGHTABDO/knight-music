@@ -10,3 +10,4 @@ KnightMusic/Resources/Info.plist
 __pycache__/
 *.pyc
 KickLiveWidget/KickSecrets.swift
+Vendor/
