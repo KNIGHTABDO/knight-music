@@ -20,6 +20,8 @@ final class DuetCoordinator {
     private(set) var prompt: Prompt?
     private(set) var isSwitching = false
     private(set) var hasStage = false
+    /// The prompt's frame in the HUD window, so taps on it are caught and everything else falls through.
+    @ObservationIgnored var promptFrame: CGRect = .null
 
     /// How long the prompt waits for a second shake or a tap.
     static let promptDuration: TimeInterval = 4

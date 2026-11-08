@@ -1,14 +1,20 @@
 import SwiftUI
 import UIKit
 
-/// Top-most window for Duet's prompt and switch animation. Touches outside its content fall through to the
+/// Top-most window for Duet's prompt and switch animation. Touches outside the prompt fall through to the
 /// app below, and it never takes keyboard focus or shake events.
 final class DuetHUDWindow: UIWindow {
     override var canBecomeKey: Bool { false }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let hit = super.hitTest(point, with: event)
-        return hit === rootViewController?.view || hit === self ? nil : hit
+        // The switch animation's container is a plain subview: it takes every touch while the curl runs.
+        guard hit === rootViewController?.view || hit === self else { return hit }
+        // SwiftUI draws the prompt inside the hosting view itself, so only its measured frame tells it apart
+        // from the empty, see-through rest of the window.
+        let duet = DuetCoordinator.shared
+        guard duet.prompt != nil, duet.promptFrame.insetBy(dx: -6, dy: -6).contains(point) else { return nil }
+        return rootViewController?.view ?? hit
     }
 }
 
@@ -26,6 +32,9 @@ struct DuetHUDView: View {
             if let prompt = duet.prompt {
                 DuetPromptPill(prompt: prompt)
                     .id(prompt.id)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                        DuetCoordinator.shared.promptFrame = frame
+                    }
                     .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9, anchor: .top)))
             }
             Spacer(minLength: 0)
