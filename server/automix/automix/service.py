@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -28,6 +29,10 @@ NAVIDROME_DB = os.environ.get("AUTOMIX_NAVIDROME_DB", "/home/knight/Navidrome/da
 NAVIDROME_URL = os.environ.get("AUTOMIX_NAVIDROME_URL", "http://127.0.0.1:4533")
 DATA_DIR = os.environ.get("AUTOMIX_DATA", os.path.expanduser("~/automix/data"))
 PORT = int(os.environ.get("AUTOMIX_PORT", "4534"))
+# Songs the Duet website may stream without signing in, and the pages allowed to read them through Web Audio.
+LANDING_SONGS = set(filter(None, os.environ.get("AUTOMIX_LANDING_SONGS", "24dHjf0C6IutaPctukQJjN").split(",")))
+LANDING_ORIGIN = re.compile(r"^https://([a-z0-9-]+\.)?streamora-5w5\.pages\.dev$|^http://(localhost|127\.0\.0\.1)(:\d+)?$")
+AUDIO_TYPES = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".flac": "audio/flac", ".ogg": "audio/ogg", ".opus": "audio/ogg"}
 SCAN_INTERVAL = float(os.environ.get("AUTOMIX_SCAN_INTERVAL", "10"))
 
 
@@ -263,7 +268,24 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                 file_path = yt.audio_path(video_id)
             except Exception as exc:
                 return self._send(502, {"error": str(exc)[-300:]})
-            size = os.path.getsize(file_path)
+            self._send_file(file_path, "audio/mp4")
+
+        def _landing_song(self, song_id: str):
+            """The website's soundtrack: only the allowlisted songs, readable cross-origin so Web Audio can fade it."""
+            meta = worker.meta.get(song_id) if song_id in LANDING_SONGS else None
+            if not meta:
+                return self._send(404, {"error": "not found"})
+            kind = AUDIO_TYPES.get(os.path.splitext(meta["path"])[1].lower(), "application/octet-stream")
+            origin = self.headers.get("Origin", "")
+            allow = origin if LANDING_ORIGIN.match(origin) else ""
+            self._send_file(meta["path"], kind, {"Cache-Control": "public, max-age=86400",
+                                                  **({"Access-Control-Allow-Origin": allow, "Vary": "Origin"} if allow else {})})
+
+        def _send_file(self, file_path: str, kind: str, extra: dict[str, str] | None = None):
+            try:
+                size = os.path.getsize(file_path)
+            except OSError:
+                return self._send(404, {"error": "not found"})
             start, end = 0, size - 1
             ranged = self.headers.get("Range", "")
             if ranged.startswith("bytes="):
@@ -279,11 +301,13 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                     self.end_headers()
                     return
             self.send_response(206 if ranged else 200)
-            self.send_header("Content-Type", "audio/mp4")
+            self.send_header("Content-Type", kind)
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Length", str(end - start + 1))
             if ranged:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            for key, value in (extra or {}).items():
+                self.send_header(key, value)
             self.end_headers()
             with open(file_path, "rb") as f:
                 f.seek(start)
@@ -322,6 +346,8 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                         return self._send(500, {"error": str(exc)})
                     return
                 return self._send(404, {"error": "not found"})
+            if path.startswith("/automix/v1/landing/song/"):
+                return self._landing_song(path.rsplit("/", 1)[1])
             if path == "/automix/v1/health":
                 return self._send(200, {"ok": True, "features": ["playlistEdit", "songEdit"]})
             if not path.startswith("/automix/v1/"):
