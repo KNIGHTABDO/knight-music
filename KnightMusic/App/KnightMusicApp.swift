@@ -81,6 +81,7 @@ struct KnightMusicApp: App {
             case .active: app.handleForeground()
             case .background:
                 app.scheduleBackgroundSync()
+                app.backup.flushInBackground()
                 AppActionRouter.installShortcuts()
             default: break
             }

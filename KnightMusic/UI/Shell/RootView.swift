@@ -85,6 +85,12 @@ struct RootView: View {
             ui.showToast(notice)
             app.player.playerNotice = nil
         }
+        .onChange(of: "\(app.backup.noticeID)|\(shouldShowLogin)") { _, _ in
+            // A restore at sign-in posts while the login screen is up; show it once the library appears.
+            guard !shouldShowLogin, let notice = app.backup.notice else { return }
+            ui.showToast(notice)
+            app.backup.clearNotice()
+        }
         .onChange(of: app.session == .ready, initial: true) { _, ready in
             if ready { NavidromeImportCenter.shared.resumePending(app: app, ui: ui) }
         }

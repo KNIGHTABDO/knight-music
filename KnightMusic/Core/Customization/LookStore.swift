@@ -77,6 +77,24 @@ final class LookStore {
         nightStartHour = d.object(forKey: Keys.nightHour) as? Int ?? 19
     }
 
+    /// Re-reads everything from UserDefaults (after a backup restore wrote it).
+    func reload() {
+        let fresh = LookStore()
+        current = fresh.current
+        saved = fresh.saved
+        startTab = fresh.startTab
+        homeOrder = fresh.homeOrder
+        hiddenHomeSections = fresh.hiddenHomeSections
+        homeGreeting = fresh.homeGreeting
+        haptics = fresh.haptics
+        shakeAction = fresh.shakeAction
+        scheduleEnabled = fresh.scheduleEnabled
+        dayLookId = fresh.dayLookId
+        nightLookId = fresh.nightLookId
+        dayStartHour = fresh.dayStartHour
+        nightStartHour = fresh.nightStartHour
+    }
+
     // MARK: - Derived
 
     var accent: Color {

@@ -27,6 +27,7 @@ final class AppModel {
     @ObservationIgnored private var autoMixShowcase: AutoMixShowcase?
     let autoDownloader = AutoDownloader()
     let shazam = ShazamService()
+    let backup = AccountBackupService()
 
     private(set) var session: SessionState = .loggedOut
 
@@ -117,6 +118,7 @@ final class AppModel {
 
     func start() async {
         started = true
+        backup.start(app: self)
         updates.checkIfDue()
         if autoMixShowcase == nil { autoMixShowcase = AutoMixShowcase(app: self) }
         autoMixShowcase?.start()
@@ -185,6 +187,10 @@ final class AppModel {
             self.serverReachable = ok || self.serverReachable && !self.syncStatusIndicatesTransportFailure
             if ok {
                 self.accounts.touchSync(account.id)
+                Task {
+                    await self.backup.resumePendingDownloads()
+                    await self.backup.sync()
+                }
                 // Siri resolves album/artist/playlist names from these parameters; refresh them once the mirror changed.
                 KnightMusicShortcuts.updateParameters()
                 if let database = self.database {
@@ -323,6 +329,10 @@ final class AppModel {
                 }
             }
             guard let reachable else { throw lastError ?? SubsonicError.noReachableServer }
+            // Read the settings backup now, so the app opens already looking and behaving as before a reinstall.
+            backup.start(app: self)
+            let backupClient = SubsonicClient(baseURL: reachable, username: username, password: password, requestTimeout: 8, maxAttempts: 2)
+            let savedBackup = await backup.fetchForLogin(client: backupClient, username: username)
 
             let host = reachable.host ?? "Navidrome"
             let account = ServerAccount(name: name.trimmingCharacters(in: .whitespaces).isEmpty ? host : name, username: username, addresses: addresses)
@@ -330,7 +340,10 @@ final class AppModel {
             added = account
             accounts.setActive(account.id)
             addressResolver.remember(reachable, for: account.id)
-            try activate(account)
+            if let savedBackup {
+                backup.applyAtLogin(savedBackup, accountId: account.id, accountName: account.name)
+            }
+            try activate(accounts.accounts.first { $0.id == account.id } ?? account)
             Log.app.info("logged in to \(account.name) via \(reachable.absoluteString)")
             syncTask = Task { await self.refresh(force: true) }
         } catch {
@@ -419,6 +432,7 @@ final class AppModel {
         library.configure(database: database, client: client, syncEngine: syncEngine)
         session = .ready
         notifySessionChanged()
+        backup.sessionDidChange()
         Task { await syncStatus.restore(from: database) }
     }
 
@@ -454,6 +468,24 @@ final class AppModel {
         activeAccount = nil
         library.configure(database: nil, client: nil, syncEngine: nil)
         syncStatus.reset()
+    }
+}
+
+extension AppModel {
+    /// Pushes values a backup restore just wrote to disk into the live stores, so the change shows immediately.
+    func reloadRestoredSettings() {
+        settings.reload()
+        LookStore.shared.reload()
+        hermes.settings.reload()
+        hermes.store.loadAll()
+        let hermesClient = hermes.client
+        let hermesURL = hermes.settings.baseURL
+        let hermesKey = hermes.settings.apiKey
+        Task { await hermesClient.update(baseURL: hermesURL, apiKey: hermesKey) }
+        discord.settings.reload()
+        player.longTrackPositions.reload()
+        LyricsOffsetStore.shared.reload()
+        AppIconManager.shared.reload()
     }
 }
 

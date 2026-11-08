@@ -154,6 +154,8 @@ struct SettingsView: View {
                 NavigationLink("Customize", destination: CustomizeView())
             }
 
+            BackupSection()
+
 
             // 5. Log Out row
             Section {

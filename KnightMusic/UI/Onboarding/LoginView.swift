@@ -4,11 +4,12 @@ import SwiftUI
 struct LoginView: View {
     @Environment(AppModel.self) private var app
 
-    @State private var serverName = "Navidrome"
-    @State private var serverAddress = ""
-    @State private var username = ""
+    // Pre-filled with Knight's own server (all editable), so a reinstall only needs the password.
+    @State private var serverName = KnightDefaults.serverName
+    @State private var serverAddress = KnightDefaults.navidromeAddress
+    @State private var username = KnightDefaults.username
     @State private var password = ""
-    @State private var additionalAddresses: [AdditionalAddressItem] = []
+    @State private var additionalAddresses: [AdditionalAddressItem] = [AdditionalAddressItem(address: KnightDefaults.navidromeLANAddress)]
     @State private var isAdditionalExpanded = false
     @State private var isConnecting = false
     @State private var errorMessage: String?
@@ -67,6 +68,11 @@ struct LoginView: View {
                     Text("Connect to your Navidrome server")
                         .font(.system(size: 16))
                         .foregroundStyle(Theme.secondaryLabel)
+
+                    Text("Your settings, looks and Knight chats come back from your server when you sign in.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.secondaryLabel)
+                        .multilineTextAlignment(.center)
                 }
                 .padding(.top, 24)
                 .padding(.bottom, 8)

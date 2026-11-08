@@ -63,5 +63,18 @@ final class AppIconManager {
         guard icon.id != currentId else { return }
         try await UIApplication.shared.setAlternateIconName(icon.alternateName)
         currentId = icon.id
+        UserDefaults.standard.set(icon.id, forKey: Self.chosenKey)
+    }
+
+    private static let chosenKey = "icon.chosen"
+
+    /// After a backup restore: pick up a found secret and put back the icon chosen before the reinstall.
+    func reload() {
+        secretFound = UserDefaults.standard.bool(forKey: "icon.secretFound")
+        guard let chosen = UserDefaults.standard.string(forKey: Self.chosenKey), chosen != currentId,
+              let icon = AppIconChoice.all.first(where: { $0.id == chosen }) else { return }
+        Task {
+            do { try await setIcon(icon) } catch { Log.app.error("Restoring the app icon failed: \(error)") }
+        }
     }
 }

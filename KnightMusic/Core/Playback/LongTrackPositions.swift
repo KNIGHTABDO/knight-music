@@ -16,12 +16,18 @@ final class LongTrackPositions {
     private var entries: [String: Entry]
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.key),
-           let saved = try? JSONDecoder().decode([String: Entry].self, from: data) {
-            entries = saved
-        } else {
-            entries = [:]
-        }
+        entries = Self.load()
+    }
+
+    /// Re-reads saved positions (after a backup restore wrote them).
+    func reload() {
+        entries = Self.load()
+    }
+
+    private static func load() -> [String: Entry] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let saved = try? JSONDecoder().decode([String: Entry].self, from: data) else { return [:] }
+        return saved
     }
 
     /// The position to resume `song` at, or nil to start from the top.

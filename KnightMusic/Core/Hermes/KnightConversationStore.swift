@@ -89,6 +89,7 @@ final class KnightConversationStore {
         conversations.removeAll(where: { $0.id == conversationId })
         let file = directoryURL.appendingPathComponent("\(conversationId).json")
         try? FileManager.default.removeItem(at: file)
+        NotificationCenter.default.post(name: .knightBackupContentChanged, object: nil)
     }
 
     func delete(conversationIds: Set<String>) {
@@ -98,6 +99,7 @@ final class KnightConversationStore {
             let file = directoryURL.appendingPathComponent("\(id).json")
             try? FileManager.default.removeItem(at: file)
         }
+        NotificationCenter.default.post(name: .knightBackupContentChanged, object: nil)
     }
 
     func delete(conversationIds: [String]) {
@@ -132,6 +134,7 @@ final class KnightConversationStore {
                 try? FileManager.default.removeItem(at: file)
             }
         }
+        NotificationCenter.default.post(name: .knightBackupContentChanged, object: nil)
     }
 
     private func persist(_ conversation: KnightConversation) {
@@ -144,6 +147,7 @@ final class KnightConversationStore {
         do {
             let data = try encoder.encode(conversation)
             try data.write(to: file, options: [.atomic])
+            NotificationCenter.default.post(name: .knightBackupContentChanged, object: nil)
         } catch {
             Log.app.error("Failed to persist conversation \(conversation.id): \(error)")
         }
