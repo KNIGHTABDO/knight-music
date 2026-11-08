@@ -117,7 +117,7 @@ jobs:
           cp -R build/KnightMusic.xcarchive/Products/Applications/KnightMusic.app Payload/
           zip -qry Duet.ipa Payload
           ls -lh Duet.ipa
-          git log -1 --pretty=%B | grep -viE '^(co-authored-by|\[shots\])' | sed -e 's/ \[shots\]//' > release-notes.txt || true
+          git log -1 --pretty=%B | grep -viE '^(co-authored-by|claude-session|\[shots\])' | sed -e 's/ \[shots\]//' > release-notes.txt || true
           python3 scripts/make-source.py Payload/KnightMusic.app Duet.ipa "$GITHUB_REF_NAME" release-notes.txt apps.json
 
       - name: Publish release

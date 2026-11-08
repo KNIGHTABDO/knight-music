@@ -38,7 +38,7 @@ Shake the phone to switch between them. Each side keeps its exact state while yo
 
 Duet is built entirely with Apple's own Liquid Glass APIs, without custom blur stacks. It ships as an unsigned IPA, so you can sideload it with a free Apple ID; no Mac is needed.
 
-> **Latest release: [v0.9.1](https://github.com/KNIGHTABDO/knight-music/releases/latest)**: tapping the Duet switch prompt no longer reaches the app behind it. v0.9.0 made the app **Duet**: Streamora lives inside Knight Music; shake to switch between music and movies, with one app and one SideStore slot.
+> **Latest release: [v1.0.0](https://github.com/KNIGHTABDO/knight-music/releases/latest)**, Duet 1.0. The app opens with the Duet film, and its last frame curls away into the live app. The IPA and the SideStore source are now named Duet.
 
 ## Screenshots
 
@@ -89,7 +89,7 @@ Duet is distributed as a pre-built, unsigned `.ipa`. You install it with [SideSt
    - **Source (recommended):** in SideStore, go to **Sources → +** and add
      `https://github.com/KNIGHTABDO/knight-music/releases/latest/download/apps.json`.
      Updates then appear in SideStore by themselves.
-   - **Manual:** download `KnightMusic.ipa` from [Releases](https://github.com/KNIGHTABDO/knight-music/releases/latest), then in SideStore tap **+** and choose the file.
+   - **Manual:** download `Duet.ipa` from [Releases](https://github.com/KNIGHTABDO/knight-music/releases/latest), then in SideStore tap **+** and choose the file.
 3. **Sign in** to your Navidrome server with its address (for example `https://music.example.com`), your username and your password.
 4. **Optional:** open Streamora once (shake, then tap **Switch**) and sign in to Google Drive there. Your profiles, progress and settings come back from Drive. After that you can delete the standalone Streamora app.
 
@@ -103,6 +103,7 @@ Duet is distributed as a pre-built, unsigned `.ipa`. You install it with [SideSt
 
 ### Duet: music and movies
 
+- **The Duet film.** On the first launch of 1.0, a 94-second film introduces both halves. When the end card settles, the frame curls up like a page, with the app already live underneath, and the soundtrack fades out under the curl. A Liquid Glass **Skip** takes the same path from any frame. Replay it from **Settings → Duet**. It respects the silent switch and Reduce Motion.
 - **Shake to switch.** A Liquid Glass prompt asks "Switch to Streamora?". Shake again or tap **Switch** to confirm. A countdown ring dismisses the prompt if you change your mind. The switch itself is a page curl between the two sides.
 - **Nothing reloads.** Streamora runs in its own window above Knight Music and is only shown or hidden. A half-watched episode and a half-scrolled album both stay exactly where they were.
 - **One lock screen.** Starting a movie pauses the music, and the lock screen and remote controls follow whichever side has focus.
@@ -386,6 +387,7 @@ KnightMusic/
   Core/YouTube    InnerTube client, kmyt:// resource loader, live client table
   Core/…          Artwork, Downloads, Recognition, Hermes, Discord, Backup, Customization, Support
   Duet/           DuetCoordinator, DuetHUD, DuetMedia, DuetSettings
+  UI/Intro/       IntroFilm (first-launch film window), IntroFilmController (page-curl handoff)
   Streamora/      StreamoraStageController, StreamoraBridge(+Script), VlcEngine, StreamoraPlayerViewController
   Intents/        App Intents, Shortcuts, Siri
   CarPlay/        CarPlay scene
@@ -393,7 +395,8 @@ KnightMusic/
 KnightMusicWidgets/   Now Playing, Recently Played, Favorites, Lock Screen, Control Center, recognition Live Activity, Kick Live
 server/automix/       AutoMix service (Python): analysis, planner, YouTube endpoints, deploy scripts
 config/youtube.json   remote YouTube client overrides and kill switch
-scripts/              screens.sh (CI screenshots), fetch-vlckit.sh (CI dependency)
+scripts/              screens.sh (CI screenshots), fetch-vlckit.sh, fetch-intro.sh (CI dependencies)
+promo/duet/           the Duet film (HyperFrames source; rendered and encoded in GitHub Actions)
 ```
 
 ### Dependencies
@@ -421,7 +424,7 @@ open KnightMusic.xcodeproj
 
 Development happens on Linux, so GitHub Actions ([`ios.yml`](.github/workflows/ios.yml), `macos-26` runner) is the compiler:
 
-- **Every push** builds against the iOS simulator SDK. MobileVLCKit is fetched once, checked against a SHA-256 checksum, and then cached.
+- **Every push** builds against the iOS simulator SDK. MobileVLCKit is fetched once, checked against a SHA-256 checksum, and then cached. The Duet film is fetched from the `intro-assets` release. Tag builds fail without it; branch builds go on without it.
 - **Screenshots.** Put `[shots]` in a commit message, or `[shots:home,player,duet]` to capture only some screens. CI boots iPhone and iPad simulators, sets the clock to 9:41, and runs the app in demo mode (`-KMDemo YES -KMScreen <name>`) against the public Navidrome demo server. Every screen is uploaded as the `screens` artifact.
 
 ## Releasing
@@ -429,11 +432,11 @@ Development happens on Linux, so GitHub Actions ([`ios.yml`](.github/workflows/i
 Pushing a `v*` tag builds a release:
 
 ```bash
-git tag v0.9.1 && git push origin main v0.9.1
+git tag v1.0.0 && git push origin main v1.0.0
 ```
 
 1. CI archives for generic iOS hardware, with the version taken from the tag.
-2. It packages an unsigned `KnightMusic.ipa`.
+2. It packages an unsigned `Duet.ipa`.
 3. It publishes a GitHub Release, using the tagged commit message as the release notes.
 4. It updates the SideStore source (`apps.json`) attached to the release.
 
