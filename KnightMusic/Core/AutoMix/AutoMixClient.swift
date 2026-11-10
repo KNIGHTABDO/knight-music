@@ -41,13 +41,12 @@ actor AutoMixClient: AutoMixPlanProvider {
     }
 
     func prefetch(pairs: [(from: String, to: String)]) async {
-        let missing = pairs
-        guard !missing.isEmpty, let url = urls("plans", []) else { return }
+        guard !pairs.isEmpty, let url = urls("plans", []) else { return }
         do {
             var request = URLRequest(url: url, timeoutInterval: 20)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["pairs": missing.prefix(50).map { [$0.from, $0.to] }])
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["pairs": pairs.prefix(50).map { [$0.from, $0.to] }])
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
             struct Batch: Decodable { var plans: [AutoMixPlan] }
@@ -60,7 +59,7 @@ actor AutoMixClient: AutoMixPlanProvider {
                 store(plan, key: key)
                 stored += 1
             }
-            Log.playback.info("AutoMix prefetched \(stored) of \(missing.count) upcoming transitions")
+            Log.playback.info("AutoMix prefetched \(stored) of \(pairs.count) upcoming transitions")
         } catch {
             Log.playback.warning("AutoMix prefetch failed: \(error.localizedDescription)")
         }
@@ -146,6 +145,7 @@ actor AutoMixClient: AutoMixPlanProvider {
         // Plans are refreshed weekly so planner improvements on the server reach stored pairs too.
         if let modified = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
            Date().timeIntervalSince(modified) > 7 * 24 * 3600 {
+            try? FileManager.default.removeItem(at: file)
             return nil
         }
         guard let data = try? Data(contentsOf: file),

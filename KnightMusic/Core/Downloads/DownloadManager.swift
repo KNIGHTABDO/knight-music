@@ -32,7 +32,6 @@ final class DownloadManager {
     var downloadedSongIds: Set<String> {
         Set(statuses.filter { $0.value.state == .completed }.map(\.key))
     }
-    var activeCount: Int { statuses.values.filter { $0.state == .queued || $0.state == .downloading }.count }
 
     let directory: URL
     @ObservationIgnored var database: DatabaseWriter?

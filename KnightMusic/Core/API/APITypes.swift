@@ -36,11 +36,6 @@ enum SubsonicError: LocalizedError {
         default: return false
         }
     }
-
-    var isAuthFailure: Bool {
-        if case .server(let code, _) = self { return code == 40 || code == 41 || code == 44 }
-        return false
-    }
 }
 
 enum AlbumListType: String {

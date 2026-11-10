@@ -1,8 +1,11 @@
 import ActivityKit
 import Foundation
+import os
 #if canImport(UIKit)
 import UIKit
 #endif
+
+private let recognitionLog = Logger(subsystem: "com.knightabdo.knightmusic", category: "recognition")
 
 @MainActor
 public final class RecognitionActivityManager {
@@ -58,7 +61,7 @@ public final class RecognitionActivityManager {
             )
             return true
         } catch {
-            print("Failed to start MusicRecognition Live Activity: \(error)")
+            recognitionLog.error("Failed to start MusicRecognition Live Activity: \(error)")
             return false
         }
     }

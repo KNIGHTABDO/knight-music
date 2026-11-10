@@ -180,12 +180,6 @@ final class CarPlayItemFactory {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// Song detail string: `artist`.
-    static func songDetailText(artist: String?) -> String? {
-        guard let artist, !artist.isEmpty else { return nil }
-        return artist
-    }
-
     /// Playlist detail string: `N songs`.
     static func playlistDetailText(songCount: Int?) -> String {
         let count = songCount ?? 0

@@ -64,13 +64,6 @@ actor HermesClient {
         let version: String?
     }
 
-    struct ModelsResponse: Codable, Sendable {
-        struct ModelInfo: Codable, Sendable {
-            let id: String
-        }
-        let data: [ModelInfo]?
-    }
-
     func health() async throws -> HealthResponse {
         guard let baseURL = baseURL else {
             throw URLError(.badURL)

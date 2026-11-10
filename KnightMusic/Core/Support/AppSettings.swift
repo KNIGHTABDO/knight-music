@@ -141,18 +141,6 @@ final class AppSettings {
         autoDownloadPlaylistIds = fresh.autoDownloadPlaylistIds
     }
 
-    /// Parameters for `SubsonicClient.streamURL` given the current network class.
-    func streamParameters(onMeteredNetwork metered: Bool) -> (maxBitRate: Int?, format: String?) {
-        let rate = metered ? cellularMaxBitRate : wifiMaxBitRate
-        let format = metered ? cellularFormat : wifiFormat
-        return (rate > 0 ? rate : nil, format.isEmpty ? nil : format)
-    }
-
-    /// Parameters for downloads (original by default).
-    var downloadParameters: (maxBitRate: Int?, format: String?) {
-        (downloadMaxBitRate > 0 ? downloadMaxBitRate : nil, downloadFormat.isEmpty ? nil : downloadFormat)
-    }
-
     var accentColor: Color {
         let hex = accentColorHex.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
         guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return Color(red: 0.98, green: 0.176, blue: 0.282) }
