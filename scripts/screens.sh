@@ -6,7 +6,7 @@
 set -uo pipefail
 APP="$1"; OUT="$2"; mkdir -p "$OUT"
 BUNDLE=com.knightabdo.knightmusic
-SCREENS=(home search discover artists albums songs playlists album artist player lyrics queue settings customize icons server downloads onboarding knight recognized recognize streamora duet-pill duet)
+SCREENS=(home search discover artists albums songs playlists album artist player lyrics queue settings customize icons server downloads onboarding knight recognized recognize streamora duet-pill duet identified playlist-picker)
 QUICK="${SHOT_SCREENS:-}"
 [ -n "$QUICK" ] && IFS=, read -ra SCREENS <<< "$QUICK"
 LANDSCAPE=(home albums artists album player)   # iPad only; Simulator.app rotates the device (apps can't on iPadOS 26)

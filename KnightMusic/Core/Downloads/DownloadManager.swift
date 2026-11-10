@@ -95,7 +95,13 @@ final class DownloadManager {
             }
         }
         if !stale.isEmpty { deleteRows(stale) }
-        Task { await reattachAndStart() }
+        Task {
+            await reattachAndStart()
+            // Once per launch: a download that fails again stays failed until the next launch.
+            if !services.isOffline, statuses.values.contains(where: { $0.state == .failed }) {
+                retryFailed()
+            }
+        }
     }
 
     // MARK: Queries

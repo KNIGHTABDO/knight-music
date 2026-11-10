@@ -27,17 +27,23 @@ actor AutoMixClient: AutoMixPlanProvider {
         inflight[key] = nil
         if let fetched {
             if fetched.final == true {
-                memory[key] = fetched
+                remember(fetched, key: key)
                 store(fetched, key: key)
             }
             return fetched
         }
         if let hit = memory[key] { return hit }
         if let stored = loadStored(key) {
-            memory[key] = stored
+            remember(stored, key: key)
             return stored
         }
         return nil
+    }
+
+    /// Bounded: plans are also on disk, so dropping the lot only costs a re-read.
+    private func remember(_ plan: AutoMixPlan, key: String) {
+        if memory[key] == nil, memory.count >= 400 { memory.removeAll(keepingCapacity: true) }
+        memory[key] = plan
     }
 
     func prefetch(pairs: [(from: String, to: String)]) async {
@@ -55,7 +61,7 @@ actor AutoMixClient: AutoMixPlanProvider {
             for plan in batch.plans where plan.final == true && plan.version == AutoMixPlan.supportedVersion {
                 guard let from = plan.from, let to = plan.to else { continue }
                 let key = Self.key(from, to)
-                memory[key] = plan
+                remember(plan, key: key)
                 store(plan, key: key)
                 stored += 1
             }

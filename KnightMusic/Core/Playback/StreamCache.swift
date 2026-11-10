@@ -100,8 +100,11 @@ final class StreamCache: @unchecked Sendable {
             dropRows([songId])
             return nil
         }
+        let previousAccess = entry.lastAccess
         entry.lastAccess = Date()
         index[songId] = entry
+        // Eviction reads the in-memory index, so the DB only needs a coarse timestamp (it seeds the next launch).
+        guard entry.lastAccess.timeIntervalSince(previousAccess) > 600 else { return url }
         let record = CachedSongRecord(songId: songId, relativePath: entry.relativePath, bytes: entry.bytes,
                                       lastAccess: entry.lastAccess, quality: entry.quality)
         write { try record.save($0) }

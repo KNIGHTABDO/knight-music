@@ -144,6 +144,18 @@ struct RootView: View {
                 player.clearError()
             }
         }
+        .onChange(of: player.serverQueueAvailable, initial: true) { _, available in
+            guard available, let songs = player.serverQueuePreview?.songs, !songs.isEmpty else { return }
+            let currentId = player.serverQueuePreview?.currentSongId
+            let title = (songs.first { $0.id == currentId } ?? songs[0]).title
+            withAnimation(.smooth) {
+                ui.showToast("Continue \u{201C}\(title)\u{201D} from your other device", actionTitle: "Resume") {
+                    player.resumeServerQueue()
+                }
+            }
+            // Keep the preview: the toast action still needs it.
+            player.serverQueueAvailable = false
+        }
         .task {
             await applyDebugRoutingIfNeeded()
         }

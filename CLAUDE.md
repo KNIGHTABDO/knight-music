@@ -37,9 +37,20 @@ KnightMusic/
   Core/Downloads DownloadManager (background URLSession), StorageManager
   Core/Artwork  ArtworkLoader (Nuke), AnimatedArtworkService (m8tec + animated WebP), ArtworkPalette
   Core/Support  Log (os.Logger subsystem com.knightabdo.knightmusic), NetworkMonitor, Haptics, AppSettings
+  Core/Customization Look + LookStore (accent, appearance, symbols), HomeLayout, AppIconManager
+  Core/Backup   AccountBackupService (settings/accounts backup), KnightDefaults (built-in server defaults)
+  Core/Recognition ShazamService, YouTubeTrackMatcher
+  Core/YouTube  YouTube Music search/playback + NavidromeImportCenter ("Add to Navidrome" via server/automix)
+  Core/Hermes   Knight assistant: HermesClient/Service/Settings, ArrivalWatcher
+  Core/Discord  Rich presence (gateway client + presence service)
+  CarPlay/      CarPlay scene, templates, CarPlayItemFactory
+  Intents/      AppIntents / Siri shortcuts
   UI/DesignSystem  tokens + reusable components (ArtworkView, AnimatedArtworkView, rows, carousels, A–Z index…)
   UI/Shell      RootView: TabView(.sidebarAdaptable) + mini player accessory + full player presentation
   UI/Home UI/Search UI/Library UI/Detail UI/Player UI/Settings UI/Onboarding
+  UI/Knight UI/YouTube UI/Recognition UI/Intro UI/Interaction
+KnightMusicWidgets/ (widgets, Control Center, recognition Live Activity; `Shared/` also compiles into the app)
+KickLiveWidget/ (Kick live-status widget)   KnightMusicBroadcast/ (broadcast upload extension)
 ```
 - **Offline-first.** Every list/screen reads the local GRDB mirror (instant, works offline). The network only
   feeds the mirror (SyncEngine) or performs actions (star, rate, playlist edits → write to server, then to DB
@@ -101,7 +112,8 @@ Never fake glass with `.ultraThinMaterial` + borders + blur stacks. Never draw c
 - Glass goes on the **navigation/control layer only**, never on content (rows, cards, artwork).
 
 ## Visual spec (match `ref/`)
-- Dark only (`UIUserInterfaceStyle Dark`). Background pure black. Accent **Arpeggi red** `#FA2D48`
+- Dark by default, pure black background; a light appearance exists (`Look.appearance`, Settings → Customize),
+  so use semantic colors, never hardcoded white/black for text. Accent **Arpeggi red** `#FA2D48`
   (asset `AccentColor`), user-changeable later in Settings → Customize.
 - Large navigation titles (34pt bold). Section headers: 22pt bold + chevron ("Recently Played ›").
 - Album tiles: square artwork, 8pt corner radius, title 15pt regular white, subtitle 13pt secondary, one line each.
