@@ -26,7 +26,6 @@ final class HermesService {
     var matchedSongs: [String: [Song]] = [:] // messageId -> [Song]
 
     @ObservationIgnored private var streamingTask: Task<Void, Never>?
-    @ObservationIgnored private var arrivalTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var currentRunId: String?
     @ObservationIgnored private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     @ObservationIgnored private var isBackgrounded = false

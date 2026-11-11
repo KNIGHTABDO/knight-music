@@ -93,7 +93,7 @@ extension PlayerEngine {
         guard settings.serverQueueSyncEnabled, !services.isOffline, let server = services.server else { return }
         do {
             guard let remoteQueue = try await server.getPlayQueue(), !remoteQueue.songs.isEmpty else { return }
-            let sameQueue = remoteQueue.songs.map(\.id) == order.map { $0.song.id }
+            let sameQueue = remoteQueue.songs.map(\.id) == serverQueueWindowIds()
             let sameCurrent = remoteQueue.currentSongId == currentSong?.id
             if sameQueue && sameCurrent { return }
             let serverNewer: Bool
@@ -113,11 +113,16 @@ extension PlayerEngine {
     /// Load the server's saved queue (paused at its saved position).
     func resumeServerQueue() {
         guard let remoteQueue = serverQueuePreview, !remoteQueue.songs.isEmpty else { return }
+        // The toast lives a few seconds; don't replace something the user started meanwhile.
+        guard !isPlaying else { dismissServerQueue(); return }
         let songs = remoteQueue.songs
         let start = remoteQueue.currentSongId.flatMap { id in songs.firstIndex { $0.id == id } } ?? 0
         let entries = songs.map(QueueEntry.init)
+        endStation()
         currentRadio = nil
         failedEntryIds = []
+        retriedFromStream = []
+        consecutiveFailures = 0
         order = entries
         originalOrder = entries
         shuffleEnabled = false
@@ -143,11 +148,17 @@ extension PlayerEngine {
         }
     }
 
+    /// The slice of the queue that is uploaded to the server (and so what a remote copy of it contains).
+    func serverQueueWindowIds() -> [String] {
+        let windowStart = max(0, currentIndex - 20)
+        guard windowStart < order.count else { return [] }
+        return order[windowStart..<min(order.count, windowStart + 500)].map { $0.song.id }
+    }
+
     func pushServerQueue() async {
         guard settings.serverQueueSyncEnabled, !services.isOffline, let server = services.server,
               currentRadio == nil, !order.isEmpty else { return }
-        let windowStart = max(0, currentIndex - 20)
-        let ids = order[windowStart..<min(order.count, windowStart + 500)].map { $0.song.id }
+        let ids = serverQueueWindowIds()
         do {
             try await server.savePlayQueue(songIds: ids, currentSongId: currentSong?.id,
                                            positionMs: Int(currentTime * 1000))

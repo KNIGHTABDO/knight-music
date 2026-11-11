@@ -11,9 +11,6 @@ final class NetworkMonitor {
     private(set) var isCellular = false
     private(set) var changeCount = 0
 
-    /// Cellular, personal hotspot or any path iOS flags as expensive.
-    var isMetered: Bool { isExpensive || (isCellular && !isWiFi) }
-
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var lastSignature: String?

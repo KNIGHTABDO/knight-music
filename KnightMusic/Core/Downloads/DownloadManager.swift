@@ -32,7 +32,6 @@ final class DownloadManager {
     var downloadedSongIds: Set<String> {
         Set(statuses.filter { $0.value.state == .completed }.map(\.key))
     }
-    var activeCount: Int { statuses.values.filter { $0.state == .queued || $0.state == .downloading }.count }
 
     let directory: URL
     @ObservationIgnored var database: DatabaseWriter?
@@ -96,7 +95,13 @@ final class DownloadManager {
             }
         }
         if !stale.isEmpty { deleteRows(stale) }
-        Task { await reattachAndStart() }
+        Task {
+            await reattachAndStart()
+            // Once per launch: a download that fails again stays failed until the next launch.
+            if !services.isOffline, statuses.values.contains(where: { $0.state == .failed }) {
+                retryFailed()
+            }
+        }
     }
 
     // MARK: Queries

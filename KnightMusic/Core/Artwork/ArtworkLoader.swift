@@ -130,10 +130,4 @@ final class ArtworkLoader: @unchecked Sendable {
         guard !reqs.isEmpty else { return }
         prefetcher.startPrefetching(with: reqs)
     }
-
-    func cancelPrefetch(coverArts: [String?], pointSize: CGFloat, scale: CGFloat = 3) {
-        let reqs = coverArts.compactMap { request(coverArt: $0, pointSize: pointSize, scale: scale) }
-        guard !reqs.isEmpty else { return }
-        prefetcher.stopPrefetching(with: reqs)
-    }
 }

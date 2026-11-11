@@ -18,16 +18,6 @@ enum Theme {
     /// The active look's accent (Settings → Customize): fixed, or taken from the playing song's cover.
     @MainActor static var accent: Color { LookStore.shared.accent }
 
-    enum Spacing {
-        static let xxs: CGFloat = 2
-        static let xs: CGFloat = 4
-        static let s: CGFloat = 8
-        static let m: CGFloat = 12
-        static let l: CGFloat = 16
-        static let xl: CGFloat = 24
-        static let xxl: CGFloat = 32
-    }
-
     enum Radius {
         static let tile: CGFloat = 8
         static let card: CGFloat = 14
@@ -46,7 +36,6 @@ extension Font {
     static let kmTileSubtitle = Font.system(size: 13)
     static let kmRowTitle = Font.system(size: 17)
     static let kmRowSubtitle = Font.system(size: 15)
-    static let kmPlayerTitle = Font.system(size: 20, weight: .semibold)
 }
 
 extension Color {

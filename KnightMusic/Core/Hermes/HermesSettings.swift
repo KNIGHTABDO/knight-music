@@ -51,8 +51,4 @@ final class HermesSettings {
         baseURLString = (saved?.isEmpty == false) ? saved! : Self.defaultBaseURL
         apiKey = Keychain.get(account: Self.keychainAccount) ?? ""
     }
-
-    func resetToDefaultURL() {
-        baseURLString = Self.defaultBaseURL
-    }
 }

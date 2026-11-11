@@ -59,6 +59,7 @@ class YouTube:
         self.clients: dict | None = None
         self.fetching: dict[str, threading.Event] = {}
         self.imports: dict[str, dict] = {}
+        self.import_started: dict[str, float] = {}  # kept out of the job dicts so the status JSON is unchanged
         os.makedirs(CACHE, exist_ok=True)
         os.makedirs(os.path.dirname(BIN), exist_ok=True)
 
@@ -176,7 +177,13 @@ class YouTube:
             job = self.imports.get(video_id)
             if job and job["state"] in ("queued", "downloading", "done"):
                 return job
+            cutoff = time.time() - 86400
+            for old_id in [i for i, j in self.imports.items()
+                           if j["state"] in ("done", "failed") and self.import_started.get(i, 0) < cutoff]:
+                del self.imports[old_id]
+                self.import_started.pop(old_id, None)
             job = self.imports[video_id] = {"id": video_id, "state": "queued", "error": None, "path": None}
+            self.import_started[video_id] = time.time()
         threading.Thread(target=self._import, args=(video_id, meta, auth), daemon=True).start()
         return job
 

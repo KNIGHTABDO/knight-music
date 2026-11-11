@@ -161,12 +161,6 @@ final class LookStore {
         if current.id == look.id { current.name = trimmed }
     }
 
-    func setSymbol(_ symbol: String, for look: Look) {
-        guard let index = saved.firstIndex(where: { $0.id == look.id }) else { return }
-        saved[index].symbol = symbol
-        if current.id == look.id { current.symbol = symbol }
-    }
-
     func duplicate(_ look: Look) {
         saved.append(look.copy(named: "\(look.name) Copy"))
     }
@@ -179,20 +173,12 @@ final class LookStore {
         }
     }
 
-    func moveSaved(from source: IndexSet, to destination: Int) {
-        saved.move(fromOffsets: source, toOffset: destination)
-    }
-
     /// Back to the stored version of the current look (or Knight Red if it was never saved).
     func revert() {
         apply(look(id: current.id) ?? .knightRed)
     }
 
     // MARK: - Import / export
-
-    func exportData(for look: Look) throws -> Data {
-        try look.exportJSON()
-    }
 
     /// Adds an imported look (always as a new saved look) and applies it.
     @discardableResult

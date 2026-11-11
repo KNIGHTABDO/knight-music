@@ -162,23 +162,3 @@ struct GlassIconButton: View {
         .glassEffect(.regular.interactive(), in: .circle)
     }
 }
-
-/// A floating capsule of glass controls (e.g. the player's bottom row). Children share one glass capsule.
-struct GlassCapsuleBar<Content: View>: View {
-    var spacing: CGFloat
-    var content: Content
-
-    init(spacing: CGFloat = 4, @ViewBuilder content: () -> Content) {
-        self.spacing = spacing
-        self.content = content()
-    }
-
-    var body: some View {
-        GlassEffectContainer(spacing: 12) {
-            HStack(spacing: spacing) { content }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .glassEffect(.regular.interactive(), in: .capsule)
-        }
-    }
-}

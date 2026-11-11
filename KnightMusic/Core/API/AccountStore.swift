@@ -31,10 +31,6 @@ final class AccountStore {
         save()
     }
 
-    func updatePassword(_ password: String, for id: UUID) throws {
-        try Keychain.set(password, account: id.uuidString)
-    }
-
     func setActive(_ id: UUID?) {
         activeId = id
         save()

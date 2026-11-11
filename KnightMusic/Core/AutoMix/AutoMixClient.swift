@@ -27,27 +27,32 @@ actor AutoMixClient: AutoMixPlanProvider {
         inflight[key] = nil
         if let fetched {
             if fetched.final == true {
-                memory[key] = fetched
+                remember(fetched, key: key)
                 store(fetched, key: key)
             }
             return fetched
         }
         if let hit = memory[key] { return hit }
         if let stored = loadStored(key) {
-            memory[key] = stored
+            remember(stored, key: key)
             return stored
         }
         return nil
     }
 
+    /// Bounded: plans are also on disk, so dropping the lot only costs a re-read.
+    private func remember(_ plan: AutoMixPlan, key: String) {
+        if memory[key] == nil, memory.count >= 400 { memory.removeAll(keepingCapacity: true) }
+        memory[key] = plan
+    }
+
     func prefetch(pairs: [(from: String, to: String)]) async {
-        let missing = pairs
-        guard !missing.isEmpty, let url = urls("plans", []) else { return }
+        guard !pairs.isEmpty, let url = urls("plans", []) else { return }
         do {
             var request = URLRequest(url: url, timeoutInterval: 20)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["pairs": missing.prefix(50).map { [$0.from, $0.to] }])
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["pairs": pairs.prefix(50).map { [$0.from, $0.to] }])
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return }
             struct Batch: Decodable { var plans: [AutoMixPlan] }
@@ -56,11 +61,11 @@ actor AutoMixClient: AutoMixPlanProvider {
             for plan in batch.plans where plan.final == true && plan.version == AutoMixPlan.supportedVersion {
                 guard let from = plan.from, let to = plan.to else { continue }
                 let key = Self.key(from, to)
-                memory[key] = plan
+                remember(plan, key: key)
                 store(plan, key: key)
                 stored += 1
             }
-            Log.playback.info("AutoMix prefetched \(stored) of \(missing.count) upcoming transitions")
+            Log.playback.info("AutoMix prefetched \(stored) of \(pairs.count) upcoming transitions")
         } catch {
             Log.playback.warning("AutoMix prefetch failed: \(error.localizedDescription)")
         }
@@ -146,6 +151,7 @@ actor AutoMixClient: AutoMixPlanProvider {
         // Plans are refreshed weekly so planner improvements on the server reach stored pairs too.
         if let modified = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
            Date().timeIntervalSince(modified) > 7 * 24 * 3600 {
+            try? FileManager.default.removeItem(at: file)
             return nil
         }
         guard let data = try? Data(contentsOf: file),

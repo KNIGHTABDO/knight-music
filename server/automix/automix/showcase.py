@@ -9,6 +9,7 @@ import time
 from . import planner
 
 _lock = threading.Lock()
+_build_lock = threading.Lock()  # one rebuild at a time
 _cache: dict = {"at": 0.0, "key": None, "ids": []}
 
 
@@ -50,13 +51,24 @@ def build(analyses: dict[str, dict], meta: dict[str, dict], limit: int = 50, sta
 def cached(store, worker, limit: int = 50) -> list[str]:
     """Rebuilt when the set of analysed songs changed, at most every 2 minutes."""
     counts = store.counts().get("ok", 0)
-    with _lock:
-        fresh = _cache["key"] == counts and time.time() - _cache["at"] < 600
-        if fresh or (_cache["ids"] and time.time() - _cache["at"] < 120):
-            return _cache["ids"][:limit]
-    analyses = {i: store.get(i) for i in list(worker.meta)}
-    analyses = {i: d for i, d in analyses.items() if d}
-    ids = build(analyses, worker.meta, limit=max(limit, 50))
-    with _lock:
-        _cache.update(at=time.time(), key=counts, ids=ids)
-    return ids[:limit]
+
+    def usable() -> list[str] | None:
+        with _lock:
+            fresh = _cache["key"] == counts and time.time() - _cache["at"] < 600
+            if fresh or (_cache["ids"] and time.time() - _cache["at"] < 120):
+                return _cache["ids"][:limit]
+        return None
+
+    hit = usable()
+    if hit is not None:
+        return hit
+    with _build_lock:
+        hit = usable()  # a build that finished while we waited
+        if hit is not None:
+            return hit
+        analyses = {i: store.get(i) for i in list(worker.meta)}
+        analyses = {i: d for i, d in analyses.items() if d}
+        ids = build(analyses, worker.meta, limit=max(limit, 50))
+        with _lock:
+            _cache.update(at=time.time(), key=counts, ids=ids)
+        return ids[:limit]

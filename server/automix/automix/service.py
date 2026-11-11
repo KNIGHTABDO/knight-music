@@ -211,9 +211,19 @@ class Auth:
         except Exception:
             good = False
         if good:
+            now = time.time()
             with self.lock:
-                self.ok[key] = time.time() + 1800
+                for stale in [k for k, expiry in self.ok.items() if expiry <= now]:
+                    del self.ok[stale]
+                self.ok[key] = now + 1800
         return good
+
+
+def query_int(query: dict[str, str], name: str, default: int) -> int:
+    try:
+        return int(query.get(name) or default)
+    except ValueError:
+        return default
 
 
 def batch_token() -> str | None:
@@ -288,16 +298,23 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                 return self._send(404, {"error": "not found"})
             start, end = 0, size - 1
             ranged = self.headers.get("Range", "")
-            if ranged.startswith("bytes="):
-                first, _, last = ranged[6:].split(",")[0].partition("-")
+            span = None
+            if ranged.startswith("bytes=") and "," not in ranged:
+                first, dash, last = ranged[6:].strip().partition("-")
+                if dash and (first.isascii() and first.isdigit() or not first) and (last.isascii() and last.isdigit() or not last) and (first or last):
+                    span = (first, last)
+            ranged = span is not None
+            if span:
+                first, last = span
                 if first:
                     start = int(first)
                     end = min(int(last), size - 1) if last else size - 1
-                elif last:
+                else:
                     start = max(0, size - int(last))
-                if start > end:
+                if start > end or start >= size:
                     self.send_response(416)
                     self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
                     self.end_headers()
                     return
             self.send_response(206 if ranged else 200)
@@ -366,14 +383,14 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                     return self._send(400, {"error": "from and to are required"})
                 return self._send(200, self._plan(a_id, b_id))
             if path == "/automix/v1/showcase":
-                limit = min(int(query.get("limit", "50") or 50), 100)
+                limit = min(query_int(query, "limit", 50), 100)
                 return self._send(200, {"ids": showcase.cached(store, worker, limit)})
             if path == "/automix/v1/matches":
                 a_id = query.get("from")
                 a = store.get(a_id) if a_id else None
                 if not a:
                     return self._send(200, {"matches": []})
-                limit = min(int(query.get("limit", "12") or 12), 30)
+                limit = min(query_int(query, "limit", 12), 30)
                 found = []
                 for b_id, meta_b in list(worker.meta.items()):
                     if b_id == a_id:
@@ -478,6 +495,8 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                     data = json.loads(self.rfile.read(length))
                 except (ValueError, TypeError):
                     return self._send(400, {"error": "bad body"})
+                if not isinstance(data, dict):
+                    return self._send(400, {"error": "bad body"})
                 if data.get("version") != ANALYSIS_VERSION or not isinstance(data.get("beats"), list):
                     return self._send(409, {"error": f"analysis version must be {ANALYSIS_VERSION}"})
                 t = worker.meta[job[1]]
@@ -495,6 +514,8 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
                     length = min(int(self.headers.get("Content-Length", "0")), 1 << 16)
                     body = json.loads(self.rfile.read(length) or b"{}")
                 except ValueError:
+                    return self._send(400, {"error": "bad body"})
+                if not isinstance(body, dict):
                     return self._send(400, {"error": "bad body"})
                 video_id = str(body.get("videoId", ""))
                 if not VIDEO_ID.match(video_id):
@@ -529,8 +550,11 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
             try:
                 length = min(int(self.headers.get("Content-Length", "0")), 1 << 20)
                 pairs = json.loads(self.rfile.read(length) or b"{}").get("pairs", [])[:50]
-            except (ValueError, AttributeError):
+            except (ValueError, AttributeError, TypeError):
                 return self._send(400, {"error": "bad body"})
+            if not isinstance(pairs, list) or not all(
+                    isinstance(p, (list, tuple)) and len(p) == 2 and all(isinstance(x, str) for x in p) for p in pairs):
+                return self._send(400, {"error": "pairs must be a list of [from, to] strings"})
             return self._send(200, {"plans": [self._plan(str(a), str(b)) for a, b in pairs]})
 
     return Handler
