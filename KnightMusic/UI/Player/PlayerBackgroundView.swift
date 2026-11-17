@@ -117,11 +117,12 @@ private struct BlurredCoverBackground: View {
 
     @Environment(PlayerEngine.self) private var player
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @MusicVisualActivity private var isVisuallyActive
 
     var body: some View {
         GeometryReader { geo in
             let side = max(geo.size.width, geo.size.height) * 1.5
-            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !player.isPlaying || reduceMotion)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !player.isPlaying || !isVisuallyActive)) { timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
                 ArtworkView(coverArt: coverArt, pointSize: 160, cornerRadius: 0)
                     .scaleEffect(side / 160)
@@ -143,10 +144,10 @@ private struct SpotlightBackground: View {
     let palette: ArtworkPalette
 
     @Environment(PlayerEngine.self) private var player
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @MusicVisualActivity private var isVisuallyActive
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !player.isPlaying || reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !player.isPlaying || !isVisuallyActive)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let colors = palette.swiftUIColors
             let main = colors.first ?? .gray
@@ -181,10 +182,10 @@ private struct PaletteMeshBackground: View {
     var aurora: Bool
 
     @Environment(PlayerEngine.self) private var player
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @MusicVisualActivity private var isVisuallyActive
 
     var body: some View {
-        TimelineView(.animation(paused: !player.isPlaying || reduceMotion)) { timeline in
+        TimelineView(.animation(paused: !player.isPlaying || !isVisuallyActive)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             let t = Float(time * (aurora ? 0.5 : 0.22))
             MeshGradient(

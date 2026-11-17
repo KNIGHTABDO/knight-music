@@ -25,6 +25,12 @@ enum StreamoraBridgeScript {
     }
   });
   window.__duet = {
+    visible: true,
+    setVisible(visible) {
+      if (typeof visible !== 'boolean' || this.visible === visible) return;
+      this.visible = visible;
+      dispatchEvent(new Event('duet:visibilitychange'));
+    },
     emit(event, data) {
       const set = listeners.get(event);
       if (!set) return;

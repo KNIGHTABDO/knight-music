@@ -175,6 +175,7 @@ final class PlayerEngine {
     @ObservationIgnored var trackedNetworkChangeCount = 0
     @ObservationIgnored var trackedBaseURL: URL?
     @ObservationIgnored var isRetryingHandoff = false
+    @ObservationIgnored var playbackLoadRevision = 0
     @ObservationIgnored var stationRefillTask: Task<Void, Never>?
     @ObservationIgnored var stationDatabase: DatabaseWriter?
 
@@ -255,8 +256,10 @@ final class PlayerEngine {
         if isBuffering, let tracked, tracked.resolved.kind == .streaming, !isRetryingHandoff {
             PlaybackLog.logger.info("Network path changed while stream is buffering: attempting handoff retry")
             isRetryingHandoff = true
-            Task { @MainActor [weak self] in
-                await self?.retryCurrentStreamAfterHandoff(reason: "network path changed while buffering")
+            Task { @MainActor [weak self, weak tracked] in
+                if let tracked {
+                    await self?.retryCurrentStreamAfterHandoff(for: tracked, reason: "network path changed while buffering")
+                }
                 self?.isRetryingHandoff = false
             }
         }
@@ -331,6 +334,7 @@ final class PlayerEngine {
     }
 
     func pause() {
+        playbackLoadRevision += 1
         userWantsPlaying = false
         remote?.cancelSeeking()
         settleRetempo()
@@ -351,15 +355,16 @@ final class PlayerEngine {
             load(index: currentIndex, autoplay: true, startAt: currentTime)
             return
         }
-        if let currentSong, !isLocal(currentSong), services.isResolvingAddress?() == true {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+        if let tracked, let currentSong, !currentSong.isYouTube, !isLocal(currentSong), services.isResolvingAddress?() == true {
+            let loadRevision = playbackLoadRevision
+            Task { @MainActor [weak self, weak tracked] in
+                guard let self, let tracked else { return }
                 PlaybackLog.logger.info("Cold launch: waiting up to 5s for address resolution before playing")
                 await self.services.waitForAddressResolution?(5.0)
-                guard self.userWantsPlaying else { return }
-                if self.tracked?.resolved.kind == .streaming,
+                guard self.tracked === tracked, self.playbackLoadRevision == loadRevision, self.userWantsPlaying else { return }
+                if tracked.resolved.kind == .streaming,
                    let curBase = self.services.currentBaseURL?(),
-                   !self.tracked!.resolved.url.absoluteString.hasPrefix(curBase.absoluteString) {
+                   !tracked.resolved.url.absoluteString.hasPrefix(curBase.absoluteString) {
                     PlaybackLog.logger.info("Cold launch: reloading current song with newly resolved address")
                     self.load(index: self.currentIndex, autoplay: true, startAt: self.currentTime)
                     return

@@ -6,6 +6,7 @@ struct VinylRecord<Label: View>: View {
     @ViewBuilder var label: () -> Label
 
     @Environment(PlayerEngine.self) private var player
+    @MusicVisualActivity private var isVisuallyActive
     @State private var restingAngle: Double = 0
     @State private var spinStart: Date?
 
@@ -14,14 +15,16 @@ struct VinylRecord<Label: View>: View {
     /// 33⅓ rpm.
     private static var degreesPerSecond: Double { 360 * 33.333 / 60 }
 
+    private var isSpinning: Bool { player.isPlaying && isVisuallyActive }
+
     var body: some View {
-        TimelineView(.animation(paused: !player.isPlaying)) { context in
+        TimelineView(.animation(paused: !isSpinning)) { context in
             disc
                 .rotationEffect(.degrees(angle(at: context.date)))
         }
         .overlay { sheen }
         .frame(width: side, height: side)
-        .onChange(of: player.isPlaying, initial: true) { _, playing in
+        .onChange(of: isSpinning, initial: true) { _, playing in
             if playing {
                 spinStart = .now
             } else if spinStart != nil {

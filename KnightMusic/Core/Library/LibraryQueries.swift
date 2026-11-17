@@ -185,9 +185,10 @@ enum LibraryQueries {
             sql: """
             SELECT song.* FROM download
             JOIN song ON song.id = download.songId
-            WHERE download.state = 'done'
+            WHERE download.state = ?
             ORDER BY download.addedAt DESC
-            """
+            """,
+            arguments: [DownloadState.completed.rawValue]
         )
     }
 

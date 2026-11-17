@@ -89,6 +89,7 @@ extension PlayerEngine {
     @discardableResult
     func load(index: Int, autoplay: Bool, startAt: TimeInterval = 0,
               scanBackward: Bool = false, silent: Bool = false) -> Bool {
+        playbackLoadRevision += 1
         guard !order.isEmpty else {
             clearPlayback()
             return false
@@ -115,9 +116,10 @@ extension PlayerEngine {
         if !silent, services.isOffline, !services.isInternetOffline, let recheck = services.reresolveAddress {
             // Online but the server is flagged unreachable (possibly stale): check right now instead of refusing the tap.
             let queueIds = order.map(\.id)
+            let loadRevision = playbackLoadRevision
             Task { @MainActor [weak self] in
                 let reachable = await recheck() != nil
-                guard let self, self.order.map(\.id) == queueIds else { return }
+                guard let self, self.playbackLoadRevision == loadRevision, self.order.map(\.id) == queueIds else { return }
                 if reachable {
                     self.userWantsPlaying = autoplay
                     if self.load(index: index, autoplay: autoplay, startAt: startAt, scanBackward: scanBackward, silent: true) { return }
@@ -194,6 +196,7 @@ extension PlayerEngine {
     }
 
     func stopPlayer() {
+        playbackLoadRevision += 1
         settleRetempo()
         settleAutoMix(keepIncoming: false)
         tracked?.observations.removeAll()
@@ -532,8 +535,10 @@ extension PlayerEngine {
             if pathChanged || addressChanged {
                 PlaybackLog.logger.warning("Stream stalled (> 6s buffering) with network/address change: triggering handoff retry")
                 isRetryingHandoff = true
-                Task { @MainActor [weak self] in
-                    await self?.retryCurrentStreamAfterHandoff(reason: "buffering stalled > 6s with network/address change")
+                Task { @MainActor [weak self, weak tracked] in
+                    if let tracked {
+                        await self?.retryCurrentStreamAfterHandoff(for: tracked, reason: "buffering stalled > 6s with network/address change")
+                    }
                     self?.isRetryingHandoff = false
                 }
             }
@@ -623,8 +628,8 @@ extension PlayerEngine {
     }
 
     @discardableResult
-    func retryCurrentStreamAfterHandoff(reason: String) async -> Bool {
-        guard let tracked, tracked.resolved.kind == .streaming else { return false }
+    func retryCurrentStreamAfterHandoff(for tracked: PreparedItem, reason: String) async -> Bool {
+        guard tracked === self.tracked, tracked.resolved.kind == .streaming, !tracked.entry.song.isYouTube else { return false }
         let entry = tracked.entry
         let now = ProcessInfo.processInfo.systemUptime
         var timestamps = streamRetryHistory[entry.id] ?? []
@@ -637,12 +642,10 @@ extension PlayerEngine {
         streamRetryHistory[entry.id] = timestamps
 
         PlaybackLog.logger.info("Handoff retry \(timestamps.count)/2 for \(entry.song.title) at \(self.elapsedNow())s: \(reason)")
-        let position = elapsedNow()
-        let wasPlaying = userWantsPlaying
-
         // Re-resolve address using existing API
         PlaybackLog.logger.info("Re-resolving address...")
         _ = await services.reresolveAddress?()
+        guard tracked === self.tracked, !Task.isCancelled else { return false }
         guard let newBase = services.currentBaseURL?() else {
             PlaybackLog.logger.error("Address re-resolution failed (no reachable address)")
             return false
@@ -655,10 +658,11 @@ extension PlayerEngine {
             return false
         }
 
+        let position = seekTarget ?? elapsedNow()
         PlaybackLog.logger.info("Reloading entry \(entry.song.title) at position \(position)s")
         trackedNetworkChangeCount = services.networkChangeCount?() ?? 0
         trackedBaseURL = newBase
-        activate(entry: entry, resolved: resolved, autoplay: wasPlaying, startAt: position)
+        activate(entry: entry, resolved: resolved, autoplay: userWantsPlaying, startAt: position)
         checkNextPreparedAddress()
         return true
     }
@@ -686,14 +690,14 @@ extension PlayerEngine {
             return
         }
         // LAN to Tailscale handoff check for network stream failure
-        if p.resolved.kind == .streaming {
+        if p.resolved.kind == .streaming, !p.entry.song.isYouTube {
             let pathChanged = (services.networkChangeCount?() ?? 0) != trackedNetworkChangeCount
             let addressChanged = services.currentBaseURL?() != trackedBaseURL
             if pathChanged || addressChanged {
                 PlaybackLog.logger.info("Current stream item failed during network/address change: attempting handoff retry")
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    let ok = await self.retryCurrentStreamAfterHandoff(reason: "stream item failed with network/address change")
+                    guard let self, p === self.tracked else { return }
+                    let ok = await self.retryCurrentStreamAfterHandoff(for: p, reason: "stream item failed with network/address change")
                     if !ok {
                         self.finishFailedItem(p, message: message)
                     }
@@ -705,6 +709,7 @@ extension PlayerEngine {
     }
 
     private func finishFailedItem(_ p: PreparedItem, message: String) {
+        guard p === tracked else { return }
         failedEntryIds.insert(p.entry.id)
         report("Couldn\u{2019}t play \u{201C}\(p.entry.song.title)\u{201D}: \(message)")
         consecutiveFailures += 1

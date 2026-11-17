@@ -7,10 +7,11 @@ struct ArtworkPulse: ViewModifier {
     let bpm: Int?
 
     @Environment(PlayerEngine.self) private var player
+    @MusicVisualActivity private var isVisuallyActive
     @State private var smoother = LevelSmoother()
 
     func body(content: Content) -> some View {
-        if mode == .off || !player.isPlaying {
+        if mode == .off || !player.isPlaying || !isVisuallyActive {
             content
         } else {
             TimelineView(.animation) { context in

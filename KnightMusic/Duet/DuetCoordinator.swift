@@ -153,7 +153,6 @@ final class DuetCoordinator {
 
     private func showPrompt(for target: DuetWorld, title: String? = nil, detail: String? = nil) {
         guard let scene = currentScene() else { return }
-        if target == .movies { ensureStage(in: scene).1.loadIfNeeded() }
         let hud = ensureHUD(in: scene)
         let next = Prompt(target: target, title: title ?? (target == .movies ? "Switch to Streamora?" : "Back to Knight Music?"),
                           detail: detail ?? promptDetail(for: target))
@@ -275,6 +274,7 @@ final class DuetCoordinator {
             stage.isHidden = true
             music.makeKey()
         }
+        stageController?.publishDuetVisibility()
         hudWindow?.rootViewController?.setNeedsStatusBarAppearanceUpdate()
     }
 

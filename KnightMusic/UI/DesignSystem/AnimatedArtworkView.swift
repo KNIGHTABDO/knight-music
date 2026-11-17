@@ -8,11 +8,10 @@ struct AnimatedArtworkView: View {
     var url: URL
 
     @State private var isOnScreen = false
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @MusicVisualActivity private var isVisuallyActive
 
     var body: some View {
-        LoopingVideoRepresentable(url: url, isActive: isOnScreen && scenePhase == .active && !reduceMotion)
+        LoopingVideoRepresentable(url: url, isActive: isOnScreen && isVisuallyActive)
             .onAppear { isOnScreen = true }
             .onDisappear { isOnScreen = false }
             .allowsHitTesting(false)

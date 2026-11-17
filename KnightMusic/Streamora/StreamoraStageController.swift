@@ -123,7 +123,17 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView.url?.host == Self.home.host { showingOffline = false }
+        if webView.url?.host == Self.home.host {
+            showingOffline = false
+            publishDuetVisibility()
+        }
+    }
+
+    func publishDuetVisibility() {
+        guard let webView, let url = webView.url, url.scheme == "https", url.host == Self.home.host,
+              url.port == nil || url.port == 443 else { return }
+        let visible = viewIfLoaded?.window?.isHidden == false
+        webView.evaluateJavaScript("window.__duet?.setVisible?.(\(visible))", completionHandler: nil)
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
