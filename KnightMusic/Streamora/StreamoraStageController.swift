@@ -1,6 +1,7 @@
 import UIKit
 import WebKit
 import AuthenticationServices
+import Network
 
 /// Streamora's side of Duet: the live Streamora site in a full-screen web view, with the native player bridge.
 /// It lives in its own window above Knight Music, so nothing in Knight Music is torn down while you watch.
@@ -12,7 +13,11 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
     let bridge = StreamoraBridge()
     private(set) var webView: WKWebView!
     private var hasLoaded = false
-    private var showingOffline = false
+    private var recoveryView: StreamoraRecoveryView?
+    private var activeNavigation: WKNavigation?
+    private var reconnectMonitor: NWPathMonitor?
+    private var connectionReady = false
+    private var usedAutomaticRetry = false
     private var authenticationSession: ASWebAuthenticationSession?
     private var authenticationID: UUID?
 
@@ -66,21 +71,27 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
         view = root
     }
 
-    /// Starts loading the site (when the switch pill appears, so the page is ready by the time it is on screen).
+    /// Load on the first switch to Movies.
     func loadIfNeeded() {
         loadViewIfNeeded()
         guard !hasLoaded else { return }
-        hasLoaded = true
-        webView.load(URLRequest(url: Self.home))
+        beginHomeLoad()
     }
 
     func reload() {
+        loadViewIfNeeded()
+        usedAutomaticRetry = false
+        beginHomeLoad()
+    }
+
+    private func beginHomeLoad() {
+        stopWatchingConnection()
         cancelAuthentication()
         bridge.tearDown()
         statusBarHidden = false
         hasLoaded = true
-        showingOffline = false
-        webView.load(URLRequest(url: Self.home))
+        recoveryView?.showConnecting()
+        activeNavigation = webView.load(URLRequest(url: Self.home))
     }
 
     /// Signs out of Streamora on this device: cookies, localStorage, IndexedDB and caches for the site.
@@ -120,21 +131,48 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
         return nil
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        activeNavigation = navigation
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
+        guard response.isForMainFrame, let http = response.response as? HTTPURLResponse,
+              http.url?.host == Self.home.host, http.statusCode >= 400 else {
+            return decisionHandler(.allow)
+        }
+        decisionHandler(.cancel)
+        Log.app.error("Streamora navigation returned HTTP \(http.statusCode)")
+        showFailure(.http(http.statusCode))
+    }
+
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        let code = (error as NSError).code
-        guard code != NSURLErrorCancelled else { return }
-        Log.app.error("streamora load failed: \(error.localizedDescription)")
-        showOffline()
+        handleNavigationFailure(navigation, error: error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        handleNavigationFailure(navigation, error: error)
+    }
+
+    private func handleNavigationFailure(_ navigation: WKNavigation?, error: Error) {
+        guard navigation === activeNavigation, let failure = StreamoraLoadFailure(error: error) else { return }
+        let nsError = error as NSError
+        Log.app.error("Streamora navigation failed (\(nsError.domain) \(nsError.code))")
+        showFailure(failure)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView.url?.host == Self.home.host {
-            showingOffline = false
-            publishDuetVisibility()
-        }
+        guard navigation === activeNavigation, webView.url?.host == Self.home.host else { return }
+        stopWatchingConnection()
+        recoveryView?.removeFromSuperview()
+        recoveryView = nil
+        webView.accessibilityElementsHidden = false
+        usedAutomaticRetry = false
+        publishDuetVisibility()
     }
 
     func publishDuetVisibility() {
+        retryWhenVisible()
         guard let webView, let url = webView.url, url.scheme == "https", url.host == Self.home.host,
               url.port == nil || url.port == 443 else { return }
         let visible = viewIfLoaded?.window?.isHidden == false
@@ -142,24 +180,61 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        Log.app.error("streamora web content process ended; reloading")
+        Log.app.error("Streamora web content process ended")
         cancelAuthentication()
         bridge.tearDown()
         statusBarHidden = false
-        webView.reload()
+        if viewIfLoaded?.window?.isHidden == false {
+            activeNavigation = webView.reload()
+            if activeNavigation == nil { beginHomeLoad() }
+        } else {
+            hasLoaded = false
+        }
     }
 
-    private func showOffline() {
-        guard !showingOffline else { return }
-        showingOffline = true
-        let html = """
-        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-        <style>html,body{margin:0;height:100%;background:#141210;color:#eee;font:17px -apple-system,system-ui;}
-        body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;box-sizing:border-box}
-        h1{font-size:22px;margin:0}p{margin:0;color:#aaa}a{color:#FA2D48;text-decoration:none;font-weight:600;padding:10px 22px;border:1px solid #FA2D48;border-radius:999px}</style>
-        </head><body><h1>Streamora needs an internet connection</h1><p>Shake to go back to Knight Music.</p><a href="duet://retry">Try again</a></body></html>
-        """
-        webView.loadHTMLString(html, baseURL: nil)
+    private func showFailure(_ failure: StreamoraLoadFailure) {
+        stopWatchingConnection()
+        let recovery: StreamoraRecoveryView
+        if let existing = recoveryView {
+            recovery = existing
+        } else {
+            recovery = StreamoraRecoveryView(background: Self.background, retry: { [weak self] in self?.reload() },
+                                             showMusic: { DuetCoordinator.shared.open(.music) })
+            view.addSubview(recovery)
+            NSLayoutConstraint.activate([
+                recovery.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                recovery.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+                recovery.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                recovery.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            ])
+            recoveryView = recovery
+        }
+        webView.accessibilityElementsHidden = true
+        recovery.show(failure)
+        guard failure.retryOnConnection, !usedAutomaticRetry else { return }
+        let monitor = NWPathMonitor()
+        reconnectMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self, weak monitor] path in
+            let ready = path.status == .satisfied
+            Task { @MainActor in
+                guard let self, let monitor, self.reconnectMonitor === monitor else { return }
+                self.connectionReady = ready
+                self.retryWhenVisible()
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "Streamora reconnect"))
+    }
+
+    private func retryWhenVisible() {
+        guard connectionReady, !usedAutomaticRetry, viewIfLoaded?.window?.isHidden == false else { return }
+        usedAutomaticRetry = true
+        beginHomeLoad()
+    }
+
+    private func stopWatchingConnection() {
+        reconnectMonitor?.cancel()
+        reconnectMonitor = nil
+        connectionReady = false
     }
 
     /// Opens Google's server-side OAuth flow in Apple's system authentication browser.

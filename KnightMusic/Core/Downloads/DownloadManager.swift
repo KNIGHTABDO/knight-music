@@ -511,7 +511,7 @@ final class DownloadManager {
         let oldAttempts = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
             attempts[id].map { (id, $0) }
         })
-        let legacyPaths = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+        let legacyPaths: [String: String] = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
             guard attempts[id] == nil, let path = paths[id] else { return nil }
             return (id, path)
         })
