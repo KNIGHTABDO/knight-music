@@ -108,7 +108,7 @@ jobs:
           retention-days: 1
 
       - name: Archive unsigned IPA
-        if: github.ref_type == 'tag' || inputs.candidate_version != ''
+        if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.candidate_version != '')
         env:
           CANDIDATE_VERSION: ${{ inputs.candidate_version }}
         run: |
@@ -132,7 +132,7 @@ jobs:
           shasum -a 256 Duet.ipa > Duet.ipa.sha256
 
       - uses: actions/upload-artifact@v4
-        if: github.ref_type != 'tag' && inputs.candidate_version != ''
+        if: github.event_name == 'workflow_dispatch' && github.ref_type != 'tag' && inputs.candidate_version != ''
         with:
           name: duet-candidate-${{ inputs.candidate_version }}
           path: |

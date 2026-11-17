@@ -184,8 +184,8 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
                 self.authenticationSession = nil
                 self.authenticationID = nil
                 if let error {
-                    let ns = error as NSError
-                    completion(ns.code == ASWebAuthenticationSessionError.canceledLogin.rawValue ? "Sign-in was cancelled." : "Sign-in did not complete.")
+                    let cancelled = (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin
+                    completion(cancelled ? "Sign-in was cancelled." : "Sign-in did not complete.")
                     return
                 }
                 guard let callback, callback.scheme == "knightmusic", callback.host == "streamora-auth",
