@@ -31,6 +31,11 @@ enum StreamoraBridgeScript {
       this.visible = visible;
       dispatchEvent(new Event('duet:visibilitychange'));
     },
+    // ASWebAuthenticationSession returns only a callback signal. Session creation stays on Streamora's HTTPS origin.
+    authSession(options) {
+      if (!options || typeof options.url !== 'string' || typeof options.state !== 'string') return Promise.reject(new Error('Invalid sign-in request'));
+      return post({ kind: 'auth', url: options.url, state: options.state });
+    },
     emit(event, data) {
       const set = listeners.get(event);
       if (!set) return;

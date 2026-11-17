@@ -33,6 +33,18 @@ final class StreamoraBridge: NSObject, WKScriptMessageHandlerWithReply {
             let method = body["method"] as? String ?? ""
             let options = body["options"] as? [String: Any] ?? [:]
             call(method, Options(options), reply: replyHandler)
+        case "auth":
+            let origin = message.frameInfo.securityOrigin
+            guard origin.`protocol` == "https", origin.host == StreamoraStageController.home.host,
+                  origin.port == 0 || origin.port == 443,
+                  let urlString = body["url"] as? String, let url = URL(string: urlString),
+                  let state = body["state"] as? String, let stage else {
+                replyHandler(nil, "Invalid sign-in request")
+                return
+            }
+            stage.startAuthentication(url, state: state) { error in
+                if let error { replyHandler(nil, error) } else { replyHandler(["completed": true], nil) }
+            }
         case "media":
             if body["active"] as? Bool == true { DuetMedia.shared.movieStarted(.web) } else { DuetMedia.shared.movieStopped(.web) }
             replyHandler(nil, nil)
@@ -76,7 +88,7 @@ final class StreamoraBridge: NSObject, WKScriptMessageHandlerWithReply {
         switch method {
         case "capabilities":
             // An empty version turns off Streamora's own update prompt: Knight Music's updater covers Duet.
-            reply(["engine": true, "version": "", "build": "", "host": "duet"], nil)
+            reply(["engine": true, "authSession": true, "version": "", "build": "", "host": "duet"], nil)
         case "engineOpen":
             guard let s = o.string("url"), let url = URL(string: s) else { return reply(nil, "No playable link") }
             engine?.close()
