@@ -15,6 +15,10 @@ on:
         description: Take simulator screenshots
         type: boolean
         default: true
+      candidate_version:
+        description: Build a SideStore test IPA with this version and retain it as a workflow artifact
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -104,9 +108,15 @@ jobs:
           retention-days: 1
 
       - name: Archive unsigned IPA
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || inputs.candidate_version != ''
+        env:
+          CANDIDATE_VERSION: ${{ inputs.candidate_version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${CANDIDATE_VERSION:-${GITHUB_REF_NAME#v}}"
+          if [ -n "$CANDIDATE_VERSION" ] && ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Candidate version must contain three numeric components, for example 1.0.2."
+            exit 1
+          fi
           xcodebuild -project KnightMusic.xcodeproj -scheme KnightMusic -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -archivePath build/KnightMusic.xcarchive \
             -clonedSourcePackagesDirPath build/SourcePackages \
@@ -118,7 +128,18 @@ jobs:
           zip -qry Duet.ipa Payload
           ls -lh Duet.ipa
           git log -1 --pretty=%B | grep -viE '^(co-authored-by|claude-session|\[shots\])' | sed -e 's/ \[shots\]//' > release-notes.txt || true
-          python3 scripts/make-source.py Payload/KnightMusic.app Duet.ipa "$GITHUB_REF_NAME" release-notes.txt apps.json
+          python3 scripts/make-source.py Payload/KnightMusic.app Duet.ipa "v$VERSION" release-notes.txt apps.json
+          shasum -a 256 Duet.ipa > Duet.ipa.sha256
+
+      - uses: actions/upload-artifact@v4
+        if: github.ref_type != 'tag' && inputs.candidate_version != ''
+        with:
+          name: duet-candidate-${{ inputs.candidate_version }}
+          path: |
+            Duet.ipa
+            Duet.ipa.sha256
+            apps.json
+            release-notes.txt
 
       - name: Publish release
         if: github.ref_type == 'tag'
