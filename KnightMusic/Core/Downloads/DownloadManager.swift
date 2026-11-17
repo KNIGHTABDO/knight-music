@@ -22,7 +22,7 @@ struct DownloadStatus: Equatable, Sendable {
 }
 
 /// Offline downloads on a background URLSession (keeps going while the app is suspended and is re-attached
-/// at launch). Files live in Application Support/Downloads/<songId>.<suffix>, excluded from backup.
+/// at launch). Each account stores completed files under its own folder, excluded from backup.
 @MainActor @Observable
 final class DownloadManager {
     static let sessionIdentifier = "com.knightabdo.knightmusic.downloads"
@@ -57,6 +57,7 @@ final class DownloadManager {
     @ObservationIgnored private var lastProgressPublish: [String: TimeInterval] = [:]
     @ObservationIgnored private var attempts: [String: String] = [:]
     @ObservationIgnored private var attemptEpochs: [String: UInt64] = [:]
+    @ObservationIgnored private var verifyingAttempts: [String: UInt64] = [:]
     @ObservationIgnored private var requestSnapshots: [String: DownloadRequestSnapshot] = [:]
     @ObservationIgnored private var awaitingAcceptance: [String: String] = [:]
     @ObservationIgnored private var ownerId: String?
@@ -91,6 +92,7 @@ final class DownloadManager {
             active.removeAll()
             attempts.removeAll()
             attemptEpochs.removeAll()
+            verifyingAttempts.removeAll()
             requestSnapshots.removeAll()
             awaitingAcceptance.removeAll()
             ready = false
@@ -173,6 +175,7 @@ final class DownloadManager {
         active.removeAll()
         attempts.removeAll()
         attemptEpochs.removeAll()
+        verifyingAttempts.removeAll()
         requestSnapshots.removeAll()
         awaitingAcceptance.removeAll()
         ready = false
@@ -216,11 +219,17 @@ final class DownloadManager {
     func download(songs: [Song]) {
         guard let ownerId, let database else { return }
         let settings = services.settings
+        var captured: [String: String] = [:]
         // YouTube songs are saved with "Add to Navidrome" instead; offline copies live in the stream cache.
         for song in songs where !song.isYouTube {
+            if statuses[song.id]?.state == .recoveryBlocked {
+                retryRecovery()
+                continue
+            }
             if let state = statuses[song.id]?.state,
-               state != .failed && state != .needsRetry && state != .recoveryBlocked { continue }
-            let ext = settings.downloadMaxBitRate > 0 ? (settings.downloadFormat ?? "mp3") : (song.suffix ?? "mp3")
+               state != .failed && state != .needsRetry { continue }
+            let format = settings.downloadMaxBitRate > 0 ? (settings.downloadFormat ?? "mp3") : (song.suffix ?? "mp3")
+            let ext = format.range(of: #"^[A-Za-z0-9]{1,16}$"#, options: .regularExpression) == nil ? "mp3" : format
             let attempt = UUID().uuidString
             attempts[song.id] = attempt
             requestSnapshots[song.id] = DownloadRequestSnapshot(
@@ -228,15 +237,16 @@ final class DownloadManager {
                 format: settings.downloadFormat ?? ext,
                 allowsCellular: settings.downloadOnCellular
             )
-            paths[song.id] = "\(ownerId)/\(safeFileComponent(song.id))-\(attempt).\(ext)"
+            paths[song.id] = "\(ownerId)/\(attempt).\(ext)"
             addedAt[song.id] = Date()
             statuses[song.id] = DownloadStatus(state: .queued, progress: 0, bytes: 0, errorMessage: nil)
             pending.removeAll { $0 == song.id }
             pending.append(song.id)
             awaitingAcceptance[song.id] = attempt
+            captured[song.id] = attempt
         }
-        let captured = awaitingAcceptance.filter { $0.value == attempts[$0.key] }
         guard !captured.isEmpty else { return }
+        let admittedAttempts = captured
         let epoch = configurationEpoch
         let records = captured.compactMap { id, attempt -> DownloadRecord? in
             guard attempts[id] == attempt else { return nil }
@@ -257,7 +267,7 @@ final class DownloadManager {
                 await MainActor.run {
                     guard let self else { return }
                     guard self.configurationEpoch == epoch, self.ownerId == capturedOwner else { return }
-                    for (id, attempt) in captured where self.awaitingAcceptance[id] == attempt {
+                    for (id, attempt) in admittedAttempts where self.awaitingAcceptance[id] == attempt {
                         self.awaitingAcceptance[id] = nil
                     }
                     if self.receiptsReconciled { self.startQueued() }
@@ -267,7 +277,7 @@ final class DownloadManager {
                 await MainActor.run {
                     guard let self else { return }
                     guard self.configurationEpoch == epoch, self.ownerId == capturedOwner else { return }
-                    for (id, attempt) in captured where self.awaitingAcceptance[id] == attempt {
+                    for (id, attempt) in admittedAttempts where self.awaitingAcceptance[id] == attempt {
                         self.awaitingAcceptance[id] = nil
                         self.pending.removeAll { $0 == id }
                         self.statuses[id] = DownloadStatus(state: .failed, progress: 0, bytes: 0,
@@ -287,10 +297,12 @@ final class DownloadManager {
 
     func cancel(songId: String) { cancel(songIds: [songId]) }
 
-    func retryFailed() {
+    func retryFailed(includeLegacy: Bool = false) {
         guard let database, let ownerId else { return }
         let epoch = configurationEpoch
-        let ids = statuses.filter { $0.value.state == .failed }.map(\.key)
+        let ids = statuses.compactMap { id, status in
+            status.state == .failed || (includeLegacy && status.state == .needsRetry) ? id : nil
+        }
         let attempts = Dictionary(uniqueKeysWithValues: ids.compactMap { id in self.attempts[id].map { (id, $0) } })
         guard !ids.isEmpty else { return }
         Task {
@@ -300,7 +312,9 @@ final class DownloadManager {
                 }
                 guard self.ownerId == ownerId, self.configurationEpoch == epoch else { return }
                 let eligible = songs.filter {
-                    self.statuses[$0.id]?.state == .failed && self.attempts[$0.id] == attempts[$0.id]
+                    let state = self.statuses[$0.id]?.state
+                    return self.attempts[$0.id] == attempts[$0.id]
+                        && (state == .failed || (includeLegacy && state == .needsRetry))
                 }
                 self.download(songs: eligible)
             } catch { PlaybackLog.logger.error("Reading failed downloads for retry failed: \(error.localizedDescription)") }
@@ -318,13 +332,16 @@ final class DownloadManager {
     /// Call when connectivity / settings / the URL provider changed so queued items can start.
     func networkDidChange() {
         guard receiptsReconciled else {
-            if let ownerId {
-                let epoch = configurationEpoch
-                Task { await recoverTransfers(ownerId: ownerId, epoch: epoch) }
-            }
+            retryRecovery()
             return
         }
         startQueued()
+    }
+
+    func retryRecovery() {
+        guard let ownerId else { return }
+        let epoch = configurationEpoch
+        Task { await recoverTransfers(ownerId: ownerId, epoch: epoch) }
     }
 
     // MARK: Internals
@@ -380,17 +397,23 @@ final class DownloadManager {
                 return false
             }
             guard self.ownerId == ownerId, configurationEpoch == epoch else { return false }
-            guard let row, row.attemptId == receipt.attemptId,
-                  attempts[receipt.songId] == receipt.attemptId else {
+            guard let row, row.attemptId == receipt.attemptId else {
                 if let stagedPath = receipt.stagedPath {
                     try? FileManager.default.removeItem(at: directory.appendingPathComponent(stagedPath))
                 }
                 TransferReceiptStore.remove(receipt, under: directory)
                 continue
             }
+            if let currentAttempt = attempts[receipt.songId], currentAttempt != receipt.attemptId { continue }
             attempts[receipt.songId] = receipt.attemptId
             attemptEpochs[receipt.songId] = receipt.epoch
             paths[receipt.songId] = receipt.relativePath
+            pending.removeAll { $0 == receipt.songId }
+            if row.state == DownloadState.completed.rawValue,
+               statuses[receipt.songId]?.state == .completed {
+                TransferReceiptStore.remove(receipt, under: directory)
+                continue
+            }
             if receipt.outcome == .staged {
                 statuses[receipt.songId] = DownloadStatus(state: .downloading, progress: 1,
                                                           bytes: receipt.bytes, errorMessage: nil)
@@ -427,7 +450,7 @@ final class DownloadManager {
                 continue
             }
             let id = parsed.id
-            guard let status = statuses[id], (status.state == .queued || status.state == .downloading),
+            guard let status = statuses[id], (status.state == .queued || status.state == .downloading || status.state == .recoveryBlocked),
                   attempts[id] == nil || attempts[id] == parsed.attemptId else { continue }
             attempts[id] = parsed.attemptId
             attemptEpochs[id] = parsed.epoch
@@ -481,10 +504,10 @@ final class DownloadManager {
         }
     }
 
-    private func remove(_ ids: [String]) {
+    private func remove(_ songIds: [String]) {
+        let ids = Set(songIds)
         guard !ids.isEmpty else { return }
-        let idSet = Set(ids)
-        pending.removeAll { idSet.contains($0) }
+        pending.removeAll { ids.contains($0) }
         let oldAttempts = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
             attempts[id].map { (id, $0) }
         })
@@ -496,7 +519,6 @@ final class DownloadManager {
             attemptEpochs[id].map { (id, $0) }
         })
         let capturedOwner = ownerId
-        let capturedEpoch = configurationEpoch
         for id in ids {
             if let rel = paths[id], let ownerId, rel.hasPrefix(ownerId + "/"),
                let attempt = oldAttempts[id], rel.contains(attempt) {
@@ -512,9 +534,8 @@ final class DownloadManager {
             awaitingAcceptance[id] = nil
             active[id] = nil
         }
-        if let database, let ownerId {
-            deleteRows(ids, attempts: oldAttempts, legacyPaths: legacyPaths,
-                       database: database, owner: ownerId, epoch: capturedEpoch)
+        if let database, capturedOwner != nil {
+            deleteRows(ids, attempts: oldAttempts, legacyPaths: legacyPaths, database: database)
         }
         if !oldAttempts.isEmpty {
             Task {
@@ -536,7 +557,7 @@ final class DownloadManager {
 
     // Delegate entry points (already hopped to the main actor).
 
-    fileprivate func progress(_ id: String, owner: String, epoch: UInt64, attempt: String,
+    func progress(_ id: String, owner: String, epoch: UInt64, attempt: String,
                               received: Int64, expected: Int64) {
         guard owner == ownerId, attemptEpochs[id] == epoch, attempts[id] == attempt,
               active[id] == attempt else { return }
@@ -550,7 +571,7 @@ final class DownloadManager {
         statuses[id] = status
     }
 
-    fileprivate func finished(_ receipt: TransferReceipt, epoch: UInt64) {
+    func finished(_ receipt: TransferReceipt, epoch: UInt64) {
         let id = receipt.songId
         guard receipt.ownerId == ownerId, attempts[id] == receipt.attemptId else { return }
         if attemptEpochs[id] == nil {
@@ -576,12 +597,13 @@ final class DownloadManager {
                 persist(id)
                 startQueued()
             } else {
+                statuses[id] = DownloadStatus(state: .downloading, progress: 1, bytes: receipt.bytes, errorMessage: nil)
                 finalize(receipt, epoch: epoch)
             }
         }
     }
 
-    fileprivate func receiptWriteFailed(owner: String, epoch: UInt64, attempt: String, songId: String,
+    func receiptWriteFailed(owner: String, epoch: UInt64, attempt: String, songId: String,
                                         message: String) {
         guard owner == ownerId, attempts[songId] == attempt else { return }
         if attemptEpochs[songId] == nil { attemptEpochs[songId] = epoch }
@@ -598,10 +620,19 @@ final class DownloadManager {
         let owner = receipt.ownerId
         let id = receipt.songId
         let capturedConfiguration = configurationEpoch
+        guard verifyingAttempts[receipt.attemptId] != capturedConfiguration else { return }
+        verifyingAttempts[receipt.attemptId] = capturedConfiguration
         let root = directory
         Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.verifyingAttempts[receipt.attemptId] == capturedConfiguration {
+                    self.verifyingAttempts[receipt.attemptId] = nil
+                }
+            }
+            var verified = false
             do {
-                guard let self, self.configurationEpoch == capturedConfiguration,
+                guard self.configurationEpoch == capturedConfiguration,
                       self.ownerId == owner, self.attemptEpochs[id] == epoch,
                       self.attempts[id] == receipt.attemptId else { return }
                 let byteCount = try await Task.detached(priority: .utility) { () throws -> Int in
@@ -619,6 +650,7 @@ final class DownloadManager {
                     }
                     return bytes
                 }.value
+                verified = true
                 guard self.configurationEpoch == capturedConfiguration,
                       self.ownerId == owner, self.attemptEpochs[id] == epoch,
                       self.attempts[id] == receipt.attemptId else { return }
@@ -633,14 +665,14 @@ final class DownloadManager {
                 let dbCommit = Task { () throws -> Void in
                     await previous?.value
                     try await database.write { db in
-                    try db.execute(sql: """
-                        UPDATE download SET state = ?, progress = ?, bytes = ?, relativePath = ?, addedAt = ?,
-                            errorMessage = ?, requestedBitRate = ?, requestedFormat = ?, allowsCellular = ?
-                        WHERE songId = ? AND attemptId = ?
-                        """, arguments: [record.state, record.progress, record.bytes, record.relativePath,
-                                        record.addedAt, record.errorMessage, record.requestedBitRate,
-                                        record.requestedFormat, record.allowsCellular, id, receipt.attemptId])
-                    guard db.changesCount > 0 else { throw CocoaError(.userCancelled) }
+                        try db.execute(sql: """
+                            UPDATE download SET state = ?, progress = ?, bytes = ?, relativePath = ?, addedAt = ?,
+                                errorMessage = ?, requestedBitRate = ?, requestedFormat = ?, allowsCellular = ?
+                            WHERE songId = ? AND attemptId = ?
+                            """, arguments: [record.state, record.progress, record.bytes, record.relativePath,
+                                            record.addedAt, record.errorMessage, record.requestedBitRate,
+                                            record.requestedFormat, record.allowsCellular, id, receipt.attemptId])
+                        guard db.changesCount > 0 else { throw CocoaError(.userCancelled) }
                     }
                 }
                 self.persistenceTail = Task { try? await dbCommit.value }
@@ -648,31 +680,27 @@ final class DownloadManager {
                 guard self.configurationEpoch == capturedConfiguration,
                       self.ownerId == owner, self.attemptEpochs[id] == epoch,
                       self.attempts[id] == receipt.attemptId else { return }
-                await MainActor.run {
-                    guard self.configurationEpoch == capturedConfiguration, self.ownerId == owner,
-                          self.attemptEpochs[id] == epoch, self.attempts[id] == receipt.attemptId else { return }
-                    self.paths[id] = receipt.relativePath
-                    self.active[id] = nil
-                    self.statuses[id] = DownloadStatus(state: .completed, progress: 1, bytes: byteCount, errorMessage: nil)
-                    TransferReceiptStore.remove(receipt, under: self.directory)
-                    self.startQueued()
-                }
+                self.paths[id] = receipt.relativePath
+                self.active[id] = nil
+                self.statuses[id] = DownloadStatus(state: .completed, progress: 1, bytes: byteCount, errorMessage: nil)
+                TransferReceiptStore.remove(receipt, under: self.directory)
+                self.startQueued()
             } catch {
                 PlaybackLog.logger.error("Finalizing download failed: \(error.localizedDescription)")
-                await MainActor.run {
-                    guard self.ownerId == owner, self.attemptEpochs[id] == epoch,
-                          self.attempts[id] == receipt.attemptId else { return }
-                    self.active[id] = nil
+                guard self.configurationEpoch == capturedConfiguration, self.ownerId == owner,
+                      self.attemptEpochs[id] == epoch, self.attempts[id] == receipt.attemptId else { return }
+                self.active[id] = nil
+                if verified {
+                    self.statuses[id] = DownloadStatus(state: .recoveryBlocked, progress: 1, bytes: receipt.bytes,
+                                                       errorMessage: "Audio is saved. Retry to finish making it available offline.")
+                } else {
                     self.statuses[id] = DownloadStatus(state: .failed, progress: 0, bytes: 0,
                                                        errorMessage: "Downloaded audio could not be verified")
                     self.persist(id)
                 }
+                self.startQueued()
             }
         }
-    }
-
-    fileprivate func sessionFinishedEvents(identifier: String?) {
-        AppDelegate.finishBackgroundEvents(identifier: identifier)
     }
 
     // MARK: Persistence
@@ -705,10 +733,9 @@ final class DownloadManager {
         persistenceTail = Task { await operation.value }
     }
 
-    private func deleteRows(_ ids: [String], attempts: [String: String], legacyPaths: [String: String], database: DatabaseWriter,
-                            owner: String, epoch: UInt64) {
+    private func deleteRows(_ ids: Set<String>, attempts: [String: String], legacyPaths: [String: String], database: DatabaseWriter) {
         let previous = persistenceTail
-        let operation = Task { [weak self] in
+        let operation = Task {
             await previous?.value
             do {
                 try await database.write { db in
@@ -722,135 +749,10 @@ final class DownloadManager {
                                        arguments: [id, path])
                     }
                 }
-                await MainActor.run {
-                    guard let self, self.ownerId == owner, self.configurationEpoch == epoch else { return }
-                }
             } catch {
                 PlaybackLog.logger.error("Deleting download rows failed: \(error.localizedDescription)")
             }
         }
         persistenceTail = Task { await operation.value }
-    }
-}
-
-/// URLSession delegate. Stages the result and atomically persists its receipt before returning,
-/// so recovery never depends on the OS temporary file surviving the callback.
-final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    weak var manager: DownloadManager?
-    private let directory: URL
-    init(directory: URL) {
-        self.directory = directory
-    }
-
-    static func parse(_ description: String?) -> (ownerId: String, epoch: UInt64, attemptId: String,
-                                                  id: String, relativePath: String)? {
-        if let identity = TransferTaskIdentity(taskDescription: description) {
-            return (identity.ownerId, identity.epoch, identity.attemptId, identity.songId, identity.relativePath)
-        }
-        guard let description else { return nil }
-        let fields = description.split(separator: "|", maxSplits: 3).map(String.init)
-        if fields.count == 4 { return (fields[0], 0, fields[1], fields[2], fields[3]) }
-        if fields.count == 2 { return ("legacy", 0, "", fields[0], fields[1]) }
-        return nil
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
-                    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        guard let parsed = Self.parse(downloadTask.taskDescription) else { return }
-        let id = parsed.id
-        let manager = self.manager
-        let owner = parsed.ownerId
-        let epoch = parsed.epoch
-        let attempt = parsed.attemptId
-        Task { @MainActor in
-            manager?.progress(id, owner: owner, epoch: epoch, attempt: attempt,
-                              received: totalBytesWritten, expected: totalBytesExpectedToWrite)
-        }
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let parsed = Self.parse(downloadTask.taskDescription) else { return }
-        let id = parsed.id
-        let rel = parsed.relativePath
-        var failure: String?
-        var bytes = 0
-        var stagedPath: String?
-        let http = downloadTask.response as? HTTPURLResponse
-        let mime = http?.mimeType?.lowercased() ?? ""
-        if http?.statusCode != 200 {
-            failure = "Server returned status \(http?.statusCode ?? 0)"
-        } else if mime.contains("json") || mime.contains("xml") || mime.hasPrefix("text") {
-            // Subsonic reports errors as HTTP 200 with a JSON/XML body.
-            failure = "The server returned an error instead of audio"
-        } else {
-            let ext = (rel as NSString).pathExtension
-            let staging = directory.appendingPathComponent(parsed.ownerId, isDirectory: true)
-                .appendingPathComponent(".staging", isDirectory: true)
-                .appendingPathComponent("\(parsed.attemptId).partial.\(ext)")
-            let fm = FileManager.default
-            do {
-                try fm.createDirectory(at: staging.deletingLastPathComponent(), withIntermediateDirectories: true)
-                if fm.fileExists(atPath: staging.path) { try fm.removeItem(at: staging) }
-                try fm.moveItem(at: location, to: staging)
-                excludeFromBackup(staging)
-                bytes = (try fm.attributesOfItem(atPath: staging.path)[.size] as? NSNumber)?.intValue ?? 0
-                if bytes == 0 {
-                    try? fm.removeItem(at: staging)
-                    failure = "The downloaded file was empty"
-                } else {
-                    stagedPath = String(staging.path.dropFirst(directory.path.count + 1))
-                }
-            } catch {
-                failure = "Couldn\u{2019}t save the file: \(error.localizedDescription)"
-            }
-        }
-        let receipt = TransferReceipt(ownerId: parsed.ownerId, attemptId: parsed.attemptId, epoch: parsed.epoch,
-                                      songId: id, relativePath: rel, stagedPath: stagedPath,
-                                      outcome: failure == nil ? .staged : .failed, bytes: bytes,
-                                      message: failure, createdAt: Date())
-        let manager = self.manager
-        let durableReceipt: TransferReceipt
-        do { durableReceipt = try TransferReceiptStore.write(receipt, under: directory) }
-        catch {
-            let message = error.localizedDescription
-            Task { @MainActor in
-                manager?.receiptWriteFailed(owner: parsed.ownerId, epoch: parsed.epoch, attempt: parsed.attemptId,
-                                            songId: parsed.id, message: message)
-            }
-            return
-        }
-        Task { @MainActor in
-            manager?.finished(durableReceipt, epoch: parsed.epoch)
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error, let parsed = Self.parse(task.taskDescription) else { return }
-        let cancelled = (error as NSError).code == NSURLErrorCancelled
-        let receipt = TransferReceipt(ownerId: parsed.ownerId, attemptId: parsed.attemptId, epoch: parsed.epoch,
-                                      songId: parsed.id, relativePath: parsed.relativePath, stagedPath: nil,
-                                      outcome: cancelled ? .cancelled : .failed, bytes: 0,
-                                      message: cancelled ? "Cancelled" : error.localizedDescription, createdAt: Date())
-        let manager = self.manager
-        let durableReceipt: TransferReceipt
-        do { durableReceipt = try TransferReceiptStore.write(receipt, under: directory) }
-        catch {
-            let message = error.localizedDescription
-            Task { @MainActor in
-                manager?.receiptWriteFailed(owner: parsed.ownerId, epoch: parsed.epoch, attempt: parsed.attemptId,
-                                            songId: parsed.id, message: message)
-            }
-            return
-        }
-        Task { @MainActor in
-            manager?.finished(durableReceipt, epoch: parsed.epoch)
-        }
-    }
-
-    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        let manager = self.manager
-        Task { @MainActor in
-            manager?.sessionFinishedEvents(identifier: session.configuration.identifier)
-        }
     }
 }

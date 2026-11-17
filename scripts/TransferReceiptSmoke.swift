@@ -18,7 +18,7 @@ struct TransferReceiptSmoke {
         precondition(otherOwnerReceipts.isEmpty)
 
         let identity = TransferTaskIdentity(ownerId: "owner-a", epoch: 9, attemptId: "attempt-17",
-                                            songId: "track-1", relativePath: receipt.relativePath)
+                                            songId: "track|1", relativePath: receipt.relativePath)
         precondition(TransferTaskIdentity(taskDescription: identity.taskDescription) == identity)
         let replacement = TransferTaskIdentity(ownerId: "owner-a", epoch: 9, attemptId: "attempt-18",
                                                songId: "track-1", relativePath: "owner-a/track-1-attempt-18.mp3")

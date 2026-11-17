@@ -15,13 +15,13 @@ struct TransferTaskIdentity: Equatable, Sendable {
         self.relativePath = relativePath
     }
 
-    var taskDescription: String { "\(ownerId)|\(epoch)|\(attemptId)|\(songId)|\(relativePath)" }
+    var taskDescription: String { "\(ownerId)|\(epoch)|\(attemptId)|\(relativePath)|\(songId)" }
 
     init?(taskDescription: String?) {
         guard let taskDescription else { return nil }
         let fields = taskDescription.split(separator: "|", maxSplits: 4).map(String.init)
         guard fields.count == 5, let epoch = UInt64(fields[1]) else { return nil }
-        self.init(ownerId: fields[0], epoch: epoch, attemptId: fields[2], songId: fields[3], relativePath: fields[4])
+        self.init(ownerId: fields[0], epoch: epoch, attemptId: fields[2], songId: fields[4], relativePath: fields[3])
     }
 }
 

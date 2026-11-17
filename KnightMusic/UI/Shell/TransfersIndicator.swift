@@ -133,12 +133,14 @@ struct TransfersSheet: View {
 
     var body: some View {
         let summary = TransferSummary(downloads: downloads, player: player)
-        let failures = downloads.statuses.filter { $0.value.state == .failed }.sorted { $0.key < $1.key }
-        let ids = summary.downloads.map(\.id) + summary.cache.map(\.songId) + failures.map(\.key)
+        let issues = downloads.statuses.filter {
+            $0.value.state == .failed || $0.value.state == .needsRetry || $0.value.state == .recoveryBlocked
+        }.sorted { $0.key < $1.key }
+        let ids = summary.downloads.map(\.id) + summary.cache.map(\.songId) + issues.map(\.key)
         let activation = app.accountActivation
         NavigationStack {
             List {
-                if summary.isEmpty && failures.isEmpty {
+                if summary.isEmpty && issues.isEmpty {
                     Section {
                         Label("Nothing is downloading", systemImage: "checkmark.circle")
                             .foregroundStyle(Theme.secondaryLabel)
@@ -161,13 +163,21 @@ struct TransfersSheet: View {
                         Text("Songs are playable offline after verification. Swipe to cancel.")
                     }
                 }
-                if !failures.isEmpty {
-                    Section("Failed Downloads") {
-                        ForEach(failures.map(\.key), id: \.self) { id in
+                if !issues.isEmpty {
+                    Section("Download Recovery") {
+                        ForEach(issues.map(\.key), id: \.self) { id in
                             row(songId: id, detail: downloads.status(for: id)?.errorMessage ?? "Couldn’t download this song.",
                                 fraction: nil)
                         }
-                        Button("Retry Failed Downloads") { downloads.retryFailed() }
+                        if issues.contains(where: { $0.value.state == .failed }) {
+                            Button("Retry Failed Downloads") { downloads.retryFailed() }
+                        }
+                        if issues.contains(where: { $0.value.state == .needsRetry }) {
+                            Button("Save New Offline Copies") { downloads.retryFailed(includeLegacy: true) }
+                        }
+                        if issues.contains(where: { $0.value.state == .recoveryBlocked }) {
+                            Button("Retry Download Recovery") { downloads.retryRecovery() }
+                        }
                     }
                 }
                 if !summary.cache.isEmpty {

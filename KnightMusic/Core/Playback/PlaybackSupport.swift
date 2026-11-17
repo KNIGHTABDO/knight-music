@@ -206,7 +206,7 @@ func excludeFromBackup(_ url: URL) {
 
 // MARK: - GRDB records (tables are created by LibraryDatabase migrations)
 
-struct DownloadRecord: Codable, FetchableRecord, PersistableRecord {
+struct DownloadRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     static let databaseTableName = "download"
     var songId: String
     var state: String
