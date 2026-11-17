@@ -29,7 +29,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
         start, end = map(int, raw.removeprefix("bytes=").split("-"))
         path = self.path.split("?", 1)[0]
         requests.append({"fixture": path, "range": raw})
-        if path in ("/short200", "/complete200"):
+        if path in ("/short200", "/complete200", "/unknown-ignored-range"):
             body = expected[:4] if path == "/short200" else expected
             status = 200
         elif path == "/renew-changed":
@@ -118,7 +118,8 @@ actor YouTubeMusic {
   if originalPath.hasPrefix("/renew-") {
    url=URL(string:url.absoluteString + (calls == 1 ? "?itag=140" : "-next?itag=\(originalPath == "/renew-same" ? 140 : 141)"))!
   }
-  return YTStream(url:url,userAgent:nil,contentLength:16,client:"fixture",expires:.distantFuture,chunkSize:4)
+  let length: Int64? = originalPath.hasPrefix("/unknown-") ? nil : 16
+  return YTStream(url:url,userAgent:nil,contentLength:length,client:"fixture",expires:.distantFuture,chunkSize:4)
  }
  func invalidate(videoId:String){}
 }
@@ -152,7 +153,7 @@ try:
             "cases": [],
         }
         for case in ("correct", "wrong-range", "wrong-total", "short206", "short200", "complete200",
-                     "zero-length-all", "etag-change", "renew-same", "renew-changed"):
+                     "unknown-correct", "unknown-ignored-range", "zero-length-all", "etag-change", "renew-same", "renew-changed"):
             before = len(requests)
             case_path = "correct" if case == "zero-length-all" else case
             requested_length = "0" if case == "zero-length-all" else "16"
@@ -170,6 +171,8 @@ try:
             "short206": "failure:YouTube Music sent something unexpected.",
             "short200": "failure:The YouTube audio server did not honor a byte-range request. Retry playback.",
             "complete200": "failure:The YouTube audio server did not honor a byte-range request. Retry playback.",
+            "unknown-correct": "success",
+            "unknown-ignored-range": "failure:The YouTube audio server did not honor a byte-range request. Retry playback.",
             "zero-length-all": "success",
             "etag-change": "failure:The YouTube audio changed while recovering. Retry playback.",
             "renew-same": "success",
@@ -178,6 +181,8 @@ try:
         by_fixture = {item["fixture"]: item["result"] for item in output["cases"]}
         expected_b64 = "MDEyMzQ1Njc4OWFiY2RlZg=="
         assert by_fixture["correct"]["bytesBase64"] == expected_b64
+        assert by_fixture["unknown-correct"]["bytesBase64"] == expected_b64
+        assert by_fixture["unknown-ignored-range"]["bodyBytesRead"] == 0
         assert by_fixture["zero-length-all"]["bytesBase64"] == expected_b64
         assert by_fixture["renew-same"]["bytesBase64"] == expected_b64
         assert by_fixture["wrong-range"]["receivedBytes"] == 0

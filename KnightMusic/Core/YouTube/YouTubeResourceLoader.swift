@@ -210,14 +210,14 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
 
     /// Size of a stream that did not report one (the AutoMix server fallback): "Content-Range: bytes 0-1/<size>".
     private static func probeLength(_ stream: YTStream, session: URLSession) async throws -> Int64 {
-        let (_, response) = try await session.data(for: stream.request(range: 0...1))
+        let (bytes, response) = try await session.bytes(for: stream.request(range: 0...1))
+        defer { bytes.task.cancel() }
         guard let http = response as? HTTPURLResponse else { throw YouTubeError.invalidResponse }
-        if let range = http.value(forHTTPHeaderField: "Content-Range"), let total = range.split(separator: "/").last,
-           let size = Int64(total) {
-            return size
-        }
-        if http.statusCode == 200, http.expectedContentLength > 0 { return http.expectedContentLength }
-        throw YouTubeError.http(http.statusCode)
+        if http.statusCode == 200 { throw YouTubeError.unsupportedRangeResponse }
+        guard http.statusCode == 206 else { throw YouTubeError.http(http.statusCode) }
+        guard let range = contentRange(http.value(forHTTPHeaderField: "Content-Range")),
+              range.0 == 0, range.1 == min(1, range.2 - 1) else { throw YouTubeError.invalidResponse }
+        return range.2
     }
 }
 
