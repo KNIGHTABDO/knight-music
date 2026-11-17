@@ -28,8 +28,10 @@ struct SavedQueue: Codable, Sendable {
 
     func positionIndex(_ saved: SavedPosition) -> Int? {
         if let revision {
-            guard saved.queueRevision == revision, let entryID = saved.entryID else { return nil }
-            return entryIDs?.firstIndex(of: entryID)
+            guard saved.queueRevision == revision, let entryID = saved.entryID,
+                  let entryIDs, entryIDs.count == songs.count,
+                  let index = entryIDs.firstIndex(of: entryID), entryIDs.lastIndex(of: entryID) == index else { return nil }
+            return index
         }
         // Older snapshots stored only an index. Preserve their existing paused restore behavior.
         guard saved.queueRevision == nil, songs.indices.contains(saved.currentIndex) else { return nil }

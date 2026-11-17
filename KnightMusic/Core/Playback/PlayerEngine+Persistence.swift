@@ -107,9 +107,11 @@ extension PlayerEngine {
         guard settings.serverQueueSyncEnabled, !services.isOffline, let server = services.server else { return }
         let revision = queueEditRevision
         let endpoint = services.currentBaseURL?()
+        let activation = AppModel.shared?.accountActivation
         do {
             guard let remoteQueue = try await server.getPlayQueue(), !remoteQueue.songs.isEmpty else { return }
             guard queueEditRevision == revision, services.currentBaseURL?() == endpoint,
+                  AppModel.shared?.accountActivation == activation,
                   settings.serverQueueSyncEnabled else { return }
             let sameQueue = remoteQueue.songs.map(\.id) == serverQueueWindowIds()
             let sameCurrent = remoteQueue.currentSongId == currentSong?.id
@@ -124,6 +126,7 @@ extension PlayerEngine {
             serverQueuePreview = remoteQueue
             serverQueuePreviewRevision = revision
             serverQueuePreviewEndpoint = endpoint
+            serverQueuePreviewActivation = activation
             serverQueueAvailable = true
         } catch {
             PlaybackLog.logger.error("Fetching server play queue failed: \(error.localizedDescription)")
@@ -135,6 +138,7 @@ extension PlayerEngine {
         guard let remoteQueue = serverQueuePreview, !remoteQueue.songs.isEmpty else { return }
         // The toast lives a few seconds; don't replace something the user started meanwhile.
         guard !isPlaying, settings.serverQueueSyncEnabled, serverQueuePreviewRevision == queueEditRevision,
+              serverQueuePreviewActivation == AppModel.shared?.accountActivation,
               serverQueuePreviewEndpoint == services.currentBaseURL?() else { dismissServerQueue(); return }
         let songs = remoteQueue.songs
         let possibleEntries = songs.indices.filter { songs[$0].id == remoteQueue.currentSongId }
@@ -162,6 +166,7 @@ extension PlayerEngine {
         serverQueuePreview = nil
         serverQueuePreviewRevision = nil
         serverQueuePreviewEndpoint = nil
+        serverQueuePreviewActivation = nil
     }
 
     func scheduleServerSave(immediate: Bool = false) {

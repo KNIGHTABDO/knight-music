@@ -117,9 +117,11 @@ extension PlayerEngine {
             // Online but the server is flagged unreachable (possibly stale): check right now instead of refusing the tap.
             let queueIds = order.map(\.id)
             let loadRevision = playbackLoadRevision
+            let activation = AppModel.shared?.accountActivation
             Task { @MainActor [weak self] in
                 let reachable = await recheck() != nil
-                guard let self, self.playbackLoadRevision == loadRevision, self.order.map(\.id) == queueIds else { return }
+                guard let self, self.playbackLoadRevision == loadRevision,
+                      AppModel.shared?.accountActivation == activation, self.order.map(\.id) == queueIds else { return }
                 if reachable {
                     self.userWantsPlaying = autoplay
                     if self.load(index: index, autoplay: autoplay, startAt: startAt, scanBackward: scanBackward, silent: true) { return }
@@ -630,6 +632,7 @@ extension PlayerEngine {
     @discardableResult
     func retryCurrentStreamAfterHandoff(for tracked: PreparedItem, reason: String) async -> Bool {
         guard tracked === self.tracked, tracked.resolved.kind == .streaming, !tracked.entry.song.isYouTube else { return false }
+        let activation = AppModel.shared?.accountActivation
         let entry = tracked.entry
         let now = ProcessInfo.processInfo.systemUptime
         var timestamps = streamRetryHistory[entry.id] ?? []
@@ -645,7 +648,7 @@ extension PlayerEngine {
         // Re-resolve address using existing API
         PlaybackLog.logger.info("Re-resolving address...")
         _ = await services.reresolveAddress?()
-        guard tracked === self.tracked, !Task.isCancelled else { return false }
+        guard tracked === self.tracked, AppModel.shared?.accountActivation == activation, !Task.isCancelled else { return false }
         guard let newBase = services.currentBaseURL?() else {
             PlaybackLog.logger.error("Address re-resolution failed (no reachable address)")
             return false

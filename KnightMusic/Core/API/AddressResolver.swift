@@ -10,6 +10,8 @@ final class AddressResolver {
     private(set) var lastResolvedAt: Date?
 
     var probeTimeout: TimeInterval = 2.5
+    @ObservationIgnored private var activation = 0
+    @ObservationIgnored private var activeProbes = 0
 
     private static func cacheKey(_ id: UUID) -> String { "resolvedAddress.\(id.uuidString)" }
 
@@ -26,12 +28,27 @@ final class AddressResolver {
         UserDefaults.standard.removeObject(forKey: Self.cacheKey(accountId))
     }
 
+    func invalidateActiveProbes() {
+        activation &+= 1
+        activeProbes = 0
+        isResolving = false
+        lastResolvedAt = nil
+        currentAddress = nil
+    }
+
     /// Probes all addresses concurrently but honours preference order: the winner is the earliest address
     /// that answers, once every address before it has failed. Returns nil if none answers.
     func resolve(account: ServerAccount, password: String, timeout: TimeInterval? = nil) async -> URL? {
         guard !account.addresses.isEmpty else { return nil }
+        let capturedActivation = activation
+        activeProbes += 1
         isResolving = true
-        defer { isResolving = false }
+        defer {
+            if activation == capturedActivation {
+                activeProbes -= 1
+                isResolving = activeProbes > 0
+            }
+        }
         let timeout = timeout ?? probeTimeout
         let addresses = account.addresses
         let username = account.username
@@ -55,6 +72,7 @@ final class AddressResolver {
             }
             return nil
         }
+        guard activation == capturedActivation, !Task.isCancelled else { return nil }
         lastResolvedAt = Date()
         if let winner {
             remember(winner, for: account.id)

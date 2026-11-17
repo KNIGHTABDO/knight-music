@@ -21,11 +21,21 @@ final class DuetMedia {
 
     private(set) var activeSources: Set<Source> = []
     /// Music that a movie interrupted; it resumes when the movie ends or you switch back (Intermission).
-    private(set) var musicPausedForMovie = false
+    private var interruptedMusic: (entryID: UUID, intent: Int, accountID: UUID?)?
     private var releaseTask: Task<Void, Never>?
 
     var hasMovie: Bool { !activeSources.isEmpty }
-    var interruptedSongTitle: String? { musicPausedForMovie ? AppModel.shared?.player.currentSong?.title : nil }
+    var interruptedSongTitle: String? {
+        guard let app = AppModel.shared, canResumeMusic(app) else { return nil }
+        return app.player.currentSong?.title
+    }
+
+    private func canResumeMusic(_ app: AppModel) -> Bool {
+        guard let interruptedMusic else { return false }
+        return app.player.currentEntry?.id == interruptedMusic.entryID
+            && app.player.playbackLoadRevision == interruptedMusic.intent
+            && app.activeAccount?.id == interruptedMusic.accountID
+    }
 
     func movieStarted(_ source: Source) {
         releaseTask?.cancel()
@@ -33,9 +43,12 @@ final class DuetMedia {
         activeSources.insert(source)
         guard !Self.movieHasFocus else { return }
         Self.movieHasFocus = true
-        if let player = AppModel.shared?.player, player.isPlaying {
+        if let app = AppModel.shared, app.player.isPlaying {
+            let player = app.player
             player.pause()
-            musicPausedForMovie = DuetSettings.shared.intermission
+            if DuetSettings.shared.intermission, let entry = player.currentEntry {
+                interruptedMusic = (entry.id, player.playbackLoadRevision, app.activeAccount?.id)
+            }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = false
@@ -76,7 +89,9 @@ final class DuetMedia {
     private func giveFocusToMusic(resume: Bool) {
         releaseTask = nil
         Self.movieHasFocus = false
-        guard let player = AppModel.shared?.player else { return }
+        defer { interruptedMusic = nil }
+        guard let app = AppModel.shared else { return }
+        let player = app.player
         let c = MPRemoteCommandCenter.shared()
         c.playCommand.isEnabled = true
         c.pauseCommand.isEnabled = true
@@ -85,10 +100,9 @@ final class DuetMedia {
         c.skipBackwardCommand.isEnabled = false
         player.remote?.refresh()
         player.nowPlaying.republish()
-        if resume, musicPausedForMovie, player.currentSong != nil, !player.isPlaying {
+        if resume, canResumeMusic(app), !player.isPlaying {
             player.resume()
         }
-        musicPausedForMovie = false
         Log.app.info("duet: music has focus")
     }
 }

@@ -52,6 +52,7 @@ final class AppModel {
     }
     /// Bumps on every client/database change; observe it from views that must rebuild on account switch.
     private(set) var sessionRevision = 0
+    @ObservationIgnored private(set) var accountActivation = 0
     /// Screen requested via `-KMScreen` in screenshot mode; the shell routes on it.
     var debugScreen: String?
 
@@ -159,8 +160,9 @@ final class AppModel {
             try? await Task.sleep(for: .milliseconds(100))
         }
         guard session == .ready, let engine = syncEngine else { return false }
+        let activation = accountActivation
         await reresolveAddress()
-        guard network.isConnected else { return false }
+        guard network.isConnected, activation == accountActivation, !Task.isCancelled else { return false }
         return await withTaskCancellationHandler {
             await engine.sync()
         } onCancel: {
@@ -179,16 +181,21 @@ final class AppModel {
     @discardableResult
     func refresh(force: Bool = false) async -> Bool {
         guard syncEngine != nil, let account = activeAccount else { return false }
+        let activation = accountActivation
         let task = Task { () -> Bool in
             await self.reresolveAddress(maxAge: 20)
             // Even if the quick probe failed, try the real sync (15s timeout): a slow link is not an offline one.
-            guard self.network.isConnected, let engine = self.syncEngine else { return false }
+            guard self.network.isConnected, self.accountActivation == activation, !Task.isCancelled,
+                  let engine = self.syncEngine else { return false }
             let ok = await engine.sync(force: force)
+            guard self.accountActivation == activation, !Task.isCancelled else { return false }
             self.serverReachable = ok || self.serverReachable && !self.syncStatusIndicatesTransportFailure
             if ok {
                 self.accounts.touchSync(account.id)
                 Task {
+                    guard self.accountActivation == activation else { return }
                     await self.backup.resumePendingDownloads()
+                    guard self.accountActivation == activation else { return }
                     await self.backup.sync()
                 }
                 // Siri resolves album/artist/playlist names from these parameters; refresh them once the mirror changed.
@@ -226,6 +233,7 @@ final class AppModel {
     @discardableResult
     func reresolveAddress(maxAge: TimeInterval = 0) async -> URL? {
         guard let account = activeAccount, let password else { return nil }
+        let activation = accountActivation
         if maxAge > 0, serverReachable, network.isConnected,
            let last = addressResolver.lastResolvedAt, Date().timeIntervalSince(last) < maxAge {
             return client?.baseURL
@@ -235,12 +243,13 @@ final class AppModel {
             return nil
         }
         var url = await addressResolver.resolve(account: account, password: password)
-        if url == nil, network.isConnected, activeAccount?.id == account.id {
+        guard accountActivation == activation, !Task.isCancelled else { return nil }
+        if url == nil, network.isConnected {
             // The quick probe favours the preferred (LAN) address; a cold Tailscale/cellular link can need longer.
             // Only a slow probe that also fails means the server is really unreachable.
             url = await addressResolver.resolve(account: account, password: password, timeout: 8)
         }
-        guard activeAccount?.id == account.id else { return nil }
+        guard accountActivation == activation, !Task.isCancelled else { return nil }
         if let url {
             serverReachable = true
             if url != client?.baseURL {
@@ -422,6 +431,7 @@ final class AppModel {
 
         teardownSession()
         activeAccount = account
+        addressResolver.remember(address, for: account.id)
         self.password = password
         self.database = database
         serverReachable = true
@@ -454,6 +464,8 @@ final class AppModel {
     }
 
     private func teardownSession() {
+        accountActivation &+= 1
+        addressResolver.invalidateActiveProbes()
         networkTask?.cancel()
         stopReachabilityRecovery()
         recheckTask?.cancel()

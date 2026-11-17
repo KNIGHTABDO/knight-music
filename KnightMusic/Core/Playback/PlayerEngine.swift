@@ -177,6 +177,7 @@ final class PlayerEngine {
     @ObservationIgnored var queueEditRevision = 0
     @ObservationIgnored var serverQueuePreviewRevision: Int?
     @ObservationIgnored var serverQueuePreviewEndpoint: URL?
+    @ObservationIgnored var serverQueuePreviewActivation: Int?
     @ObservationIgnored var isInterrupted = false
     @ObservationIgnored var streamRetryHistory: [UUID: [TimeInterval]] = [:]
     @ObservationIgnored var bufferingStartedAt: TimeInterval?
@@ -365,11 +366,13 @@ final class PlayerEngine {
         }
         if let tracked, let currentSong, !currentSong.isYouTube, !isLocal(currentSong), services.isResolvingAddress?() == true {
             let loadRevision = playbackLoadRevision
+            let activation = AppModel.shared?.accountActivation
             Task { @MainActor [weak self, weak tracked] in
                 guard let self, let tracked else { return }
                 PlaybackLog.logger.info("Cold launch: waiting up to 5s for address resolution before playing")
                 await self.services.waitForAddressResolution?(5.0)
-                guard self.tracked === tracked, self.playbackLoadRevision == loadRevision, self.userWantsPlaying else { return }
+                guard self.tracked === tracked, self.playbackLoadRevision == loadRevision,
+                      AppModel.shared?.accountActivation == activation, self.userWantsPlaying else { return }
                 if tracked.resolved.kind == .streaming,
                    let curBase = self.services.currentBaseURL?(),
                    !tracked.resolved.url.absoluteString.hasPrefix(curBase.absoluteString) {
