@@ -76,7 +76,7 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
             guard offset >= 0, dataRequest.requestedOffset >= 0, requestedLength >= 0 else {
                 throw YouTubeError.invalidResponse
             }
-            if requestedLength == 0 || offset == length {
+            if offset == length || (requestedLength == 0 && !dataRequest.requestsAllDataToEndOfResource) {
                 request.finishLoading()
                 return
             }
@@ -91,48 +91,78 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
             }
             guard offset <= end else { throw YouTubeError.invalidResponse }
             var renewed = false
+            var entityTag: String?
             // Small first read so playback starts quickly; then the stream's full chunk size.
             var chunk: Int64 = min(256 << 10, stream.chunkSize)
             while offset <= end {
                 try Task.checkCancellation()
                 guard chunk > 0 else { throw YouTubeError.invalidResponse }
                 let upper = offset + min(chunk, end - offset + 1) - 1
-                let (data, response) = try await session.data(for: stream.request(range: offset...upper))
-                guard let http = response as? HTTPURLResponse else { throw YouTubeError.invalidResponse }
+                let (bytes, response) = try await session.bytes(for: stream.request(range: offset...upper))
+                guard let http = response as? HTTPURLResponse else {
+                    bytes.task.cancel()
+                    throw YouTubeError.invalidResponse
+                }
                 let status = http.statusCode
                 if status == 403 || status == 410 || status == 404, !renewed {
                     // The URL expired or was revoked: mint a new one and continue from the same offset.
+                    bytes.task.cancel()
                     renewed = true
                     await YouTubeMusic.shared.invalidate(videoId: videoId)
-                    stream = try await YouTubeMusic.shared.stream(videoId: videoId)
+                    let replacement = try await YouTubeMusic.shared.stream(videoId: videoId)
+                    guard Self.sameRepresentation(stream, replacement) else {
+                        throw YouTubeError.representationChanged
+                    }
+                    stream = replacement
                     continue
                 }
                 if let encoding = http.value(forHTTPHeaderField: "Content-Encoding"),
                    encoding.lowercased() != "identity" {
+                    bytes.task.cancel()
                     throw YouTubeError.invalidResponse
                 }
                 if http.mimeType?.lowercased().hasPrefix("text/") == true {
+                    bytes.task.cancel()
                     throw YouTubeError.invalidResponse
                 }
                 let piece: Data
                 if status == 206 {
+                    let responseTag = http.value(forHTTPHeaderField: "ETag")
+                    if let entityTag, responseTag != entityTag {
+                        bytes.task.cancel()
+                        throw YouTubeError.representationChanged
+                    }
+                    if entityTag == nil { entityTag = responseTag }
                     guard let range = Self.contentRange(http.value(forHTTPHeaderField: "Content-Range")),
                           range.0 == offset, range.1 == upper, range.2 == length,
-                          Int64(data.count) == upper - offset + 1 else {
+                          http.expectedContentLength < 0 || http.expectedContentLength == upper - offset + 1 else {
+                        bytes.task.cancel()
                         throw YouTubeError.invalidResponse
                     }
+                    let expectedBytes = upper - offset + 1
+                    let maxRangeResponseBytes: Int64 = 16 << 20
+                    guard expectedBytes > 0, expectedBytes <= maxRangeResponseBytes else {
+                        bytes.task.cancel()
+                        throw YouTubeError.invalidResponse
+                    }
+                    var data = Data()
+                    data.reserveCapacity(Int(expectedBytes))
+                    for try await byte in bytes {
+                        guard Int64(data.count) < expectedBytes else {
+                            bytes.task.cancel()
+                            throw YouTubeError.invalidResponse
+                        }
+                        data.append(byte)
+                    }
+                    guard Int64(data.count) == expectedBytes else { throw YouTubeError.invalidResponse }
                     piece = data
                 } else if status == 200 {
-                    // A range-ignoring origin may provide the complete representation once.
-                    // Keep this fallback bounded and all-to-EOF, so later chunks never trigger
-                    // repeated whole-file downloads or stitch a truncated prefix as success.
-                    let maxFullBodyFallback: Int64 = 128 << 20
-                    guard offset == 0, dataRequest.requestsAllDataToEndOfResource,
-                          length <= maxFullBodyFallback, Int64(data.count) == length else {
-                        throw YouTubeError.invalidResponse
-                    }
-                    piece = data
+                    // Supported AutoMix /yt/audio responses honor Range and return 206. Cancel
+                    // before reading the body: ignored Range must not buffer a whole song here.
+                    bytes.task.cancel()
+                    throw YouTubeError.unsupportedRangeResponse
                 } else {
+                    bytes.task.cancel()
                     throw YouTubeError.http(status)
                 }
                 try Task.checkCancellation()
@@ -159,6 +189,23 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
         guard bounds.count == 2, let start = Int64(bounds[0]), let end = Int64(bounds[1]),
               start >= 0, end >= start, end < total else { return nil }
         return (start, end, total)
+    }
+
+    /// Keep a renewed URL on the same byte-addressable representation. Signed URL fields and
+    /// regional hosts may rotate, but the selected player client, length and format identity may not.
+    private static func sameRepresentation(_ old: YTStream, _ new: YTStream) -> Bool {
+        guard old.client == new.client, old.contentLength == new.contentLength else { return false }
+        if old.client == "server" && (old.url.host != new.url.host || old.url.path != new.url.path) {
+            return false
+        }
+        let oldItems = URLComponents(url: old.url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let newItems = URLComponents(url: new.url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        for key in ["itag", "mime", "clen"] {
+            let oldValue = oldItems.first { $0.name == key }?.value
+            let newValue = newItems.first { $0.name == key }?.value
+            if oldValue != newValue { return false }
+        }
+        return true
     }
 
     /// Size of a stream that did not report one (the AutoMix server fallback): "Content-Range: bytes 0-1/<size>".
