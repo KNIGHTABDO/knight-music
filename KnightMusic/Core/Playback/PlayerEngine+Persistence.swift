@@ -38,6 +38,7 @@ extension PlayerEngine {
             let signature = QueueSignature.empty
             if lastSavedQueueSignature != signature {
                 lastSavedQueueSignature = signature
+                savedQueueRevision = nil
                 queueStore.save(nil as SavedQueue?, synchronous: true)
             }
             return
@@ -45,13 +46,16 @@ extension PlayerEngine {
         let signature = computeQueueSignature()
         if lastSavedQueueSignature != signature {
             lastSavedQueueSignature = signature
+            let revision = UUID()
+            savedQueueRevision = revision
             var originalPositions: [Int]?
             if shuffleEnabled {
                 let positions = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1.id, $0) })
                 originalPositions = originalOrder.compactMap { positions[$0.id] }
             }
             queueStore.save(SavedQueue(songs: order.map(\.song), originalOrder: originalPositions,
-                                       repeatMode: repeatMode, shuffle: shuffleEnabled),
+                                       repeatMode: repeatMode, shuffle: shuffleEnabled,
+                                       revision: revision, entryIDs: order.map(\.id)),
                             synchronous: synchronous)
         }
         savePositionNow(synchronous: synchronous)
@@ -62,7 +66,8 @@ extension PlayerEngine {
         if let song = currentSong { longTrackPositions.record(song, at: currentTime) }
         let now = Date()
         localSavedAt = now
-        queueStore.save(SavedPosition(currentIndex: currentIndex, position: currentTime, savedAt: now),
+        queueStore.save(SavedPosition(currentIndex: currentIndex, position: currentTime, savedAt: now,
+                                      queueRevision: savedQueueRevision, entryID: currentEntry?.id),
                         synchronous: synchronous)
         lastPositionSave = ProcessInfo.processInfo.systemUptime
     }
@@ -72,27 +77,40 @@ extension PlayerEngine {
             lastSavedQueueSignature = .empty
             return
         }
-        let entries = saved.songs.map(QueueEntry.init)
+        let hasEntryIDs = saved.entryIDs.map { $0.count == saved.songs.count && Set($0).count == $0.count } ?? false
+        let entries: [QueueEntry]
+        if hasEntryIDs, let ids = saved.entryIDs {
+            entries = zip(saved.songs, ids).map { QueueEntry(song: $0.0, id: $0.1) }
+        } else {
+            entries = saved.songs.map(QueueEntry.init)
+        }
         order = entries
         originalOrder = saved.originalOrder.map { positions in
             positions.compactMap { entries.indices.contains($0) ? entries[$0] : nil }
         } ?? entries
         repeatMode = saved.repeatMode
         shuffleEnabled = saved.shuffle
-        lastSavedQueueSignature = computeQueueSignature()
+        savedQueueRevision = hasEntryIDs ? saved.revision : nil
+        lastSavedQueueSignature = savedQueueRevision == nil ? nil : computeQueueSignature()
         let position = queueStore.loadPosition()
-        localSavedAt = position?.savedAt
-        let index = min(max(position?.currentIndex ?? 0, 0), entries.count - 1)
+        let matchingIndex = position.flatMap { saved.positionIndex($0) }
+        let index = matchingIndex ?? 0
+        let time = matchingIndex == nil ? 0 : max(0, position?.position ?? 0)
+        localSavedAt = matchingIndex == nil ? nil : position?.savedAt
         currentIndex = index
-        load(index: index, autoplay: false, startAt: position?.position ?? 0, silent: true)
+        load(index: index, autoplay: false, startAt: time, silent: true)
     }
 
     // MARK: Server queue
 
     func checkServerQueue() async {
         guard settings.serverQueueSyncEnabled, !services.isOffline, let server = services.server else { return }
+        let revision = queueEditRevision
+        let endpoint = services.currentBaseURL?()
         do {
             guard let remoteQueue = try await server.getPlayQueue(), !remoteQueue.songs.isEmpty else { return }
+            guard queueEditRevision == revision, services.currentBaseURL?() == endpoint,
+                  settings.serverQueueSyncEnabled else { return }
             let sameQueue = remoteQueue.songs.map(\.id) == serverQueueWindowIds()
             let sameCurrent = remoteQueue.currentSongId == currentSong?.id
             if sameQueue && sameCurrent { return }
@@ -104,6 +122,8 @@ extension PlayerEngine {
             }
             guard serverNewer, !isPlaying else { return }
             serverQueuePreview = remoteQueue
+            serverQueuePreviewRevision = revision
+            serverQueuePreviewEndpoint = endpoint
             serverQueueAvailable = true
         } catch {
             PlaybackLog.logger.error("Fetching server play queue failed: \(error.localizedDescription)")
@@ -114,9 +134,12 @@ extension PlayerEngine {
     func resumeServerQueue() {
         guard let remoteQueue = serverQueuePreview, !remoteQueue.songs.isEmpty else { return }
         // The toast lives a few seconds; don't replace something the user started meanwhile.
-        guard !isPlaying else { dismissServerQueue(); return }
+        guard !isPlaying, settings.serverQueueSyncEnabled, serverQueuePreviewRevision == queueEditRevision,
+              serverQueuePreviewEndpoint == services.currentBaseURL?() else { dismissServerQueue(); return }
         let songs = remoteQueue.songs
-        let start = remoteQueue.currentSongId.flatMap { id in songs.firstIndex { $0.id == id } } ?? 0
+        let possibleEntries = songs.indices.filter { songs[$0].id == remoteQueue.currentSongId }
+        let start = possibleEntries.first ?? 0
+        let position = possibleEntries.count == 1 ? TimeInterval(max(0, remoteQueue.positionMs)) / 1000 : 0
         let entries = songs.map(QueueEntry.init)
         endStation()
         currentRadio = nil
@@ -129,13 +152,16 @@ extension PlayerEngine {
         currentIndex = start
         dismissServerQueue()
         userWantsPlaying = false
-        load(index: start, autoplay: false, startAt: TimeInterval(remoteQueue.positionMs) / 1000)
+        load(index: start, autoplay: false, startAt: position)
+        if possibleEntries.count > 1 { playerNotice = "That song appears more than once in the saved queue. Choose where to resume." }
         saveQueueNow()
     }
 
     func dismissServerQueue() {
         serverQueueAvailable = false
         serverQueuePreview = nil
+        serverQueuePreviewRevision = nil
+        serverQueuePreviewEndpoint = nil
     }
 
     func scheduleServerSave(immediate: Bool = false) {

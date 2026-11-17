@@ -23,12 +23,26 @@ struct SavedQueue: Codable, Sendable {
     var originalOrder: [Int]?
     var repeatMode: RepeatMode
     var shuffle: Bool
+    var revision: UUID? = nil
+    var entryIDs: [UUID]? = nil
+
+    func positionIndex(_ saved: SavedPosition) -> Int? {
+        if let revision {
+            guard saved.queueRevision == revision, let entryID = saved.entryID else { return nil }
+            return entryIDs?.firstIndex(of: entryID)
+        }
+        // Older snapshots stored only an index. Preserve their existing paused restore behavior.
+        guard saved.queueRevision == nil, songs.indices.contains(saved.currentIndex) else { return nil }
+        return saved.currentIndex
+    }
 }
 
 struct SavedPosition: Codable, Sendable {
     var currentIndex: Int
     var position: TimeInterval
     var savedAt: Date
+    var queueRevision: UUID? = nil
+    var entryID: UUID? = nil
 }
 
 final class PlayQueueStore: @unchecked Sendable {

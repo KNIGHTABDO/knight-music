@@ -13,7 +13,11 @@ struct QueueEntry: Identifiable, Hashable {
     let id: UUID
     let song: Song
     init(song: Song) {
-        id = UUID()
+        self.init(song: song, id: UUID())
+    }
+
+    init(song: Song, id: UUID) {
+        self.id = id
         self.song = song
     }
 }
@@ -66,8 +70,8 @@ final class PlayerEngine {
     var duration: TimeInterval = 0
     var bufferedFraction: Double = 0
     /// Full play order (history + current + upcoming). `currentIndex` indexes into it.
-    var order: [QueueEntry] = []
-    var currentIndex = 0
+    var order: [QueueEntry] = [] { didSet { queueEditRevision &+= 1 } }
+    var currentIndex = 0 { didSet { if currentIndex != oldValue { queueEditRevision &+= 1 } } }
     var repeatMode: RepeatMode = .off
     var shuffleEnabled = false
     var source: AudioSource = .streaming
@@ -169,6 +173,10 @@ final class PlayerEngine {
     /// Keeps transitions moving when the outgoing deck stalls (its time observer then stops firing).
     @ObservationIgnored var mixClock: Timer?
     @ObservationIgnored var lastSavedQueueSignature: QueueSignature?
+    @ObservationIgnored var savedQueueRevision: UUID?
+    @ObservationIgnored var queueEditRevision = 0
+    @ObservationIgnored var serverQueuePreviewRevision: Int?
+    @ObservationIgnored var serverQueuePreviewEndpoint: URL?
     @ObservationIgnored var isInterrupted = false
     @ObservationIgnored var streamRetryHistory: [UUID: [TimeInterval]] = [:]
     @ObservationIgnored var bufferingStartedAt: TimeInterval?
