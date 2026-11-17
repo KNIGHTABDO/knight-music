@@ -158,16 +158,17 @@ extension AppModel {
             app.playbackServices.autoMix = app.client.map { client in
                 AutoMixClient(urls: { path, items in client.autoMixURL(path: path, items: items) })
             }
-            if let db = app.database {
+            if let db = app.database, let account = app.activeAccount {
                 let dbId = ObjectIdentifier(db)
                 if app.lastConfiguredDatabaseId != dbId {
                     app.lastConfiguredDatabaseId = dbId
                     app.downloads.configure(services: app.playbackServices, database: db.pool,
-                                            ownerId: app.activeAccount?.id)
+                                            ownerId: account.id)
                     app.player.configure(services: app.playbackServices, downloads: app.downloads, database: db.pool)
                 }
             } else {
                 app.lastConfiguredDatabaseId = nil
+                app.downloads.deactivate()
             }
             app.player.servicesDidChange()
             app.updateAutoDownloads()

@@ -136,7 +136,13 @@ struct SongActionsMenu: View {
             Button {
                 downloads.download(songs: [song])
             } label: {
-                Label("Download", systemImage: "arrow.down.circle")
+                let title = switch downloadStatus?.state {
+                case .some(.needsRetry): "Save New Offline Copy"
+                case .some(.recoveryBlocked): "Retry Download Recovery"
+                default: "Download"
+                }
+                Label(title,
+                      systemImage: "arrow.down.circle")
             }
         }
 

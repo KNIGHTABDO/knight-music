@@ -216,6 +216,9 @@ struct DownloadRecord: Codable, FetchableRecord, PersistableRecord {
     var addedAt: Date
     var errorMessage: String?
     var attemptId: String?
+    var requestedBitRate: Int?
+    var requestedFormat: String?
+    var allowsCellular: Bool?
 }
 
 struct CachedSongRecord: Codable, FetchableRecord, PersistableRecord {
