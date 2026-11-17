@@ -61,6 +61,7 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
             } else {
                 length = try await Self.probeLength(stream, session: session)
             }
+            guard length > 0 else { throw YouTubeError.invalidResponse }
             if let info = request.contentInformationRequest {
                 info.contentType = AVFileType.m4a.rawValue
                 info.contentLength = length
@@ -71,17 +72,34 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
                 return
             }
             var offset = dataRequest.currentOffset
-            let end = dataRequest.requestsAllDataToEndOfResource
-                ? length - 1
-                : min(length - 1, dataRequest.requestedOffset + Int64(dataRequest.requestedLength) - 1)
+            let requestedLength = Int64(dataRequest.requestedLength)
+            guard offset >= 0, dataRequest.requestedOffset >= 0, requestedLength >= 0 else {
+                throw YouTubeError.invalidResponse
+            }
+            if requestedLength == 0 || offset == length {
+                request.finishLoading()
+                return
+            }
+            guard offset >= dataRequest.requestedOffset, offset < length else { throw YouTubeError.invalidResponse }
+            let end: Int64
+            if dataRequest.requestsAllDataToEndOfResource {
+                end = length - 1
+            } else {
+                let (requestedEnd, overflow) = dataRequest.requestedOffset.addingReportingOverflow(requestedLength - 1)
+                guard !overflow else { throw YouTubeError.invalidResponse }
+                end = min(length - 1, requestedEnd)
+            }
+            guard offset <= end else { throw YouTubeError.invalidResponse }
             var renewed = false
             // Small first read so playback starts quickly; then the stream's full chunk size.
             var chunk: Int64 = min(256 << 10, stream.chunkSize)
             while offset <= end {
                 try Task.checkCancellation()
-                let upper = min(end, offset + chunk - 1)
+                guard chunk > 0 else { throw YouTubeError.invalidResponse }
+                let upper = offset + min(chunk, end - offset + 1) - 1
                 let (data, response) = try await session.data(for: stream.request(range: offset...upper))
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard let http = response as? HTTPURLResponse else { throw YouTubeError.invalidResponse }
+                let status = http.statusCode
                 if status == 403 || status == 410 || status == 404, !renewed {
                     // The URL expired or was revoked: mint a new one and continue from the same offset.
                     renewed = true
@@ -89,16 +107,38 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
                     stream = try await YouTubeMusic.shared.stream(videoId: videoId)
                     continue
                 }
-                guard status == 206 || status == 200, !data.isEmpty else { throw YouTubeError.http(status) }
-                // A server ignoring Range sends the whole file from byte 0.
-                let piece = status == 200 && offset > 0
-                    ? data.subdata(in: Int(min(offset, Int64(data.count)))..<min(data.count, Int(upper + 1)))
-                    : data.prefix(Int(upper - offset + 1))
+                if let encoding = http.value(forHTTPHeaderField: "Content-Encoding"),
+                   encoding.lowercased() != "identity" {
+                    throw YouTubeError.invalidResponse
+                }
+                if http.mimeType?.lowercased().hasPrefix("text/") == true {
+                    throw YouTubeError.invalidResponse
+                }
+                let piece: Data
+                if status == 206 {
+                    guard let range = Self.contentRange(http.value(forHTTPHeaderField: "Content-Range")),
+                          range.0 == offset, range.1 == upper, range.2 == length,
+                          Int64(data.count) == upper - offset + 1 else {
+                        throw YouTubeError.invalidResponse
+                    }
+                    piece = data
+                } else if status == 200 {
+                    // A range-ignoring origin may provide the complete representation once.
+                    // Keep this fallback bounded and all-to-EOF, so later chunks never trigger
+                    // repeated whole-file downloads or stitch a truncated prefix as success.
+                    let maxFullBodyFallback: Int64 = 128 << 20
+                    guard offset == 0, dataRequest.requestsAllDataToEndOfResource,
+                          length <= maxFullBodyFallback, Int64(data.count) == length else {
+                        throw YouTubeError.invalidResponse
+                    }
+                    piece = data
+                } else {
+                    throw YouTubeError.http(status)
+                }
                 try Task.checkCancellation()
                 dataRequest.respond(with: piece)
                 offset += Int64(piece.count)
                 chunk = stream.chunkSize
-                if piece.isEmpty { break }
             }
             request.finishLoading()
         } catch is CancellationError {
@@ -107,6 +147,18 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
             Log.playback.warning("YouTube \(videoId) loading failed: \(error.localizedDescription)")
             request.finishLoading(with: error)
         }
+    }
+
+    /// Strict single-range parser: bytes start-end/total. Wildcard and malformed totals are not
+    /// useful for joining a known YouTube representation, so reject them.
+    private static func contentRange(_ value: String?) -> (Int64, Int64, Int64)? {
+        guard let value, value.hasPrefix("bytes ") else { return nil }
+        let parts = value.dropFirst(6).split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2, let total = Int64(parts[1]), total > 0 else { return nil }
+        let bounds = parts[0].split(separator: "-", omittingEmptySubsequences: false)
+        guard bounds.count == 2, let start = Int64(bounds[0]), let end = Int64(bounds[1]),
+              start >= 0, end >= start, end < total else { return nil }
+        return (start, end, total)
     }
 
     /// Size of a stream that did not report one (the AutoMix server fallback): "Content-Range: bytes 0-1/<size>".
