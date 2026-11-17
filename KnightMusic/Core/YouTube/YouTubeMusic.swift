@@ -5,6 +5,8 @@ enum YouTubeError: LocalizedError {
     case unavailable(String)
     case http(Int)
     case invalidResponse
+    case unsupportedRangeResponse
+    case representationChanged
 
     var errorDescription: String? {
         switch self {
@@ -12,6 +14,8 @@ enum YouTubeError: LocalizedError {
         case .unavailable(let reason): reason
         case .http(let code): "YouTube Music answered with HTTP \(code)."
         case .invalidResponse: "YouTube Music sent something unexpected."
+        case .unsupportedRangeResponse: "The YouTube audio server did not honor a byte-range request. Retry playback."
+        case .representationChanged: "The YouTube audio changed while recovering. Retry playback."
         }
     }
 }
