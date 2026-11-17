@@ -22,10 +22,11 @@ struct TransferSummary {
 
     var count: Int { downloads.count + cache.count }
     var isEmpty: Bool { count == 0 }
+    var hasStarted: Bool { downloads.contains { $0.status.bytes > 0 } || cache.contains { $0.fraction != nil } }
 
     /// Average progress of what is actually transferring (queued items don't drag it down).
     var fraction: Double {
-        let running = downloads.filter { $0.status.state == .downloading }.map(\.status.progress)
+        let running = downloads.filter { $0.status.progress > 0 }.map(\.status.progress)
             + cache.compactMap(\.fraction)
         guard !running.isEmpty else { return 0 }
         return running.reduce(0, +) / Double(running.count)
@@ -39,6 +40,7 @@ struct TransfersIndicator: ViewModifier {
     @Environment(DownloadManager.self) private var downloads
     @Environment(PlayerEngine.self) private var player
     @Environment(LibraryRepository.self) private var library
+    @Environment(AppModel.self) private var app
     @State private var isShowingSheet = false
     @State private var firstTitle: String?
 
@@ -53,9 +55,11 @@ struct TransfersIndicator: ViewModifier {
                 }
             }
             .animation(.smooth, value: summary.isEmpty)
-            .task(id: summary.firstId) {
+            .task(id: "\(app.accountActivation)|\(summary.firstId ?? "")") {
+                firstTitle = nil
                 guard let id = summary.firstId else { return }
-                firstTitle = await library.song(id: id)?.title
+                let song = await library.song(id: id)
+                if !Task.isCancelled { firstTitle = song?.title }
             }
             .sheet(isPresented: $isShowingSheet) { TransfersSheet() }
     }
@@ -96,10 +100,17 @@ struct TransfersIndicator: ViewModifier {
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .capsule)
         .frame(maxWidth: 300)
-        .accessibilityLabel("\(summary.count) transfers, \(Int(summary.fraction * 100)) percent")
+        .accessibilityLabel(title(summary))
     }
 
     private func title(_ summary: TransferSummary) -> String {
+        if summary.cache.isEmpty && summary.downloads.allSatisfy({ $0.status.progress == 1 }) {
+            return "Verifying downloads"
+        }
+        if !summary.hasStarted {
+            let scheduled = summary.downloads.contains { $0.status.state == .downloading }
+            return scheduled ? "Downloads scheduled" : "Downloads queued"
+        }
         if summary.count > 1 { return "Downloading \(summary.count) songs" }
         return firstTitle.map { "Downloading \u{201C}\($0)\u{201D}" } ?? "Downloading"
     }
@@ -115,14 +126,19 @@ struct TransfersSheet: View {
     @Environment(DownloadManager.self) private var downloads
     @Environment(PlayerEngine.self) private var player
     @Environment(LibraryRepository.self) private var library
+    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var songs: [String: Song] = [:]
+    @State private var loadedAccountActivation: Int?
 
     var body: some View {
         let summary = TransferSummary(downloads: downloads, player: player)
+        let failures = downloads.statuses.filter { $0.value.state == .failed }.sorted { $0.key < $1.key }
+        let ids = summary.downloads.map(\.id) + summary.cache.map(\.songId) + failures.map(\.key)
+        let activation = app.accountActivation
         NavigationStack {
             List {
-                if summary.isEmpty {
+                if summary.isEmpty && failures.isEmpty {
                     Section {
                         Label("Nothing is downloading", systemImage: "checkmark.circle")
                             .foregroundStyle(Theme.secondaryLabel)
@@ -132,9 +148,9 @@ struct TransfersSheet: View {
                     Section {
                         ForEach(summary.downloads, id: \.id) { item in
                             row(songId: item.id,
-                                detail: item.status.state == .queued ? "Waiting" : sizeText(item.status),
-                                fraction: item.status.state == .downloading ? item.status.progress : nil,
-                                waiting: item.status.state == .queued)
+                                detail: downloadDetail(item.status),
+                                fraction: item.status.progress > 0 && item.status.progress < 1 ? item.status.progress : nil,
+                                isTransferring: item.status.bytes > 0 && item.status.progress == 0)
                                 .swipeActions {
                                     Button("Cancel", role: .destructive) { downloads.cancel(songId: item.id) }
                                 }
@@ -142,7 +158,16 @@ struct TransfersSheet: View {
                     } header: {
                         Text("Downloads")
                     } footer: {
-                        Text("Saved for offline listening. Swipe to cancel.")
+                        Text("Songs are playable offline after verification. Swipe to cancel.")
+                    }
+                }
+                if !failures.isEmpty {
+                    Section("Failed Downloads") {
+                        ForEach(failures.map(\.key), id: \.self) { id in
+                            row(songId: id, detail: downloads.status(for: id)?.errorMessage ?? "Couldn’t download this song.",
+                                fraction: nil)
+                        }
+                        Button("Retry Failed Downloads") { downloads.retryFailed() }
                     }
                 }
                 if !summary.cache.isEmpty {
@@ -151,7 +176,6 @@ struct TransfersSheet: View {
                             row(songId: item.songId,
                                 detail: item.urgent ? "For the next AutoMix blend" : (item.fraction == nil ? "Waiting" : "Up next"),
                                 fraction: item.fraction,
-                                waiting: item.fraction == nil,
                                 badge: item.urgent ? "AutoMix" : nil)
                         }
                     } header: {
@@ -167,25 +191,30 @@ struct TransfersSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
-            .task(id: summary.downloads.map(\.id) + summary.cache.map(\.songId)) {
-                let ids = summary.downloads.map(\.id) + summary.cache.map(\.songId)
+            .task(id: [String(activation)] + ids) {
+                if loadedAccountActivation != activation {
+                    songs.removeAll()
+                    loadedAccountActivation = activation
+                }
                 let missing = ids.filter { songs[$0] == nil }
                 guard !missing.isEmpty else { return }
-                for song in await library.songs(ids: missing) { songs[song.id] = song }
+                let fetched = await library.songs(ids: missing)
+                guard !Task.isCancelled, app.accountActivation == activation else { return }
+                for song in fetched { songs[song.id] = song }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 
-    private func row(songId: String, detail: String, fraction: Double?, waiting: Bool, badge: String? = nil) -> some View {
-        let song = songs[songId]
+    private func row(songId: String, detail: String, fraction: Double?, isTransferring: Bool = false, badge: String? = nil) -> some View {
+        let song = loadedAccountActivation == app.accountActivation ? songs[songId] : nil
         return HStack(spacing: 12) {
             ArtworkView(coverArt: song?.coverArt, pointSize: 44, cornerRadius: 6)
                 .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    Text(song?.title ?? "Loading\u{2026}")
+                    Text(song?.title ?? "Song")
                         .font(.system(size: 15, weight: .medium))
                         .lineLimit(1)
                     if let badge {
@@ -197,21 +226,31 @@ struct TransfersSheet: View {
                             .background(Theme.accent.opacity(0.15), in: Capsule())
                     }
                 }
-                if waiting {
-                    ProgressView().progressViewStyle(.linear).tint(Theme.secondaryLabel)
-                } else {
-                    ProgressView(value: fraction ?? 0).progressViewStyle(.linear).tint(Theme.accent)
+                if let fraction {
+                    ProgressView(value: fraction).progressViewStyle(.linear).tint(Theme.accent)
+                } else if isTransferring {
+                    ProgressView().progressViewStyle(.linear).tint(Theme.accent)
                 }
-                Text("\(song?.artist ?? "") \u{2022} \(detail)\(fraction.map { " \u{2022} \(Int($0 * 100))%" } ?? "")")
+                Text(detail)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.secondaryLabel)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
         }
         .padding(.vertical, 2)
     }
 
-    private func sizeText(_ status: DownloadStatus) -> String {
-        status.bytes > 0 ? ByteCountFormatter.string(fromByteCount: Int64(status.bytes), countStyle: .file) : "Downloading"
+    private func downloadDetail(_ status: DownloadStatus) -> String {
+        if status.state == .queued {
+            if app.settings.offlineMode == .manual && app.settings.manualOfflineEnabled { return "Offline mode is on" }
+            if app.isOffline { return "Waiting for your server" }
+            return "Queued in Knight Music"
+        }
+        if status.bytes == 0 {
+            return !app.settings.downloadOverCellular && app.network.isCellular ? "Waiting for Wi-Fi" : "Scheduled with iOS"
+        }
+        if status.progress == 1 { return "Verifying audio" }
+        let bytes = ByteCountFormatter.string(fromByteCount: Int64(status.bytes), countStyle: .file)
+        return "Downloading · \(bytes)"
     }
 }

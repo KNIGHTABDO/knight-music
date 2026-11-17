@@ -15,6 +15,7 @@ struct StorageView: View {
     @State private var showingClearStreamConfirmation = false
     @State private var showingClearArtworkConfirmation = false
     @State private var showingDeleteDownloadsConfirmation = false
+    @State private var showingTransfers = false
 
     private let cacheLimitOptions = [
         (512, "512 MB"),
@@ -37,6 +38,8 @@ struct StorageView: View {
                     Text("\(StorageManager.format(bytes)) (\(count) \(count == 1 ? "song" : "songs"))")
                         .foregroundStyle(Theme.secondaryLabel)
                 }
+
+                Button("View Download Transfers") { showingTransfers = true }
 
                 HStack {
                     Text("Stream Cache")
@@ -133,6 +136,7 @@ struct StorageView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.groupedBackground.ignoresSafeArea())
         .navigationTitle("Storage")
+        .sheet(isPresented: $showingTransfers) { TransfersSheet() }
         .task {
             initStorageManager()
             await refreshAll()

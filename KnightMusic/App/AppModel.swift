@@ -52,7 +52,7 @@ final class AppModel {
     }
     /// Bumps on every client/database change; observe it from views that must rebuild on account switch.
     private(set) var sessionRevision = 0
-    @ObservationIgnored private(set) var accountActivation = 0
+    private(set) var accountActivation = 0
     /// Screen requested via `-KMScreen` in screenshot mode; the shell routes on it.
     var debugScreen: String?
 
