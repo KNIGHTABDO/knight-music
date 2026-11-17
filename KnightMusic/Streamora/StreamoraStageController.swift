@@ -1,10 +1,11 @@
 import UIKit
 import WebKit
+import AuthenticationServices
 
 /// Streamora's side of Duet: the live Streamora site in a full-screen web view, with the native player bridge.
 /// It lives in its own window above Knight Music, so nothing in Knight Music is torn down while you watch.
 @MainActor
-final class StreamoraStageController: UIViewController, WKNavigationDelegate, WKUIDelegate {
+final class StreamoraStageController: UIViewController, WKNavigationDelegate, WKUIDelegate, ASWebAuthenticationPresentationContextProviding {
     static let home = URL(string: "https://streamora-5w5.pages.dev")!
     private static let background = UIColor(red: 0x14 / 255, green: 0x12 / 255, blue: 0x10 / 255, alpha: 1)
 
@@ -12,6 +13,7 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
     private(set) var webView: WKWebView!
     private var hasLoaded = false
     private var showingOffline = false
+    private var authenticationSession: ASWebAuthenticationSession?
 
     var statusBarHidden = false {
         didSet { if oldValue != statusBarHidden { setNeedsStatusBarAppearanceUpdate() } }
@@ -144,6 +146,50 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
         </head><body><h1>Streamora needs an internet connection</h1><p>Shake to go back to Knight Music.</p><a href="duet://retry">Try again</a></body></html>
         """
         webView.loadHTMLString(html, baseURL: nil)
+    }
+
+    /// Opens Google's server-side OAuth flow in Apple's system authentication browser.
+    /// The return URL carries only a one-time state signal; the Streamora page redeems approval
+    /// over its own first-party connection and receives its session cookie there.
+    func startAuthentication(_ url: URL, state: String,
+                             completion: @escaping @MainActor @Sendable (String?) -> Void) {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        guard authenticationSession == nil else { completion("A sign-in is already open."); return }
+        guard url.scheme == "https", url.host == Self.home.host, url.path == "/login",
+              components?.queryItems?.first(where: { $0.name == "native" })?.value == state,
+              components?.queryItems?.contains(where: { $0.name == "code" && $0.value?.range(of: #"^\d{8}$"#, options: .regularExpression) != nil }) == true,
+              state.range(of: #"^[A-Za-z0-9_-]{20,80}$"#, options: .regularExpression) != nil else {
+            completion("Invalid sign-in request."); return
+        }
+        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "knightmusic") { [weak self] callback, error in
+            Task { @MainActor in
+                guard let self else { return }
+                self.authenticationSession = nil
+                if let error {
+                    let ns = error as NSError
+                    completion(ns.code == ASWebAuthenticationSessionError.canceledLogin.rawValue ? "Sign-in was cancelled." : "Sign-in did not complete.")
+                    return
+                }
+                guard let callback, callback.scheme == "knightmusic", callback.host == "streamora-auth",
+                      URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "state" })?.value == state else {
+                    completion("Sign-in returned an invalid response."); return
+                }
+                completion(nil)
+            }
+        }
+        session.presentationContextProvider = self
+        session.prefersEphemeralWebBrowserSession = false
+        authenticationSession = session
+        guard session.start() else {
+            authenticationSession = nil
+            completion("Could not open secure sign-in.")
+            return
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        if let window = viewIfLoaded?.window { return window }
+        return UIWindow(frame: .zero)
     }
 
     // MARK: - JavaScript dialogs
