@@ -186,6 +186,8 @@ enum LibraryQueries {
             SELECT song.* FROM download
             JOIN song ON song.id = download.songId
             WHERE download.state = ?
+              AND download.attemptId IS NOT NULL
+              AND download.relativePath GLOB '????????-????-????-????-????????????/*'
             ORDER BY download.addedAt DESC
             """,
             arguments: [DownloadState.completed.rawValue]

@@ -321,6 +321,18 @@ final class LibraryDatabase: @unchecked Sendable {
             );
             """)
         }
+        migrator.registerMigration("v3-download-attempts") { db in
+            try db.alter(table: "download") { table in
+                table.add(column: "attemptId", .text)
+            }
+        }
+        migrator.registerMigration("v4-download-request-snapshot") { db in
+            try db.alter(table: "download") { table in
+                table.add(column: "requestedBitRate", .integer)
+                table.add(column: "requestedFormat", .text)
+                table.add(column: "allowsCellular", .boolean)
+            }
+        }
         return migrator
     }
 }
