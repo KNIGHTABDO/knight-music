@@ -40,10 +40,10 @@ jobs:
           [ -n "$XC" ] && sudo xcode-select -s "$XC"
           xcodebuild -version
 
-      - name: Generate Kick secrets
+      - name: Configure Kick integration
         env:
-          KICK_CLIENT_ID: ${{ secrets.KICK_CLIENT_ID }}
-          KICK_CLIENT_SECRET: ${{ secrets.KICK_CLIENT_SECRET }}
+          KICK_CLIENT_ID: ${{ github.event.repository.private && secrets.KICK_CLIENT_ID || '' }}
+          KICK_CLIENT_SECRET: ${{ github.event.repository.private && secrets.KICK_CLIENT_SECRET || '' }}
         run: |
           printf 'enum KickSecrets {\n    static let CLIENT_ID = #"%s"#\n    static let CLIENT_SECRET = #"%s"#\n}\n' \
             "$KICK_CLIENT_ID" "$KICK_CLIENT_SECRET" > KickLiveWidget/KickSecrets.swift
