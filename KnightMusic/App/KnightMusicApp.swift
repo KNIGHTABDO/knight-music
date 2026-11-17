@@ -2,6 +2,16 @@ import SwiftUI
 import UIKit
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    private static let backgroundHandlerLock = NSLock()
+    private static var backgroundHandlers: [String: () -> Void] = [:]
+
+    static func finishBackgroundEvents(identifier: String?) {
+        guard let identifier else { return }
+        backgroundHandlerLock.lock()
+        let handler = backgroundHandlers.removeValue(forKey: identifier)
+        backgroundHandlerLock.unlock()
+        handler?()
+    }
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -31,7 +41,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         handleEventsForBackgroundURLSession identifier: String,
         completionHandler: @escaping () -> Void
     ) {
-        DownloadManager.backgroundCompletionHandler = completionHandler
+        guard identifier == DownloadManager.sessionIdentifier else {
+            completionHandler()
+            return
+        }
+        Self.backgroundHandlerLock.lock()
+        Self.backgroundHandlers[identifier] = completionHandler
+        Self.backgroundHandlerLock.unlock()
     }
 }
 

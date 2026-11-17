@@ -215,6 +215,7 @@ struct DownloadRecord: Codable, FetchableRecord, PersistableRecord {
     var relativePath: String?
     var addedAt: Date
     var errorMessage: String?
+    var attemptId: String?
 }
 
 struct CachedSongRecord: Codable, FetchableRecord, PersistableRecord {

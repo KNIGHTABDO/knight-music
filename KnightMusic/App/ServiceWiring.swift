@@ -162,7 +162,8 @@ extension AppModel {
                 let dbId = ObjectIdentifier(db)
                 if app.lastConfiguredDatabaseId != dbId {
                     app.lastConfiguredDatabaseId = dbId
-                    app.downloads.configure(services: app.playbackServices, database: db.pool)
+                    app.downloads.configure(services: app.playbackServices, database: db.pool,
+                                            ownerId: app.activeAccount?.id)
                     app.player.configure(services: app.playbackServices, downloads: app.downloads, database: db.pool)
                 }
             } else {

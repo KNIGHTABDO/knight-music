@@ -321,6 +321,11 @@ final class LibraryDatabase: @unchecked Sendable {
             );
             """)
         }
+        migrator.registerMigration("v3-download-attempts") { db in
+            try db.alter(table: "download") { table in
+                table.add(column: "attemptId", .text)
+            }
+        }
         return migrator
     }
 }
