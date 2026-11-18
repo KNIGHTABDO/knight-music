@@ -18,6 +18,18 @@ final class UIState {
     var toastID = UUID()
     var toastActionTitle: String?
     var toastAction: (@MainActor () -> Void)?
+    /// Messages waiting behind the one on screen; shown in order instead of replacing it.
+    private var queuedToasts: [QueuedToast] = []
+    private struct QueuedToast {
+        var message: String
+        var actionTitle: String?
+        var action: (@MainActor () -> Void)?
+    }
+    /// How long the toast on screen stays: action toasts need time to be read and tapped, and a backlog moves faster.
+    var toastDuration: Double {
+        if toastAction != nil { return 8 }
+        return queuedToasts.isEmpty ? 3 : 2
+    }
     /// Draft prompt to pre-fill when switching to Knight tab.
     var knightDraft: String?
     /// Knight conversation to open when switching to the Knight tab (e.g. a Navidrome import).
@@ -70,16 +82,41 @@ final class UIState {
     }
 
     func showToast(_ message: String, actionTitle: String?, action: (@MainActor () -> Void)?) {
-        toastActionTitle = actionTitle
-        toastAction = action
-        toastID = UUID()
-        toast = message
+        let item = QueuedToast(message: message, actionTitle: actionTitle, action: action)
+        guard toast != nil else {
+            present(item)
+            return
+        }
+        // Same plain message again: keep the one on screen and restart its timer.
+        if toast == message, action == nil, toastAction == nil {
+            toastID = UUID()
+            return
+        }
+        if let last = queuedToasts.last, last.message == message, action == nil, last.action == nil { return }
+        queuedToasts.append(item)
+        // Never let a long backlog pile up: drop the oldest plain messages first.
+        while queuedToasts.count > 6, let drop = queuedToasts.firstIndex(where: { $0.action == nil }) {
+            queuedToasts.remove(at: drop)
+        }
     }
 
     func dismissToast() {
-        toast = nil
-        toastActionTitle = nil
-        toastAction = nil
+        if queuedToasts.isEmpty {
+            toast = nil
+            toastActionTitle = nil
+            toastAction = nil
+            ToastWindow.shared.setHasToast(false)
+        } else {
+            present(queuedToasts.removeFirst())
+        }
+    }
+
+    private func present(_ item: QueuedToast) {
+        toastActionTitle = item.actionTitle
+        toastAction = item.action
+        toastID = UUID()
+        toast = item.message
+        ToastWindow.shared.setHasToast(true)
     }
 
     func askKnight(_ prompt: String) {

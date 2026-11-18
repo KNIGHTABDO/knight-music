@@ -30,6 +30,11 @@ public struct RecognitionCredentials: Codable, Sendable {
         return try? JSONDecoder().decode(RecognitionCredentials.self, from: data)
     }
 
+    /// Signed out: nothing of the previous account may stay in the shared container.
+    public static func clear() {
+        UserDefaults(suiteName: appGroupID)?.removeObject(forKey: key)
+    }
+
     public func save() {
         guard let data = try? JSONEncoder().encode(self) else { return }
         UserDefaults(suiteName: Self.appGroupID)?.set(data, forKey: Self.key)

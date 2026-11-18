@@ -28,8 +28,12 @@ final class WidgetBridge {
         observePlayer()
         setupLibraryQueries()
 
-        app.addSessionObserver(fireImmediately: false) { [weak self] _ in
+        app.addSessionObserver(fireImmediately: false) { [weak self] model in
             self?.setupLibraryQueries()
+            if model.session == .loggedOut {
+                self?.clearForLogout()
+                return
+            }
             self?.scheduleUpdate()
         }
 
@@ -56,7 +60,12 @@ final class WidgetBridge {
         for task in queryTasks { task.cancel() }
         queryTasks.removeAll()
 
-        guard let library = app?.library, app?.database != nil else { return }
+        guard let library = app?.library, app?.database != nil else {
+            recentQuery = nil
+            newestQuery = nil
+            favoritesQuery = nil
+            return
+        }
         let recent = library.homeList(.recent)
         let newest = library.homeList(.newest)
         let favorites = library.favoriteSongs()
@@ -121,22 +130,8 @@ final class WidgetBridge {
             var dominantHex: String?
 
             if let coverArt = song.coverArt ?? song.albumId {
-                let filename = "cover_\(safeFilename(for: coverArt)).jpg"
-                let fileURL = artworkDir.appendingPathComponent(filename)
-                if !FileManager.default.fileExists(atPath: fileURL.path) {
-                    if let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300),
-                       let data = image.jpegData(compressionQuality: 0.85) {
-                        do {
-                            try data.write(to: fileURL, options: .atomic)
-                        } catch {
-                            Log.app.warning("Widget now-playing artwork write failed: \(error)")
-                        }
-                    }
-                }
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    artworkFilename = filename
-                    referencedFiles.insert(filename)
-                }
+                artworkFilename = await saveArtwork(coverArt: coverArt, prefix: "cover", in: artworkDir)
+                if let artworkFilename { referencedFiles.insert(artworkFilename) }
 
                 let palette = await ArtworkPalette.palette(for: coverArt)
                 if let firstColor = palette.colors.first {
@@ -166,22 +161,8 @@ final class WidgetBridge {
         for album in recentAlbums {
             var artworkFilename: String?
             if let coverArt = album.coverArt ?? Optional(album.id) {
-                let filename = "album_\(safeFilename(for: coverArt)).jpg"
-                let fileURL = artworkDir.appendingPathComponent(filename)
-                if !FileManager.default.fileExists(atPath: fileURL.path) {
-                    if let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300),
-                       let data = image.jpegData(compressionQuality: 0.85) {
-                        do {
-                            try data.write(to: fileURL, options: .atomic)
-                        } catch {
-                            Log.app.warning("Widget recent album artwork write failed for \(album.id): \(error)")
-                        }
-                    }
-                }
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    artworkFilename = filename
-                    referencedFiles.insert(filename)
-                }
+                artworkFilename = await saveArtwork(coverArt: coverArt, prefix: "album", in: artworkDir)
+                if let artworkFilename { referencedFiles.insert(artworkFilename) }
             }
             widgetRecent.append(WidgetAlbum(id: album.id, name: album.name, artist: album.artist, artworkFilename: artworkFilename))
         }
@@ -190,22 +171,8 @@ final class WidgetBridge {
         for album in newestAlbums {
             var artworkFilename: String?
             if let coverArt = album.coverArt ?? Optional(album.id) {
-                let filename = "album_\(safeFilename(for: coverArt)).jpg"
-                let fileURL = artworkDir.appendingPathComponent(filename)
-                if !FileManager.default.fileExists(atPath: fileURL.path) {
-                    if let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300),
-                       let data = image.jpegData(compressionQuality: 0.85) {
-                        do {
-                            try data.write(to: fileURL, options: .atomic)
-                        } catch {
-                            Log.app.warning("Widget newest album artwork write failed for \(album.id): \(error)")
-                        }
-                    }
-                }
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    artworkFilename = filename
-                    referencedFiles.insert(filename)
-                }
+                artworkFilename = await saveArtwork(coverArt: coverArt, prefix: "album", in: artworkDir)
+                if let artworkFilename { referencedFiles.insert(artworkFilename) }
             }
             widgetNewest.append(WidgetAlbum(id: album.id, name: album.name, artist: album.artist, artworkFilename: artworkFilename))
         }
@@ -216,22 +183,8 @@ final class WidgetBridge {
         for song in favoriteSongs.prefix(8) {
             var artworkFilename: String?
             if let coverArt = song.coverArt ?? song.albumId {
-                let filename = "album_\(safeFilename(for: coverArt)).jpg"
-                let fileURL = artworkDir.appendingPathComponent(filename)
-                if !FileManager.default.fileExists(atPath: fileURL.path) {
-                    if let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300),
-                       let data = image.jpegData(compressionQuality: 0.85) {
-                        do {
-                            try data.write(to: fileURL, options: .atomic)
-                        } catch {
-                            Log.app.warning("Widget favourite artwork write failed for \(song.id): \(error)")
-                        }
-                    }
-                }
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    artworkFilename = filename
-                    referencedFiles.insert(filename)
-                }
+                artworkFilename = await saveArtwork(coverArt: coverArt, prefix: "album", in: artworkDir)
+                if let artworkFilename { referencedFiles.insert(artworkFilename) }
             }
             widgetFavorites.append(WidgetSong(id: song.id, title: song.title, artist: song.artist, artworkFilename: artworkFilename))
         }
@@ -250,20 +203,18 @@ final class WidgetBridge {
             return
         }
 
-        // 4. Clean up unreferenced artwork files
-        if let contents = try? FileManager.default.contentsOfDirectory(atPath: artworkDir.path) {
-            for file in contents where !referencedFiles.contains(file) {
-                let url = artworkDir.appendingPathComponent(file)
-                try? FileManager.default.removeItem(at: url)
-            }
-        }
-
         // 5. Write snapshot JSON and notify WidgetKit
         do {
             let snapshotURL = containerURL.appendingPathComponent(WidgetSnapshot.snapshotFileName)
             let data = try JSONEncoder().encode(newSnapshot)
             try data.write(to: snapshotURL, options: .atomic)
             lastWrittenSnapshot = newSnapshot
+            // Only now drop artwork the new snapshot no longer references, so a render between the two never sees a missing file.
+            if let contents = try? FileManager.default.contentsOfDirectory(atPath: artworkDir.path) {
+                for file in contents where !referencedFiles.contains(file) {
+                    try? FileManager.default.removeItem(at: artworkDir.appendingPathComponent(file))
+                }
+            }
             WidgetCenter.shared.reloadAllTimelines()
             log.info("Widget snapshot written successfully; timelines reloaded.")
         } catch {
@@ -272,6 +223,48 @@ final class WidgetBridge {
     }
 
     // MARK: - Helpers
+
+    /// Downloads/decodes the cover and writes it as a JPEG in the App Group; encoding and IO run off the main actor.
+    private func saveArtwork(coverArt: String, prefix: String, in dir: URL) async -> String? {
+        let filename = "\(prefix)_\(safeFilename(for: coverArt)).jpg"
+        let fileURL = dir.appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: fileURL.path) { return filename }
+        guard let image = await ArtworkLoader.shared.image(coverArt: coverArt, size: 300) else { return nil }
+        let written = await Self.writeJPEG(image, to: fileURL)
+        return written ? filename : nil
+    }
+
+    private nonisolated static func writeJPEG(_ image: UIImage, to url: URL) async -> Bool {
+        guard let data = image.jpegData(compressionQuality: 0.85) else { return false }
+        do {
+            try data.write(to: url, options: .atomic)
+            return true
+        } catch {
+            Log.app.warning("Widget artwork write failed for \(url.lastPathComponent): \(error)")
+            return false
+        }
+    }
+
+    /// Session ended: widgets must not keep showing the previous account's library.
+    private func clearForLogout() {
+        recentQuery = nil
+        newestQuery = nil
+        favoritesQuery = nil
+        updateTask?.cancel()
+        lastWrittenSnapshot = nil
+        guard let containerURL = WidgetSnapshot.containerURL else { return }
+        do {
+            let data = try JSONEncoder().encode(WidgetSnapshot())
+            try data.write(to: containerURL.appendingPathComponent(WidgetSnapshot.snapshotFileName), options: .atomic)
+            let dir = containerURL.appendingPathComponent(WidgetSnapshot.artworkDirectoryName, isDirectory: true)
+            if let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) {
+                for file in files { try? FileManager.default.removeItem(at: dir.appendingPathComponent(file)) }
+            }
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            Log.app.error("Clearing the widget snapshot on logout failed: \(error)")
+        }
+    }
 
     private func fetchRecentAlbums() async -> [Album] {
         if let list = recentQuery?.value, !list.isEmpty {
