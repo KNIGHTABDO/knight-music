@@ -190,6 +190,8 @@ final class StreamCache: @unchecked Sendable {
         let tasks = Array(active.values)
         active = [:]
         queued = []
+        fractions = [:]
+        urgentIds = []
         let paths = index.values.map(\.relativePath)
         index = [:]
         lock.unlock()

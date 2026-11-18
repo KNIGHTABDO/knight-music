@@ -90,6 +90,7 @@ extension PlayerEngine {
     func load(index: Int, autoplay: Bool, startAt: TimeInterval = 0,
               scanBackward: Bool = false, silent: Bool = false) -> Bool {
         playbackLoadRevision += 1
+        isAwaitingAddress = false
         guard !order.isEmpty else {
             clearPlayback()
             return false
