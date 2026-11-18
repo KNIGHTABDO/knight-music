@@ -144,7 +144,6 @@ final class DiscordPresenceService {
         guard resolvingSongId != songId, cachedArtwork[songId] == nil else { return }
         resolvingSongId = songId
 
-        let directURL = resolveArtworkURL(for: song)
         let token = settings.token
         let appId = settings.effectiveApplicationId
 
@@ -155,7 +154,6 @@ final class DiscordPresenceService {
                 artist: song.artist,
                 title: song.title,
                 album: song.album,
-                directURL: directURL,
                 token: token,
                 applicationId: appId
             )
@@ -168,23 +166,6 @@ final class DiscordPresenceService {
                 }
             }
         }
-    }
-
-    private func resolveArtworkURL(for song: Song) -> String? {
-        if let cover = song.coverArt {
-            if cover.hasPrefix("http://") || cover.hasPrefix("https://") {
-                return cover
-            }
-            if let url = ArtworkLoader.shared.coverArtURL(id: cover, size: 600) {
-                return url.absoluteString
-            }
-        }
-
-        if let url = ArtworkLoader.shared.coverArtURL(id: song.id, size: 600) {
-            return url.absoluteString
-        }
-
-        return nil
     }
 
     // MARK: - Observations

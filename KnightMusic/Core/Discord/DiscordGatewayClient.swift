@@ -23,6 +23,8 @@ final class DiscordGatewayClient {
     private var currentUsername: String?
     private var isIntentionalDisconnect = false
     private var retryCount = 0
+    private var awaitingAck = false
+    private var authFailed = false
 
     // Client session identifiers for Discord anti-spam compliance
     private let clientLaunchId = UUID().uuidString
@@ -55,23 +57,29 @@ final class DiscordGatewayClient {
 
         if self.token != cleanToken {
             self.token = cleanToken
+            self.authFailed = false
             self.sessionId = nil
             self.resumeGatewayURL = nil
             self.lastSequence = nil
             self.currentUsername = nil
         }
 
+        if authFailed { return } // do not hammer Discord with a token it already rejected
+        let wasIntentional = isIntentionalDisconnect
         isIntentionalDisconnect = false
+
+        // Already connected, connecting, or waiting out a backoff: never stack another socket or reset the backoff.
+        if !wasIntentional, webSocketTask != nil || reconnectTask != nil { return }
+        guard webSocketTask == nil else { return }
         reconnectTask?.cancel()
         reconnectTask = nil
-
-        guard webSocketTask == nil else { return }
 
         currentState = .connecting
         startWebSocket()
     }
 
     func disconnect() {
+        authFailed = false
         isIntentionalDisconnect = true
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -113,7 +121,8 @@ final class DiscordGatewayClient {
         self.webSocketTask = task
         task.resume()
 
-        listenForMessages()
+        awaitingAck = false
+        listenForMessages(on: task)
     }
 
     private func stopWebSocket() {
@@ -130,16 +139,16 @@ final class DiscordGatewayClient {
         session = nil
     }
 
-    private func listenForMessages() {
-        guard let task = webSocketTask else { return }
-
+    /// Callbacks are bound to the socket they were started for; a socket replaced or cancelled on purpose
+    /// must never trigger a reconnect (that is what multiplied IDENTIFYs before).
+    private func listenForMessages(on task: URLSessionWebSocketTask) {
         task.receive { [weak self] result in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.webSocketTask === task else { return }
                 switch result {
                 case .success(let message):
                     self.handleMessage(message)
-                    self.listenForMessages()
+                    self.listenForMessages(on: task)
                 case .failure(let error):
                     self.handleWebSocketFailure(error: error)
                 }
@@ -154,10 +163,12 @@ final class DiscordGatewayClient {
         // Discord Close Code 4004 = Authentication Failed
         if nsError.code == 4004 || nsError.localizedDescription.contains("4004") {
             currentState = .error("Authentication Failed: Invalid Discord token.")
+            authFailed = true
             stopWebSocket()
             return
         }
 
+        stopWebSocket()
         currentState = .connecting
         scheduleReconnect()
     }
@@ -169,7 +180,7 @@ final class DiscordGatewayClient {
         retryCount += 1
 
         reconnectTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
             guard let self, !self.isIntentionalDisconnect else { return }
             self.reconnectTask = nil
             self.startWebSocket()
@@ -208,7 +219,7 @@ final class DiscordGatewayClient {
             }
 
         case 11: // HEARTBEAT_ACK
-            break
+            awaitingAck = false
 
         case 1: // HEARTBEAT requested by server
             sendHeartbeat()
@@ -223,8 +234,10 @@ final class DiscordGatewayClient {
                 resumeGatewayURL = nil
                 lastSequence = nil
             }
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            let socket = webSocketTask
+            Task { @MainActor [weak self] in
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+                guard let self, self.webSocketTask === socket, socket != nil else { return }
                 self.sendIdentifyOrResume()
             }
 
@@ -283,8 +296,14 @@ final class DiscordGatewayClient {
 
         heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(intervalSeconds * 1_000_000_000))
-                guard let self, self.webSocketTask != nil else { break }
+                do { try await Task.sleep(nanoseconds: UInt64(intervalSeconds * 1_000_000_000)) } catch { return }
+                guard let self, self.webSocketTask != nil else { return }
+                if self.awaitingAck {
+                    // Zombie connection: the previous beat was never acknowledged.
+                    self.handleWebSocketFailure(error: URLError(.networkConnectionLost))
+                    return
+                }
+                self.awaitingAck = true
                 self.sendHeartbeat()
             }
         }

@@ -290,7 +290,7 @@ final class AccountBackupService {
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
             content: content
         )
-        let comment = try BackupCodec.encode(envelope)
+        let comment = try BackupCodec.encode(envelope, key: BackupCodec.secretKey(password: client.password, username: account.username))
         // Newest backup playlist is the one we read; remove stray duplicates (two devices creating at once).
         let ordered = playlists.sorted { ($0.changed ?? .distantPast) > ($1.changed ?? .distantPast) }
         let id: String
@@ -311,8 +311,9 @@ final class AccountBackupService {
 
     private nonisolated static func readRemote(client: SubsonicClient, username: String) async throws -> (playlists: [Playlist], envelope: BackupEnvelope?) {
         let playlists = try await client.getBackupPlaylists().filter { $0.isOwned(by: username) }
+        let key = BackupCodec.secretKey(password: client.password, username: username)
         let newest = playlists
-            .compactMap { BackupCodec.decode($0.comment) }
+            .compactMap { BackupCodec.decode($0.comment, key: key) }
             .max { $0.updatedAt < $1.updatedAt }
         return (playlists, newest)
     }

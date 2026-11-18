@@ -13,7 +13,6 @@ actor DiscordAssetResolver {
         artist: String?,
         title: String,
         album: String?,
-        directURL: String?,
         token: String,
         applicationId: String
     ) async -> String? {
@@ -30,7 +29,6 @@ actor DiscordAssetResolver {
                 artist: artist,
                 title: title,
                 album: album,
-                directURL: directURL,
                 token: token,
                 applicationId: applicationId
             )
@@ -50,27 +48,12 @@ actor DiscordAssetResolver {
         artist: String?,
         title: String,
         album: String?,
-        directURL: String?,
         token: String,
         applicationId: String
     ) async -> String? {
-        // Step 1: Candidate from directURL if it is publicly accessible
-        if let directURL, isPublicURL(directURL) {
-            if let asset = await registerWithDiscord(imageURL: directURL, token: token, applicationId: applicationId) {
-                return asset
-            }
-        }
-
-        // Step 2: Fallback to iTunes Search API
+        // Only public sources are ever sent to Discord. Subsonic cover URLs carry u/t/s credentials and must never leave the app.
         if let itunesURL = await searchiTunesArtwork(artist: artist, title: title, album: album) {
             if let asset = await registerWithDiscord(imageURL: itunesURL, token: token, applicationId: applicationId) {
-                return asset
-            }
-        }
-
-        // Step 3: If candidate was not marked public (e.g. dynamic hostname), still attempt Discord registration
-        if let directURL, !isPublicURL(directURL) {
-            if let asset = await registerWithDiscord(imageURL: directURL, token: token, applicationId: applicationId) {
                 return asset
             }
         }
