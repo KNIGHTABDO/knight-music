@@ -40,12 +40,14 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         let id = parsed.id
         let rel = parsed.relativePath
         var failure: String?
+        var failureCode: Int?
         var bytes = 0
         var stagedPath: String?
         let http = downloadTask.response as? HTTPURLResponse
         let mime = http?.mimeType?.lowercased() ?? ""
         if http?.statusCode != 200 {
             failure = "Server returned status \(http?.statusCode ?? 0)"
+            failureCode = http?.statusCode
         } else if mime.contains("json") || mime.contains("xml") || mime.hasPrefix("text") {
             // Subsonic reports errors as HTTP 200 with a JSON/XML body.
             failure = "The server returned an error instead of audio"
@@ -69,12 +71,15 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
                 }
             } catch {
                 failure = "Couldn\u{2019}t save the file: \(error.localizedDescription)"
+                if (error as NSError).domain == NSCocoaErrorDomain, (error as NSError).code == NSFileWriteOutOfSpaceError {
+                    failure = DownloadManager.storageMessage
+                }
             }
         }
         let receipt = TransferReceipt(ownerId: parsed.ownerId, attemptId: parsed.attemptId, epoch: parsed.epoch,
                                       songId: id, relativePath: rel, stagedPath: stagedPath,
                                       outcome: failure == nil ? .staged : .failed, bytes: bytes,
-                                      message: failure, createdAt: Date())
+                                      message: failure, createdAt: Date(), errorCode: failureCode)
         deliver(receipt)
     }
 
@@ -84,7 +89,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         let receipt = TransferReceipt(ownerId: parsed.ownerId, attemptId: parsed.attemptId, epoch: parsed.epoch,
                                       songId: parsed.id, relativePath: parsed.relativePath, stagedPath: nil,
                                       outcome: cancelled ? .cancelled : .failed, bytes: 0,
-                                      message: cancelled ? "Cancelled" : error.localizedDescription, createdAt: Date())
+                                      message: cancelled ? "Cancelled" : error.localizedDescription, createdAt: Date(),
+                                      errorCode: (error as NSError).domain == NSURLErrorDomain ? (error as NSError).code : nil)
         deliver(receipt)
     }
 

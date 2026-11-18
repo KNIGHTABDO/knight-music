@@ -29,7 +29,11 @@ final class DownloadManager {
     /// Ordinary albums are handed to iOS in one foreground burst. The system still
     /// controls when each request runs; this only avoids app-wake refill cycles.
     static let maxForegroundAdmission = 16
-    static let maxBackgroundRefill = 3
+    static let maxBackgroundRefill = 16
+    static let unverifiableMessage = "Downloaded audio could not be verified"
+    nonisolated static let storageMessage = "Not enough free storage to download"
+    static let minimumFreeBytes: Int64 = 500_000_000
+    static let maxTransientRetries = 4
 
     /// songId -> status. Read `status(for:)` in views.
     private(set) var statuses: [String: DownloadStatus] = [:]
@@ -64,6 +68,9 @@ final class DownloadManager {
     @ObservationIgnored private var configurationEpoch: UInt64 = 0
     @ObservationIgnored private var persistenceTail: Task<Void, Never>?
     @ObservationIgnored private var recoveryEpoch: UInt64?
+    @ObservationIgnored private var transientRetries: [String: Int] = [:]
+    @ObservationIgnored private var retryWaiting: Set<String> = []
+    @ObservationIgnored private var optedOut: Set<String> = []
 
     init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -95,6 +102,9 @@ final class DownloadManager {
             verifyingAttempts.removeAll()
             requestSnapshots.removeAll()
             awaitingAcceptance.removeAll()
+            transientRetries.removeAll()
+            retryWaiting.removeAll()
+            optedOut = Set(UserDefaults.standard.stringArray(forKey: "downloads.optOut.\(ownerId.uuidString)") ?? [])
             ready = false
             receiptsReconciled = false
         }
@@ -137,7 +147,7 @@ final class DownloadManager {
                    rel.hasPrefix(ownerId.uuidString + "/"), rel.contains(attempt) {
                     attempts[row.songId] = attempt
                     statuses[row.songId] = DownloadStatus(state: .queued, progress: 0, bytes: 0, errorMessage: nil)
-                    pending.append(row.songId)
+                    if !pending.contains(row.songId) { pending.append(row.songId) }
                 } else {
                     statuses[row.songId] = DownloadStatus(state: .needsRetry, progress: 0, bytes: 0,
                                                            errorMessage: "Retry to create an account-scoped download")
@@ -159,7 +169,7 @@ final class DownloadManager {
             guard self.configurationEpoch == epoch, self.ownerId == ownerId.uuidString else { return }
             // Once per launch: a download that fails again stays failed until the next launch.
             if !services.isOffline, statuses.values.contains(where: { $0.state == .failed }) {
-                retryFailed()
+                retryFailed(automatic: true)
             }
         }
     }
@@ -178,6 +188,9 @@ final class DownloadManager {
         verifyingAttempts.removeAll()
         requestSnapshots.removeAll()
         awaitingAcceptance.removeAll()
+        transientRetries.removeAll()
+        retryWaiting.removeAll()
+        optedOut.removeAll()
         ready = false
     }
 
@@ -216,27 +229,40 @@ final class DownloadManager {
 
     // MARK: Commands
 
-    func download(songs: [Song]) {
+    /// `automatic` is true for auto-download lists: songs the user removed are not brought back.
+    func download(songs: [Song], automatic: Bool = false) {
         guard let ownerId, let database else { return }
         let settings = services.settings
         var captured: [String: String] = [:]
         // YouTube songs are saved with "Add to Navidrome" instead; offline copies live in the stream cache.
         for song in songs where !song.isYouTube {
+            if automatic, optedOut.contains(song.id) { continue }
+            if !automatic, optedOut.remove(song.id) != nil { saveOptOut() }
             if statuses[song.id]?.state == .recoveryBlocked {
                 retryRecovery()
                 continue
             }
             if let state = statuses[song.id]?.state,
                state != .failed && state != .needsRetry { continue }
-            let format = settings.downloadMaxBitRate > 0 ? (settings.downloadFormat ?? "mp3") : (song.suffix ?? "mp3")
+            // AVFoundation cannot read Ogg/Opus & co., so those are never saved as-is: transcode to MP3 instead.
+            var bitRate = settings.downloadMaxBitRate
+            var format = bitRate > 0 ? (settings.downloadFormat ?? "mp3") : (song.suffix ?? "mp3")
+            if bitRate > 0, Self.unplayableFormats.contains(format.lowercased()) {
+                format = "mp3"
+            } else if bitRate == 0, !Self.playableFormats.contains(format.lowercased()) {
+                bitRate = 256
+                format = "mp3"
+            }
             let ext = format.range(of: #"^[A-Za-z0-9]{1,16}$"#, options: .regularExpression) == nil ? "mp3" : format
             let attempt = UUID().uuidString
             attempts[song.id] = attempt
             requestSnapshots[song.id] = DownloadRequestSnapshot(
-                bitRate: settings.downloadMaxBitRate,
-                format: settings.downloadFormat ?? ext,
+                bitRate: bitRate,
+                format: ext,
                 allowsCellular: settings.downloadOnCellular
             )
+            transientRetries[song.id] = nil
+            retryWaiting.remove(song.id)
             paths[song.id] = "\(ownerId)/\(attempt).\(ext)"
             addedAt[song.id] = Date()
             statuses[song.id] = DownloadStatus(state: .queued, progress: 0, bytes: 0, errorMessage: nil)
@@ -297,11 +323,12 @@ final class DownloadManager {
 
     func cancel(songId: String) { cancel(songIds: [songId]) }
 
-    func retryFailed(includeLegacy: Bool = false) {
+    func retryFailed(includeLegacy: Bool = false, automatic: Bool = false) {
         guard let database, let ownerId else { return }
         let epoch = configurationEpoch
-        let ids = statuses.compactMap { id, status in
-            status.state == .failed || (includeLegacy && status.state == .needsRetry) ? id : nil
+        let ids = statuses.compactMap { id, status -> String? in
+            if automatic, status.state == .failed, Self.isPermanentFailure(status.errorMessage) { return nil }
+            return status.state == .failed || (includeLegacy && status.state == .needsRetry) ? id : nil
         }
         let attempts = Dictionary(uniqueKeysWithValues: ids.compactMap { id in self.attempts[id].map { (id, $0) } })
         guard !ids.isEmpty else { return }
@@ -329,8 +356,26 @@ final class DownloadManager {
         remove(Array(statuses.keys))
     }
 
+    /// Retries one failed or legacy download on demand.
+    func retry(songId: String) {
+        guard let database, let ownerId, let state = statuses[songId]?.state,
+              state == .failed || state == .needsRetry else { return }
+        let epoch = configurationEpoch
+        Task {
+            do {
+                let songs = try await database.read { try LibraryQueries.songs($0, ids: [songId]) }
+                guard self.ownerId == ownerId, self.configurationEpoch == epoch else { return }
+                self.download(songs: songs)
+            } catch { PlaybackLog.logger.error("Reading song for retry failed: \(error.localizedDescription)") }
+        }
+    }
+
+    /// Resolves once every queued database write (deletes, completions) has been committed.
+    func settled() async { await persistenceTail?.value }
+
     /// Call when connectivity / settings / the URL provider changed so queued items can start.
     func networkDidChange() {
+        flushRetryWaiting()
         guard receiptsReconciled else {
             retryRecovery()
             return
@@ -450,6 +495,8 @@ final class DownloadManager {
                 continue
             }
             let id = parsed.id
+            // The song was removed before this launch finished attaching: stop its orphaned transfer.
+            if statuses[id] == nil { task.cancel(); continue }
             guard let status = statuses[id], (status.state == .queued || status.state == .downloading || status.state == .recoveryBlocked),
                   attempts[id] == nil || attempts[id] == parsed.attemptId else { continue }
             attempts[id] = parsed.attemptId
@@ -472,12 +519,22 @@ final class DownloadManager {
     private func startQueued() {
         guard ready, receiptsReconciled, let urls = services.urls, !services.isOffline else { return }
         guard let ownerId else { return }
+        // A task bakes its host (LAN vs Tailscale) in at creation: wait until the address has settled.
+        if services.isResolvingAddress?() == true { return }
+        if !pending.isEmpty, let free = Self.availableCapacity(), free < Self.minimumFreeBytes {
+            for id in pending where statuses[id]?.state == .queued && statuses[id]?.errorMessage != Self.storageMessage {
+                statuses[id]?.errorMessage = Self.storageMessage
+            }
+            Log.downloads.error("Download queue paused: only \(free / 1_000_000) MB free")
+            return
+        }
         let foregroundLimit = min(Self.maxForegroundAdmission, pending.count + active.count)
         let limit = UIApplication.shared.applicationState == .active
             ? foregroundLimit : min(Self.maxBackgroundRefill, pending.count + active.count)
         while active.count < limit, !pending.isEmpty {
             let id = pending.removeFirst()
             guard awaitingAcceptance[id] == nil else { pending.append(id); break }
+            guard active[id] == nil else { continue }
             guard statuses[id] != nil, let rel = paths[id] else { continue }
             let snapshot = requestSnapshots[id] ?? DownloadRequestSnapshot(
                 bitRate: services.settings.downloadMaxBitRate,
@@ -491,6 +548,9 @@ final class DownloadManager {
                 : urls.downloadURL(songId: id)
             var request = URLRequest(url: url)
             request.allowsCellularAccess = snapshot.allowsCellular
+            // Personal Hotspot and Low Data Mode count as expensive/constrained, not cellular.
+            request.allowsExpensiveNetworkAccess = snapshot.allowsCellular
+            request.allowsConstrainedNetworkAccess = snapshot.allowsCellular
             let task = session.downloadTask(with: request)
             let attempt = attempts[id] ?? UUID().uuidString
             attempts[id] = attempt
@@ -515,15 +575,21 @@ final class DownloadManager {
             guard attempts[id] == nil, let path = paths[id] else { return nil }
             return (id, path)
         })
-        let cancelledEpochs = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
-            attemptEpochs[id].map { (id, $0) }
-        })
         let capturedOwner = ownerId
+        // User removals must not be undone by auto-download lists.
+        optedOut.formUnion(ids)
+        saveOptOut()
+        var doomedFiles: [URL] = []
         for id in ids {
             if let rel = paths[id], let ownerId, rel.hasPrefix(ownerId + "/"),
                let attempt = oldAttempts[id], rel.contains(attempt) {
-                try? FileManager.default.removeItem(at: directory.appendingPathComponent(rel))
+                doomedFiles.append(directory.appendingPathComponent(rel))
+            } else if oldAttempts[id] == nil, let rel = paths[id], !rel.isEmpty,
+                      !rel.hasPrefix("/"), !rel.contains("..") {
+                doomedFiles.append(directory.appendingPathComponent(rel))
             }
+            transientRetries[id] = nil
+            retryWaiting.remove(id)
             paths[id] = nil
             statuses[id] = nil
             addedAt[id] = nil
@@ -542,10 +608,14 @@ final class DownloadManager {
                 for task in await session.allTasks {
                     guard let capturedOwner,
                           let parsed = DownloadSessionDelegate.parse(task.taskDescription), parsed.ownerId == capturedOwner,
-                          cancelledEpochs[parsed.id] == parsed.epoch,
                           oldAttempts[parsed.id] == parsed.attemptId else { continue }
                     task.cancel()
                 }
+            }
+        }
+        if !doomedFiles.isEmpty {
+            Task.detached(priority: .utility) {
+                for url in doomedFiles { try? FileManager.default.removeItem(at: url) }
             }
         }
         startQueued()
@@ -588,6 +658,11 @@ final class DownloadManager {
             lastProgressPublish[id] = nil
             guard statuses[id] != nil else {
                 startQueued()
+                return
+            }
+            if receipt.outcome == .failed, Self.isTransient(receipt.errorCode),
+               (transientRetries[id] ?? 0) < Self.maxTransientRetries {
+                scheduleRetry(id, receipt: receipt)
                 return
             }
             if receipt.outcome != .staged {
@@ -682,6 +757,7 @@ final class DownloadManager {
                       self.attempts[id] == receipt.attemptId else { return }
                 self.paths[id] = receipt.relativePath
                 self.active[id] = nil
+                self.transientRetries[id] = nil
                 self.statuses[id] = DownloadStatus(state: .completed, progress: 1, bytes: byteCount, errorMessage: nil)
                 TransferReceiptStore.remove(receipt, under: self.directory)
                 self.startQueued()
@@ -695,11 +771,107 @@ final class DownloadManager {
                                                        errorMessage: "Audio is saved. Retry to finish making it available offline.")
                 } else {
                     self.statuses[id] = DownloadStatus(state: .failed, progress: 0, bytes: 0,
-                                                       errorMessage: "Downloaded audio could not be verified")
+                                                       errorMessage: Self.unverifiableMessage)
                     self.persist(id)
                 }
                 self.startQueued()
             }
+        }
+    }
+
+    // MARK: Transient failures, storage, account cleanup
+
+    private static let playableFormats: Set<String> = ["mp3", "m4a", "aac", "flac", "wav", "aiff", "aif", "alac", "caf", "mp4"]
+    private static let unplayableFormats: Set<String> = ["opus", "ogg", "oga"]
+
+    static func isTransient(_ code: Int?) -> Bool {
+        guard let code else { return false }
+        if code >= 500 && code <= 599 || code == 408 || code == 429 { return true }
+        return [NSURLErrorTimedOut, NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost,
+                NSURLErrorNetworkConnectionLost, NSURLErrorDNSLookupFailed, NSURLErrorNotConnectedToInternet,
+                NSURLErrorInternationalRoamingOff, NSURLErrorDataNotAllowed].contains(code)
+    }
+
+    private static func isPermanentFailure(_ message: String?) -> Bool {
+        guard let message else { return false }
+        return message == unverifiableMessage || message == storageMessage || message.hasPrefix("Server returned status 4")
+    }
+
+    private static func availableCapacity() -> Int64? {
+        let url = URL(fileURLWithPath: NSHomeDirectory())
+        return (try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+            .volumeAvailableCapacityForImportantUsage
+    }
+
+    private func saveOptOut() {
+        guard let ownerId else { return }
+        UserDefaults.standard.set(Array(optedOut), forKey: "downloads.optOut.\(ownerId)")
+    }
+
+    /// Puts a transiently failed transfer back in the queue after a backoff (5 s, 30 s, 2 min, 5 min).
+    private func scheduleRetry(_ id: String, receipt: TransferReceipt) {
+        let count = (transientRetries[id] ?? 0) + 1
+        transientRetries[id] = count
+        TransferReceiptStore.remove(receipt, under: directory)
+        statuses[id] = DownloadStatus(state: .queued, progress: 0, bytes: 0,
+                                      errorMessage: "Retrying after a connection problem")
+        retryWaiting.insert(id)
+        PlaybackLog.logger.info("Download \(id) failed transiently (code \(receipt.errorCode ?? 0)); retry \(count)")
+        let delay = [5, 30, 120, 300][min(count - 1, 3)]
+        let attempt = receipt.attemptId
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
+            guard let self, self.attempts[id] == attempt, self.retryWaiting.contains(id) else { return }
+            self.flushRetryWaiting(only: id)
+        }
+        startQueued()
+    }
+
+    private func flushRetryWaiting(only id: String? = nil) {
+        let ids = id.map { [$0] } ?? Array(retryWaiting)
+        for id in ids {
+            retryWaiting.remove(id)
+            guard statuses[id]?.state == .queued, active[id] == nil, !pending.contains(id) else { continue }
+            pending.append(id)
+        }
+        if !ids.isEmpty { startQueued() }
+    }
+
+    /// Drops everything an account owned: running transfers, files, receipts and staged data.
+    func purge(ownerId: String) {
+        if self.ownerId == ownerId { deactivate() }
+        let root = directory
+        Task {
+            for task in await session.allTasks where DownloadSessionDelegate.parse(task.taskDescription)?.ownerId == ownerId {
+                task.cancel()
+            }
+            // Cancelled tasks still write a receipt on the delegate queue; let those land first.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await Task.detached(priority: .utility) {
+                let fm = FileManager.default
+                do { try fm.removeItem(at: root.appendingPathComponent(ownerId, isDirectory: true)) }
+                catch let error as NSError where error.code != NSFileNoSuchFileError {
+                    PlaybackLog.logger.error("Removing downloads of a removed account failed: \(error.localizedDescription)")
+                } catch {}
+                try? fm.removeItem(at: root.appendingPathComponent(".receipts", isDirectory: true)
+                    .appendingPathComponent(ownerId, isDirectory: true))
+            }.value
+            UserDefaults.standard.removeObject(forKey: "downloads.optOut.\(ownerId)")
+        }
+    }
+
+    /// Launch sweep: account folders whose account no longer exists (removed before this fix, or by a crash).
+    func sweepOrphanedOwners(keeping accountIds: [UUID]) {
+        let keep = Set(accountIds.map(\.uuidString))
+        let root = directory
+        Task {
+            let orphans = await Task.detached(priority: .utility) { () -> [String] in
+                let fm = FileManager.default
+                var names = Set((try? fm.contentsOfDirectory(atPath: root.path)) ?? [])
+                names.formUnion((try? fm.contentsOfDirectory(atPath: root.appendingPathComponent(".receipts").path)) ?? [])
+                return names.filter { UUID(uuidString: $0) != nil && !keep.contains($0.uppercased()) && !keep.contains($0) }
+            }.value
+            for owner in orphans { self.purge(ownerId: owner) }
         }
     }
 

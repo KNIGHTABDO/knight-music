@@ -33,8 +33,8 @@ struct StorageView: View {
                 HStack {
                     Text("Downloads")
                     Spacer()
-                    let count = storageManager?.downloadedSongCount ?? downloads.completedCount
-                    let bytes = storageManager?.downloadBytes ?? downloads.completedBytes
+                    let count = downloads.completedCount
+                    let bytes = downloads.completedBytes
                     Text("\(StorageManager.format(bytes)) (\(count) \(count == 1 ? "song" : "songs"))")
                         .foregroundStyle(Theme.secondaryLabel)
                 }
@@ -137,6 +137,13 @@ struct StorageView: View {
         .background(Theme.groupedBackground.ignoresSafeArea())
         .navigationTitle("Storage")
         .sheet(isPresented: $showingTransfers) { TransfersSheet() }
+        .onChange(of: downloads.completedCount) {
+            Task {
+                await downloads.settled()
+                storageManager?.refresh()
+                if let manager = storageManager { albumBreakdown = await manager.albumBreakdown() }
+            }
+        }
         .task {
             initStorageManager()
             await refreshAll()
@@ -177,9 +184,10 @@ struct StorageView: View {
             Button("Delete All Downloads", role: .destructive) {
                 downloads.deleteAll()
                 Haptics.success()
-                storageManager?.refresh()
-                refreshSizes()
                 Task {
+                    await downloads.settled()
+                    storageManager?.refresh()
+                    refreshSizes()
                     if let manager = storageManager {
                         albumBreakdown = await manager.albumBreakdown()
                     }
@@ -279,6 +287,7 @@ struct StorageView: View {
                 }
                 downloads.delete(songIds: songIds)
             }
+            await downloads.settled()
             storageManager?.refresh()
             refreshSizes()
             if let manager = storageManager {

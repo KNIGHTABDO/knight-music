@@ -71,7 +71,7 @@ struct TransfersIndicator: ViewModifier {
         } label: {
             HStack(spacing: 10) {
                 ZStack {
-                    Circle().stroke(Color.white.opacity(0.18), lineWidth: 3)
+                    Circle().stroke(Theme.label.opacity(0.18), lineWidth: 3)
                     Circle()
                         .trim(from: 0, to: max(summary.fraction, 0.04))
                         .stroke(Theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -168,6 +168,12 @@ struct TransfersSheet: View {
                         ForEach(issues.map(\.key), id: \.self) { id in
                             row(songId: id, detail: downloads.status(for: id)?.errorMessage ?? "Couldn’t download this song.",
                                 fraction: nil)
+                                .swipeActions {
+                                    Button("Remove", role: .destructive) { downloads.cancel(songId: id) }
+                                    if downloads.status(for: id)?.state != .recoveryBlocked {
+                                        Button("Retry") { downloads.retry(songId: id) }.tint(Theme.accent)
+                                    }
+                                }
                         }
                         if issues.contains(where: { $0.value.state == .failed }) {
                             Button("Retry Failed Downloads") { downloads.retryFailed() }
