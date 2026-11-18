@@ -414,7 +414,8 @@ final class AppModel {
     // MARK: - Session lifecycle
 
     private func restoreSession() {
-        downloads.sweepOrphanedOwners(keeping: accounts.accounts.map(\.id))
+        // An empty list may mean the account file failed to load: never sweep everything on that.
+        if !accounts.accounts.isEmpty { downloads.sweepOrphanedOwners(keeping: accounts.accounts.map(\.id)) }
         guard let account = accounts.active else { return }
         do {
             try activate(account)
