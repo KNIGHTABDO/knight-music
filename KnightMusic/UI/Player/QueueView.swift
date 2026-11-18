@@ -299,11 +299,6 @@ struct QueueView: View {
 
             Spacer()
 
-            if !isReordering {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.white.opacity(0.35))
-            }
         }
         .contentShape(Rectangle())
         .onTapGesture {

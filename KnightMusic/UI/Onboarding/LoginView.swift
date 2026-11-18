@@ -3,6 +3,10 @@ import SwiftUI
 /// First-launch connection screen for configuring the Navidrome server credentials and addresses.
 struct LoginView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+
+    /// True when presented from Manage Servers: shows Cancel and closes after a successful connect.
+    var isSheet = false
 
     // Pre-filled with Knight's own server (all editable), so a reinstall only needs the password.
     @State private var serverName = KnightDefaults.serverName
@@ -220,10 +224,23 @@ struct LoginView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Theme.background.ignoresSafeArea())
+        .overlay(alignment: .topTrailing) {
+            if isSheet {
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(.glass)
+                    .padding(16)
+            }
+        }
     }
 
     private func connect() {
         guard let addresses = resolvedAddresses else { return }
+        let user = username.trimmingCharacters(in: .whitespaces)
+        if app.accounts.accounts.contains(where: { $0.username == user && $0.addresses.first == addresses.first }) {
+            errorMessage = "This server and user are already added."
+            Haptics.error()
+            return
+        }
         isConnecting = true
         errorMessage = nil
         Task {
@@ -236,6 +253,7 @@ struct LoginView: View {
                     password: password
                 )
                 Haptics.success()
+                if isSheet { dismiss() }
             } catch {
                 errorMessage = error.localizedDescription
                 Haptics.error()

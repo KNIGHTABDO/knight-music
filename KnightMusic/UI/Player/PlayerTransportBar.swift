@@ -32,6 +32,9 @@ struct PlayerTransportBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(TransportButtonStyle())
+            .accessibilityLabel("Shuffle")
+            .accessibilityValue(player.shuffleEnabled ? "On" : "Off")
+            .accessibilityAddTraits(player.shuffleEnabled ? .isSelected : [])
 
             Spacer()
 
@@ -73,7 +76,7 @@ struct PlayerTransportBar: View {
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
             .accessibilityAction(named: "Sleep Timer") { showSleepTimer = true }
             .confirmationDialog("Sleep Timer", isPresented: $showSleepTimer, titleVisibility: .visible) {
-                ForEach([15, 30, 45, 60], id: \.self) { minutes in
+                ForEach(SleepTimer.presetMinutes, id: \.self) { minutes in
                     Button("\(minutes) Minutes") { player.sleepTimer.start(minutes: minutes) }
                 }
                 Button("End of Song") { player.sleepTimer.startEndOfSong() }
@@ -117,6 +120,9 @@ struct PlayerTransportBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(TransportButtonStyle())
+            .accessibilityLabel("Repeat")
+            .accessibilityValue(player.repeatMode == .one ? "One" : (player.repeatMode == .off ? "Off" : "All"))
+            .accessibilityAddTraits(player.repeatMode != .off ? .isSelected : [])
         }
         .padding(.horizontal, Theme.margin + 4)
     }

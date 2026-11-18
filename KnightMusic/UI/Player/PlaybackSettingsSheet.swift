@@ -59,7 +59,12 @@ struct PlaybackSettingsSheet: View {
 
     private var cacheLimitBinding: Binding<Int> {
         Binding(
-            get: { settings.streamCacheLimitMB },
+            get: {
+                // Snap a legacy stored value (e.g. 4096) to the nearest offered option.
+                let options = [512, 1024, 2048, 5120, 10240]
+                let stored = settings.streamCacheLimitMB
+                return options.min { abs($0 - stored) < abs($1 - stored) } ?? 1024
+            },
             set: { settings.streamCacheLimitMB = $0 }
         )
     }
@@ -122,7 +127,8 @@ struct PlaybackSettingsSheet: View {
                         Text("512 MB").tag(512)
                         Text("1 GB").tag(1024)
                         Text("2 GB").tag(2048)
-                        Text("4 GB").tag(4096)
+                        Text("5 GB").tag(5120)
+                        Text("10 GB").tag(10240)
                     }
 
                     Picker("Save Next Songs Ahead", selection: saveAheadBinding) {

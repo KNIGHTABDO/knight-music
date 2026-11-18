@@ -82,6 +82,7 @@ struct SkipSwipeModifier: ViewModifier {
 
     @Environment(PlayerEngine.self) private var player
     @State private var dragX: CGFloat = 0
+    @GestureState private var gestureActive = false
 
     private static let threshold: CGFloat = 80
 
@@ -92,6 +93,7 @@ struct SkipSwipeModifier: ViewModifier {
             .contentShape(Rectangle())
             .simultaneousGesture(
                 DragGesture(minimumDistance: 16)
+                    .updating($gestureActive) { _, state, _ in state = true }
                     .onChanged { value in
                         let dx = value.translation.width
                         guard abs(dx) > abs(value.translation.height) * 1.3 else { return }
@@ -117,6 +119,10 @@ struct SkipSwipeModifier: ViewModifier {
                         }
                     }
             )
+            .onChange(of: gestureActive) { _, active in
+                // A cancelled drag never calls onEnded; spring back so the cover is not left offset.
+                if !active && dragX != 0 { withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { dragX = 0 } }
+            }
             .help("Swipe left for next song; right for previous song")
             .accessibilityAction(named: "Next Song") { player.next() }
             .accessibilityAction(named: "Previous Song") { player.previous() }

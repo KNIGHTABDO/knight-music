@@ -123,6 +123,11 @@ struct AddressesView: View {
     private func deleteAddresses(at offsets: IndexSet) {
         errorMessage = nil
         guard var account = activeAccount else { return }
+        guard account.addresses.count > offsets.count else {
+            errorMessage = "A server needs at least one address."
+            Haptics.error()
+            return
+        }
         account.addresses.remove(atOffsets: offsets)
         app.accounts.update(account)
         Task {

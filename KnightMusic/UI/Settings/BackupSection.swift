@@ -63,7 +63,7 @@ struct BackupSection: View {
         case .failed(let message):
             Text(message)
                 .foregroundStyle(Color.red)
-                .lineLimit(1)
+                .lineLimit(3)
         case .idle:
             if let date = backup.lastSyncedAt {
                 Text(date, format: .relative(presentation: .named))

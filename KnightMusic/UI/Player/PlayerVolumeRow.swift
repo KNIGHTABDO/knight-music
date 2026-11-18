@@ -10,6 +10,8 @@ import UIKit
 final class SystemVolumeController {
     private(set) var volume: Float = AVAudioSession.sharedInstance().outputVolume
     @ObservationIgnored weak var slider: UISlider?
+    /// MPVolumeView builds its slider lazily, so it is resolved again at the moment of use.
+    @ObservationIgnored weak var volumeView: MPVolumeView?
     @ObservationIgnored private var observation: NSKeyValueObservation?
 
     init() {
@@ -22,6 +24,7 @@ final class SystemVolumeController {
     func set(_ value: Float) {
         let clamped = min(max(value, 0), 1)
         volume = clamped
+        if slider == nil { slider = volumeView?.subviews.compactMap { $0 as? UISlider }.first }
         slider?.setValue(clamped, animated: false)
         slider?.sendActions(for: .valueChanged)
     }
@@ -40,6 +43,7 @@ private struct HiddenVolumeView: UIViewRepresentable {
         let view = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 100, height: 30))
         view.alpha = 0.011
         view.isUserInteractionEnabled = false
+        controller.volumeView = view
         controller.slider = view.subviews.compactMap { $0 as? UISlider }.first
         return view
     }
@@ -55,6 +59,7 @@ private struct HiddenVolumeView: UIViewRepresentable {
 struct PlayerVolumeRow: View {
     @State private var controller = SystemVolumeController()
     @State private var isDragging = false
+    @GestureState private var gestureActive = false
     @State private var dragStartVolume: Float = 0
 
     var body: some View {
@@ -77,6 +82,7 @@ struct PlayerVolumeRow: View {
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isDragging)
                 .gesture(
                     DragGesture(minimumDistance: 0)
+                        .updating($gestureActive) { _, state, _ in state = true }
                         .onChanged { value in
                             if !isDragging {
                                 isDragging = true
@@ -89,6 +95,9 @@ struct PlayerVolumeRow: View {
                 )
             }
             .frame(height: 32)
+            .onChange(of: gestureActive) { _, active in
+                if !active && isDragging { isDragging = false }
+            }
             .background(alignment: .center) { HiddenVolumeView(controller: controller).frame(width: 1, height: 1) }
             .accessibilityElement()
             .accessibilityLabel("Volume")

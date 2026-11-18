@@ -166,7 +166,7 @@ struct AutoMixPreviewSheet: View {
         matchesFor = songId
         let ids = await player.autoMixMatches(after: songId)
         let songs = await library.songs(ids: ids)
-        let order = Dictionary(uniqueKeysWithValues: ids.enumerated().map { ($1, $0) })
+        let order = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         withAnimation(.smooth) {
             matches = songs.sorted { (order[$0.id] ?? 0) < (order[$1.id] ?? 0) }
         }
