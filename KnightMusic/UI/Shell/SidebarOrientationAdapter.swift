@@ -51,7 +51,11 @@ private struct SidebarVisibilityProbe: UIViewRepresentable {
             guard let landscape = isLandscape, landscape != applied,
                   let window, traitCollection.userInterfaceIdiom == .pad,
                   let tabs = Self.tabBarController(in: window.rootViewController) else { return }
+            // The tab controller may already be leaving the window (sign-out swaps it for the login screen); animating its
+            // sidebar then aborts in UIKit with BUG_IN_CLIENT_OF_TARGETED_PREVIEW__VIEW_IS_NOT_IN_A_WINDOW.
+            guard tabs.viewIfLoaded?.window === window, !tabs.isBeingDismissed, !tabs.isMovingFromParent else { return }
             applied = landscape
+            guard tabs.sidebar.isHidden != !landscape else { return }
             tabs.sidebar.isHidden = !landscape
         }
 

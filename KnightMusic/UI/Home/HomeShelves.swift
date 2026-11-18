@@ -137,6 +137,7 @@ struct AccountAvatarMenu: View {
                 .foregroundStyle(.white)
                 .frame(width: 32, height: 32)
                 .background(Circle().fill(Theme.accent.gradient))
+                .accessibilityLabel("Account")
         }
         .accessibilityLabel("Account")
     }

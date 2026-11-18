@@ -76,6 +76,8 @@ final class ScreenAuditTests: XCTestCase {
     }
 
     private static let unsafeWords = ["log out", "sign out", "delete", "remove", "clear", "reset", "erase", "force", "restore", "disconnect", "forget"]
+    /// Rows that are `Link`s: tapping them opens Safari, which backgrounds the app and reads as a crash.
+    private static let externalLinks = ["github"]
 
     /// Taps every visible row of the screen's list once (depth 1), screenshots the destination, then goes back.
     private func crawl(screen: String, prefix: String) {
@@ -95,7 +97,7 @@ final class ScreenAuditTests: XCTestCase {
             visited.insert(next)
             stalls = 0
             step += 1
-            if Self.unsafeWords.contains(where: { next.lowercased().contains($0) }) { continue }
+            if (Self.unsafeWords + Self.externalLinks).contains(where: { next.lowercased().contains($0) }) { continue }
             let cell = app.cells.containing(NSPredicate(format: "label == %@", next)).firstMatch
             let target = cell.exists ? cell : app.buttons[next].firstMatch
             guard target.exists, target.isHittable else { continue }

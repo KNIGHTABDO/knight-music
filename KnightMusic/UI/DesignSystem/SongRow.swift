@@ -75,6 +75,7 @@ struct SongRow<MenuContent: View>: View {
                         .frame(width: 32, height: 40)
                         .contentShape(Rectangle())
                 }
+                .accessibilityLabel("More")
             }
         }
         .opacity(isExplicitlyDimmed ? 0.45 : 1)
