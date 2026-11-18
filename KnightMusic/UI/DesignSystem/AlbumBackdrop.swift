@@ -18,7 +18,7 @@ struct AlbumBackdrop: View {
             .blur(radius: 70, opaque: true)
             .opacity(0.55)
             .mask(LinearGradient(colors: [.black, .black.opacity(0.6), .clear], startPoint: .top, endPoint: .bottom))
-            .ignoresSafeArea(edges: .top)
+            .ignoresSafeArea(edges: [.top, .horizontal]) // no black bars beside the notch in landscape
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }

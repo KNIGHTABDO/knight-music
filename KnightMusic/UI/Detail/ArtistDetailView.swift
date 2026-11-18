@@ -13,6 +13,7 @@ struct ArtistDetailView: View {
     @Environment(HermesService.self) private var hermes: HermesService?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var artistInfo: ArtistInfo?
     @State private var isBioExpanded = false
@@ -132,7 +133,11 @@ struct ArtistDetailView: View {
 
     // MARK: - Hero Header
 
-    private var heroHeight: CGFloat { sizeClass == .regular ? 460 : 400 }
+    private var heroHeight: CGFloat {
+        // iPhone landscape is ~400pt tall: a full hero would push the name and Play under the tab bar.
+        if verticalSizeClass == .compact { return 240 }
+        return sizeClass == .regular ? 460 : 400
+    }
 
     /// Stretches when pulled down, drifts at half speed when scrolled up (parallax).
     private func heroHeaderView(artist: Artist, topSongs: [Song], allSongs: [Song]) -> some View {
@@ -143,6 +148,7 @@ struct ArtistDetailView: View {
                 heroImage(artist: artist, width: geo.size.width)
                     .frame(width: geo.size.width, height: height + max(0, minY))
                     .clipped()
+                    .backgroundExtensionEffect()
                     .offset(y: minY > 0 ? -minY : -minY * 0.5)
 
                 LinearGradient(

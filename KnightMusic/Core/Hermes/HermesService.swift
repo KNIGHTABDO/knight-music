@@ -119,6 +119,7 @@ final class HermesService {
     func stopStreaming() {
         guard isRunning else { return }
         let runIdToStop = currentRunId
+        streamGeneration += 1 // the cancelled stream must not clear the state of a run started right after
         streamingTask?.cancel()
         streamingTask = nil
         endBackgroundTask()
@@ -206,6 +207,10 @@ final class HermesService {
             messages: []
         )
 
+        if conversation.messages.isEmpty, conversation.title.isEmpty || conversation.title == "New Chat" {
+            conversation.title = String(trimmed.prefix(40))
+        }
+
         // Append user message
         let userMessage = KnightMessage(role: .user, text: trimmed, date: Date())
         conversation.messages.append(userMessage)
@@ -218,6 +223,9 @@ final class HermesService {
         currentStreamingText = ""
         activeToolSteps = []
 
+        // A run still streaming (an inline notification reply can arrive mid-run) stays "running" in the store
+        // and is settled by recovery; its cancelled stream must not touch the new run's live state.
+        streamGeneration += 1
         streamingTask?.cancel()
         streamingTask = Task {
             do {
@@ -314,6 +322,7 @@ final class HermesService {
         do {
             let stream = await self.client.events(runId: runId)
             var finalFullText: String? = nil
+            var serverError: String?
 
             for try await event in stream {
                 try Task.checkCancellation()
@@ -342,6 +351,7 @@ final class HermesService {
                 case .completed(let fullText):
                     finalFullText = fullText
                 case .failed(let error):
+                    serverError = error
                     if self.currentStreamingText.isEmpty {
                         self.currentStreamingText = "Error: \(error)"
                     } else {
@@ -352,6 +362,13 @@ final class HermesService {
 
             // A replaced stream that ends late must not finish the message with partial text.
             guard generation == streamGeneration, !Task.isCancelled else { return }
+            if let serverError, finalFullText == nil {
+                markFailed(conversationId: conversationId, messageId: messageId,
+                           text: self.currentStreamingText, steps: self.activeToolSteps)
+                notifyReply(conversationId: conversationId, text: serverError, failed: true)
+                clearLiveState()
+                return
+            }
             let rawText = finalFullText ?? self.currentStreamingText
             await self.handleRunCompleted(
                 conversationId: conversationId,
@@ -371,14 +388,11 @@ final class HermesService {
             } else if self.isBackgrounded {
                 Log.api.info("Hermes stream died quietly in background: \(error.localizedDescription)")
             } else {
-                if var updatedConvo = self.store.conversation(for: conversationId),
-                   let msgIdx = updatedConvo.messages.firstIndex(where: { $0.id == messageId }) {
-                    updatedConvo.messages[msgIdx].text = "Error: \(error.localizedDescription)"
-                    updatedConvo.messages[msgIdx].status = "failed"
-                    updatedConvo.messages[msgIdx].toolSteps = self.activeToolSteps.map { var s = $0; s.isRunning = false; return s }
-                    updatedConvo.updatedAt = Date()
-                    self.store.save(updatedConvo)
-                }
+                let partial = self.currentStreamingText
+                markFailed(conversationId: conversationId, messageId: messageId,
+                           text: partial.isEmpty ? "Error: \(error.localizedDescription)"
+                               : partial + "\n\n*(Error: \(error.localizedDescription))*",
+                           steps: self.activeToolSteps)
                 notifyReply(conversationId: conversationId, text: error.localizedDescription, failed: true)
             }
         }
@@ -387,6 +401,19 @@ final class HermesService {
             clearLiveState()
         }
     }
+
+    private func markFailed(conversationId: String, messageId: String, text: String, steps: [ToolStep]) {
+        guard var convo = store.conversation(for: conversationId),
+              let index = convo.messages.firstIndex(where: { $0.id == messageId }) else { return }
+        convo.messages[index].text = text
+        convo.messages[index].status = "failed"
+        convo.messages[index].toolSteps = steps.map { var s = $0; s.isRunning = false; return s }
+        convo.updatedAt = Date()
+        store.save(convo)
+    }
+
+    /// `streamingTask` is kept after a run ends, so liveness comes from the live state, not the task handle.
+    private var isStreamLive: Bool { isRunning && streamingTask != nil }
 
     private func clearLiveState() {
         isRunning = false
@@ -536,11 +563,11 @@ final class HermesService {
 
         guard !targets.isEmpty else { return }
         // The run the chat is showing goes first, so it's reattached before any other.
-        targets.sort { a, _ in a.runId == currentRunId }
+        targets.sort { a, b in a.runId == currentRunId && b.runId != currentRunId }
 
         for target in targets {
             let isLiveRun = currentRunId == target.runId
-            if isLiveRun && streamingTask != nil {
+            if isLiveRun && isStreamLive {
                 guard reconnecting else { continue }
                 streamGeneration += 1
                 streamingTask?.cancel()
@@ -574,7 +601,7 @@ final class HermesService {
                     if currentRunId == target.runId { clearLiveState() }
                 } else {
                     // Never steal the stream of another run that's alive.
-                    if streamingTask != nil && currentRunId != target.runId { continue }
+                    if isStreamLive && currentRunId != target.runId { continue }
                     // Still running: reconnect to /events (replaying from start)
                     beginBackgroundTask()
                     streamingTask?.cancel()
@@ -594,7 +621,7 @@ final class HermesService {
             } catch {
                 // Message stays "running"; the chat and imports retry recovery until the server answers.
                 Log.api.warning("Hermes: Failed to check run status for \(target.runId): \(error.localizedDescription)")
-                if currentRunId == target.runId && streamingTask == nil { clearLiveState() }
+                if currentRunId == target.runId && !isStreamLive { clearLiveState() }
             }
         }
     }

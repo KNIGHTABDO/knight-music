@@ -209,6 +209,7 @@ actor HermesClient {
 
                     var accumulatedText = ""
                     var hasEmittedCompleted = false
+                    var hasFailed = false
                     var lastToolId: String? = nil
 
                     eventLoop: for try await line in bytes.lines {
@@ -232,6 +233,7 @@ actor HermesClient {
                                 ?? json["error"] as? String
                                 ?? json["message"] as? String
                                 ?? "Run failed"
+                            hasFailed = true
                             continuation.yield(.failed(msg))
                             continue
                         }
@@ -319,7 +321,7 @@ actor HermesClient {
                         }
                     }
 
-                    if !hasEmittedCompleted {
+                    if !hasEmittedCompleted && !hasFailed { // a failed run must not end as a completed reply
                         continuation.yield(.completed(fullText: accumulatedText))
                     }
                     continuation.finish()

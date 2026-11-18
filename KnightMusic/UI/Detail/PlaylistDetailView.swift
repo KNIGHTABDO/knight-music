@@ -11,6 +11,7 @@ struct PlaylistDetailView: View {
     @Environment(UIState.self) private var ui
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var editMode: EditMode = .inactive
     @State private var showingRenameAlert = false
@@ -179,9 +180,13 @@ struct PlaylistDetailView: View {
 
     private func headerView(playlist: Playlist, songs: [Song]) -> some View {
         Group {
-            if sizeClass == .regular {
+            if sizeClass == .regular || verticalSizeClass == .compact {
+                // Side by side on iPad and in iPhone landscape, where a stacked header fills the short screen.
                 HStack(alignment: .bottom, spacing: 24) {
-                    PlaylistMosaic(coverArts: mosaicCovers(playlist: playlist, songs: songs), side: 240)
+                    PlaylistMosaic(
+                        coverArts: mosaicCovers(playlist: playlist, songs: songs),
+                        side: verticalSizeClass == .compact ? 180 : 240
+                    )
 
                     VStack(alignment: .leading, spacing: 6) {
                         playlistMetadata(playlist: playlist, songs: songs, alignment: .leading)

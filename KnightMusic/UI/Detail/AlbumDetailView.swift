@@ -11,6 +11,7 @@ struct AlbumDetailView: View {
     @Environment(UIState.self) private var ui
     @Environment(HermesService.self) private var hermes: HermesService?
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var selection = SongSelection()
 
     var body: some View {
@@ -107,15 +108,17 @@ struct AlbumDetailView: View {
 
     @ViewBuilder
     private func headerView(album: Album, songs: [Song]) -> some View {
-        if sizeClass == .regular {
-            // iPad: artwork left, info + buttons right
+        if sizeClass == .regular || verticalSizeClass == .compact {
+            // iPad, and iPhone landscape (a centred cover would fill the whole short screen):
+            // artwork left, info + buttons right
+            let side: CGFloat = verticalSizeClass == .compact ? 190 : 300
             HStack(alignment: .bottom, spacing: 28) {
                 HeroArtworkView(
                     song: heroSong(for: album, songs: songs),
-                    pointSize: 300,
+                    pointSize: side,
                     cornerRadius: 10
                 )
-                .frame(width: 300, height: 300)
+                .frame(width: side, height: side)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .shadow(color: .black.opacity(0.4), radius: 18, y: 9)
                 .backgroundExtensionEffect()
