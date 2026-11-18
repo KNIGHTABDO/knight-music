@@ -10,6 +10,7 @@ struct PlayerScrubberView: View {
 
     @AppStorage("km.showTotalTime") private var showTotalTime = false
     @State private var isDragging = false
+    @GestureState private var gestureActive = false
     @State private var scrubTime: TimeInterval = 0
     @State private var lastX: CGFloat = 0
     @State private var speed: ScrubSpeed = .full
@@ -77,6 +78,10 @@ struct PlayerScrubberView: View {
                 .contentShape(Rectangle())
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isDragging)
                 .gesture(scrubGesture(totalWidth: totalWidth, duration: duration))
+                .onChange(of: gestureActive) { _, active in
+                    if !active { finishScrub() }
+                }
+                .onDisappear { finishScrub() }
                 .accessibilityElement()
                 .accessibilityLabel("Track Position")
                 .accessibilityValue(KMFormat.duration(displayTime))
@@ -131,6 +136,7 @@ struct PlayerScrubberView: View {
 
     private func scrubGesture(totalWidth: CGFloat, duration: TimeInterval) -> some Gesture {
         DragGesture(minimumDistance: 0)
+            .updating($gestureActive) { _, state, _ in state = true }
             .onChanged { gesture in
                 let x = gesture.location.x
                 if !isDragging {
@@ -163,11 +169,15 @@ struct PlayerScrubberView: View {
 
                 player.scrub(to: scrubTime)
             }
-            .onEnded { _ in
-                player.endScrubbing(at: scrubTime)
-                isDragging = false
-                speed = .full
-                Haptics.selection()
-            }
+            .onEnded { _ in finishScrub() }
+    }
+
+    /// Shared by a normal end and a cancelled gesture, so the engine never stays in scrubbing mode.
+    private func finishScrub() {
+        guard isDragging else { return }
+        player.endScrubbing(at: scrubTime)
+        isDragging = false
+        speed = .full
+        Haptics.selection()
     }
 }

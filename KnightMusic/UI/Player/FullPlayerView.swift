@@ -34,12 +34,14 @@ struct FullPlayerView: View {
             get: { currentRating },
             set: { newRating in
                 guard let song = player.currentSong, newRating != currentRating else { return }
+                let previous = currentRating
                 currentRating = newRating
                 Task {
                     do {
                         try await library.setRating(.song, id: song.id, rating: newRating)
                     } catch {
                         Log.sync.error("Set rating failed for song \(song.id): \(error)")
+                        if player.currentSong?.id == song.id { currentRating = previous }
                         ui.showToast("Couldn't save the rating")
                     }
                 }
@@ -57,7 +59,7 @@ struct FullPlayerView: View {
                     VStack(spacing: 0) {
                         grabberHandle
 
-                        if isRegular {
+                        if isRegular && geo.size.height >= 600 {
                             regularLayout(song: song, geo: geo, isLandscape: isLandscape)
                         } else if isLandscape {
                             compactLandscapeLayout(song: song, geo: geo)
@@ -121,6 +123,7 @@ struct FullPlayerView: View {
 
     private var shouldAutoHide: Bool {
         ui.playerPanel == .lyrics && player.isPlaying
+            && !UIAccessibility.isVoiceOverRunning && !UIAccessibility.isSwitchControlRunning
     }
 
     private func revealControls() {
@@ -377,6 +380,8 @@ struct FullPlayerView: View {
             .frame(maxWidth: 440)
             .frame(maxHeight: .infinity, alignment: .center)
             .opacity(controlsHidden ? 0 : 1)
+            .allowsHitTesting(!controlsHidden)
+            .accessibilityHidden(controlsHidden)
         }
         .padding(.horizontal, 40)
     }

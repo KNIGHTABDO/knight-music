@@ -10,6 +10,7 @@ struct UpdatesSection: View {
         Section {
             if let release = updates.available {
                 Button {
+                    message = nil
                     Task {
                         if !(await updates.install(release)) {
                             message = "SideStore isn't installed. Opened the release page instead."
@@ -41,6 +42,7 @@ struct UpdatesSection: View {
             .disabled(updates.status == .checking)
 
             Button {
+                message = nil
                 Task {
                     if !(await updates.addSourceToSideStore()) {
                         message = "SideStore isn't installed."

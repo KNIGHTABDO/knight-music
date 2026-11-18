@@ -86,6 +86,7 @@ struct PlayerBottomBar: View {
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Lyrics")
+                .accessibilityAddTraits(ui.playerPanel == .lyrics ? .isSelected : [])
 
                 // 5. Queue toggle
                 Button {
@@ -103,6 +104,7 @@ struct PlayerBottomBar: View {
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Queue")
+                .accessibilityAddTraits(ui.playerPanel == .queue ? .isSelected : [])
 
                 // 6. Sleep timer menu
                 Menu {
@@ -150,6 +152,9 @@ struct PlayerBottomBar: View {
                 }
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("Sleep Timer")
+                .accessibilityValue(player.sleepTimer.isActive
+                    ? (player.sleepTimer.remaining.map { "\(KMFormat.duration($0)) left" } ?? "On")
+                    : "Off")
             }
         }
     }

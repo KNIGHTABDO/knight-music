@@ -199,8 +199,9 @@ struct DiscordSettingsView: View {
         .onAppear {
             tokenInput = settings.token
         }
-        .onChange(of: tokenInput) { _, newValue in
-            settings.token = newValue
+        .onDisappear {
+            // Written once, not per keystroke (each write hits the Keychain and the backup).
+            if settings.token != tokenInput { settings.token = tokenInput }
         }
         .alert("Copied to Clipboard", isPresented: $showCopiedAlert) {
             Button("OK", role: .cancel) {}
@@ -235,7 +236,7 @@ struct DiscordSettingsView: View {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(Color.red)
-                    .lineLimit(1)
+                    .lineLimit(3)
             }
         case .disconnected:
             HStack(spacing: 6) {

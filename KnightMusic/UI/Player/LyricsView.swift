@@ -126,7 +126,10 @@ struct LyricsView: View {
             showSyncedToast = false
             syncedLineIndex = nil
             activeIndex = nil
-            lyricsList = song.isYouTube ? await YouTubeLyrics.shared.lyrics(for: song) : await library.lyrics(songId: song.id)
+            let loaded = song.isYouTube ? await YouTubeLyrics.shared.lyrics(for: song) : await library.lyrics(songId: song.id)
+            // A slower request for the previous song must never overwrite the current one.
+            guard !Task.isCancelled else { return }
+            lyricsList = loaded
             rebuildLyricsState()
             isLoading = false
         }
@@ -193,6 +196,7 @@ struct LyricsView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(isActive ? .isSelected : [])
                             .contextMenu { lyricActions(item.text) }
                             .help("Tap to seek; long-press to copy or share")
                             .accessibilityAction(named: "Copy Line") { copy(item.text) }

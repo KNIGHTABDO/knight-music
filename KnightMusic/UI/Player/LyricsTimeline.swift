@@ -59,7 +59,7 @@ enum LyricsTimeline {
         return lyrics.line.map { line in
             let start = line.start ?? lastStart
             lastStart = max(lastStart, start)
-            return start - effectiveOffsetMs
+            return max(lastStart, start) - effectiveOffsetMs
         }
     }
 

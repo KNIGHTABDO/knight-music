@@ -6,6 +6,7 @@ struct ServersView: View {
 
     @State private var showingAddServerSheet = false
     @State private var isRefreshing = false
+    @State private var pendingRemoval: ServerAccount?
 
     private var activeAccount: ServerAccount? {
         app.accounts.active ?? app.activeAccount
@@ -48,11 +49,12 @@ struct ServersView: View {
                             app.switchAccount(id: account.id)
                         }
                     }
-                }
-                .onDelete { indexSet in
-                    for index in indexSet {
-                        let account = app.accounts.accounts[index]
-                        app.removeAccount(id: account.id)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            pendingRemoval = account
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
                     }
                 }
             }
@@ -200,7 +202,21 @@ struct ServersView: View {
             }
         }
         .sheet(isPresented: $showingAddServerSheet) {
-            LoginView()
+            LoginView(isSheet: true)
+        }
+        .confirmationDialog(
+            "Remove \(pendingRemoval?.name ?? "server")?",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingRemoval
+        ) { account in
+            Button("Remove Server", role: .destructive) {
+                Haptics.impact(.medium)
+                app.removeAccount(id: account.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { account in
+            Text("This removes \(account.name) from this device, including its local library and every song downloaded from it. Nothing is deleted on the server.")
         }
     }
 }
