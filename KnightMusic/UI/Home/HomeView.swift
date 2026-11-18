@@ -315,7 +315,8 @@ struct HomeView: View {
                 Label("Refresh Library", systemImage: "arrow.clockwise")
             }
         } label: {
-            Image(systemName: "ellipsis")
+            Label("More", systemImage: "ellipsis")
+                .labelStyle(.iconOnly)
         }
     }
 

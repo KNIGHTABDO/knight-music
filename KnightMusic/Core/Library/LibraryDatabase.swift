@@ -371,6 +371,17 @@ final class LibraryDatabase: @unchecked Sendable {
                 table.add(column: "allowsCellular", .boolean)
             }
         }
+        migrator.registerMigration("v5-genre-members") { db in
+            // Albums and songs carry only their first genre; the server's by-genre lists also match secondary ones.
+            try db.execute(sql: """
+            CREATE TABLE genreMember (
+                genre TEXT NOT NULL COLLATE NOCASE,
+                kind TEXT NOT NULL,
+                itemId TEXT NOT NULL,
+                PRIMARY KEY (genre, kind, itemId)
+            );
+            """)
+        }
         return migrator
     }
 }

@@ -111,7 +111,8 @@ private struct DuetPromptPill: View {
         }
         .frame(maxWidth: 520)
         .onAppear {
-            guard !DebugLaunch.isDemo else { return }
+            // VoiceOver / Switch Control: the prompt waits for them (DuetCoordinator), so the ring stays full
+            guard !DebugLaunch.isDemo, !UIAccessibility.isVoiceOverRunning, !UIAccessibility.isSwitchControlRunning else { return }
             withAnimation(.linear(duration: DuetCoordinator.promptDuration)) { remaining = 0 }
         }
     }

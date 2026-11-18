@@ -37,6 +37,7 @@ final class LibraryRepository {
     @ObservationIgnored private var searchCache: [String: AnyObject] = [:]
     @ObservationIgnored private var searchCacheOrder: [String] = []
     @ObservationIgnored private var requestedTopSongs = Set<String>()
+    @ObservationIgnored private var requestedGenres = Set<String>()
     private static let cacheLimit = 48
     private static let searchCacheLimit = 2
 
@@ -50,6 +51,7 @@ final class LibraryRepository {
             searchCache.removeAll()
             searchCacheOrder.removeAll()
             requestedTopSongs.removeAll()
+            requestedGenres.removeAll()
         }
         self.database = database
         self.client = client
@@ -138,7 +140,8 @@ final class LibraryRepository {
     }
 
     func albums(genre: String) -> LiveQuery<[Album]> {
-        query("albumsByGenre:\(genre)", initial: [Album]()) { db in try LibraryQueries.albums(db, genre: genre) }
+        requestGenreMembers(genre)
+        return query("albumsByGenre:\(genre)", initial: [Album]()) { db in try LibraryQueries.albums(db, genre: genre) }
     }
 
     /// Album plus its songs ordered by disc and track.
@@ -168,7 +171,8 @@ final class LibraryRepository {
     }
 
     func songs(genre: String, limit: Int? = nil) -> LiveQuery<[Song]> {
-        query("songsByGenre:\(genre):\(limit ?? 0)", initial: [Song]()) { db in
+        requestGenreMembers(genre)
+        return query("songsByGenre:\(genre):\(limit ?? 0)", initial: [Song]()) { db in
             try LibraryQueries.songs(db, genre: genre, limit: limit)
         }
     }
@@ -302,6 +306,8 @@ final class LibraryRepository {
                 let fetchedAt: Date = row["fetchedAt"]
                 return (json, fetchedAt)
             }
+        } catch is CancellationError {
+            return nil   // the artist page closed before the read finished
         } catch {
             Log.database.warning("Reading cached artistInfo for \(artistId) failed: \(error)")
             cached = nil
@@ -325,8 +331,54 @@ final class LibraryRepository {
             }
             return info
         } catch {
-            Log.sync.warning("artistInfo(\(artistId)) failed: \(error.localizedDescription)")
+            if !(error is CancellationError) { Log.sync.warning("artistInfo(\(artistId)) failed: \(error.localizedDescription)") }
             return stored
+        }
+    }
+
+    private func requestGenreMembers(_ genre: String) {
+        if requestedGenres.insert(genre.lowercased()).inserted {
+            Task { await loadGenreMembers(genre) }
+        }
+    }
+
+    /// Fetches the server's by-genre album and song lists (they match every genre a tag lists, not only the first)
+    /// into the mirror, refreshed daily.
+    private func loadGenreMembers(_ genre: String) async {
+        guard let database, let client, !isOfflineProvider() else {
+            requestedGenres.remove(genre.lowercased())
+            return
+        }
+        let key = "genreMembers.\(genre.lowercased())"
+        if let raw = await database.stateValue(key), let t = TimeInterval(raw), Date().timeIntervalSince1970 - t < 86400 { return }
+        do {
+            var albums: [Album] = []
+            while albums.count < 2000 {
+                let page = try await client.getAlbumList2(type: .byGenre, size: 500, offset: albums.count, genre: genre)
+                albums += page
+                if page.count < 500 { break }
+            }
+            var songs: [Song] = []
+            while songs.count < 5000 {
+                let page = try await client.getSongsByGenre(genre, count: 500, offset: songs.count)
+                songs += page
+                if page.count < 500 { break }
+            }
+            try await database.pool.write { [albums, songs] db in
+                _ = try writeChanged(albums, in: db, same: sameAlbum)
+                _ = try writeChanged(songs, in: db, same: sameSong)
+                try db.execute(sql: "DELETE FROM genreMember WHERE genre = ?", arguments: [genre])
+                for album in albums {
+                    try db.execute(sql: "INSERT OR IGNORE INTO genreMember(genre, kind, itemId) VALUES (?, 'album', ?)", arguments: [genre, album.id])
+                }
+                for song in songs {
+                    try db.execute(sql: "INSERT OR IGNORE INTO genreMember(genre, kind, itemId) VALUES (?, 'song', ?)", arguments: [genre, song.id])
+                }
+            }
+            await database.setStateValue(String(Date().timeIntervalSince1970), for: key)
+        } catch {
+            if !(error is CancellationError) { Log.sync.warning("genreMembers(\(genre)) failed: \(error.localizedDescription)") }
+            requestedGenres.remove(genre.lowercased())
         }
     }
 

@@ -197,7 +197,14 @@ struct RootView: View {
             return
         }
         guard app.session == .ready else { return }
-        await app.waitForSync()
+        // The mirror is filled after the first launch, so routing only waits briefly for the sync: a full demo-server
+        // sync can outlast the audit's capture delay and the shot would show Home.
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await app.waitForSync() }
+            group.addTask { try? await Task.sleep(for: .seconds(3)) }
+            await group.next()
+            group.cancelAll()
+        }
         try? await Task.sleep(nanoseconds: 300_000_000)
         hasAppliedDebugRouting = true
         let isRegular = horizontalSizeClass == .regular

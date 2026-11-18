@@ -170,7 +170,18 @@ final class StreamoraBridge: NSObject, WKScriptMessageHandlerWithReply {
         classic = vc
         var top: UIViewController = host
         while let presented = top.presentedViewController, !presented.isBeingDismissed { top = presented }
-        top.present(vc, animated: true) { reply(nil, nil) }
+        // "Next episode" closes the player and the page asks for the next one right away; UIKit refuses to present
+        // while the old player is still animating out, so wait for that dismissal to finish.
+        // Holds `vc` strongly: `classic` is weak, so until it is presented this closure is its only owner.
+        let present = { [weak self] in
+            guard self?.classic === vc else { return reply(nil, "Player was replaced") }
+            top.present(vc, animated: true) { reply(nil, nil) }
+        }
+        if let leaving = top.presentedViewController, leaving.isBeingDismissed, let coordinator = leaving.transitionCoordinator {
+            coordinator.animate(alongsideTransition: nil) { _ in present() }
+        } else {
+            present()
+        }
     }
 }
 

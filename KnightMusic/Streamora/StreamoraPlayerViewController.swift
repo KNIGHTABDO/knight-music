@@ -247,7 +247,9 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
             if let e = error { data["error"] = e }
             send("closed", data)
         }
-        dismiss(animated: true)
+        // From the presenter: on the player itself, dismiss only closes the track sheet when one is open (the
+        // movie ending under it left a dead player on screen).
+        (presentingViewController ?? self).dismiss(animated: true)
     }
 
     // MARK: - extras from the web side (online subtitles, intro times); they can arrive after playback starts

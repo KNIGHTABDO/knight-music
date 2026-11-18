@@ -124,6 +124,9 @@ jobs:
           xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b > /dev/null
           xcrun simctl ui "$UDID" appearance dark
           xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 || true
+          # Grant the mic up front: the "recognize" shot would otherwise leave the system prompt over every later shot.
+          APP_PATH=$(ls -d build/Products/*-iphonesimulator/*.app | grep -v Runner | head -1)
+          xcrun simctl install "$UDID" "$APP_PATH" && xcrun simctl privacy "$UDID" grant microphone com.knightabdo.knightmusic || true
           OUT="$PWD/audit"; mkdir -p "$OUT"
           XCTESTRUN=$(ls build/Products/*.xctestrun | head -1)
           set +e

@@ -94,7 +94,11 @@ enum LibraryQueries {
     static func albums(_ db: Database, genre: String) throws -> [Album] {
         try Album.fetchAll(
             db,
-            sql: "SELECT * FROM album WHERE genre = ? COLLATE NOCASE ORDER BY name COLLATE NOCASE",
+            sql: """
+            SELECT * FROM album WHERE genre = ?1 COLLATE NOCASE
+               OR id IN (SELECT itemId FROM genreMember WHERE genre = ?1 AND kind = 'album')
+            ORDER BY name COLLATE NOCASE
+            """,
             arguments: [genre]
         )
     }
@@ -170,7 +174,11 @@ enum LibraryQueries {
     }
 
     static func songs(_ db: Database, genre: String, limit: Int?) throws -> [Song] {
-        var sql = "SELECT * FROM song WHERE genre = ? COLLATE NOCASE ORDER BY title COLLATE NOCASE"
+        var sql = """
+        SELECT * FROM song WHERE genre = ?1 COLLATE NOCASE
+           OR id IN (SELECT itemId FROM genreMember WHERE genre = ?1 AND kind = 'song')
+        ORDER BY title COLLATE NOCASE
+        """
         if let limit { sql += " LIMIT \(limit)" }
         return try Song.fetchAll(db, sql: sql, arguments: [genre])
     }
