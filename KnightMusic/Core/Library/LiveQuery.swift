@@ -19,6 +19,8 @@ final class LiveQuery<Value: Sendable & Equatable> {
     @ObservationIgnored private let fetch: @Sendable (Database) throws -> Value
     @ObservationIgnored private var pendingValue: Value?
     @ObservationIgnored private var coalesceTask: Task<Void, Never>?
+    @ObservationIgnored private var lastApplied: ContinuousClock.Instant?
+    private static var coalesceWindow: Duration { .milliseconds(300) }
 
     init(initial: Value, database: LibraryDatabase?, fetch: @escaping @Sendable (Database) throws -> Value) {
         value = initial
@@ -55,20 +57,36 @@ final class LiveQuery<Value: Sendable & Equatable> {
                     if newValue != value {
                         value = newValue
                     }
+                    lastApplied = ContinuousClock.now
                     isLoaded = true
                     error = nil
                     continue
                 }
 
-                guard newValue != value else { continue }
-                pendingValue = newValue
+                // The database is back at what is on screen (e.g. an optimistic write rolled back): drop the stale pending value.
+                if newValue == value {
+                    pendingValue = nil
+                    continue
+                }
 
+                // Leading edge: the first change after a quiet period shows at once, so taps feel instant.
+                // Bursts that follow are coalesced into one trailing update.
+                let now = ContinuousClock.now
+                if coalesceTask == nil, lastApplied.map({ now - $0 >= Self.coalesceWindow }) ?? true {
+                    value = newValue
+                    lastApplied = now
+                    continue
+                }
+
+                pendingValue = newValue
                 if coalesceTask == nil {
+                    let wait = Self.coalesceWindow - (lastApplied.map { now - $0 } ?? .zero)
                     coalesceTask = Task { @MainActor [weak self] in
-                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        try? await Task.sleep(for: max(wait, .milliseconds(20)))
                         guard !Task.isCancelled, let self else { return }
                         if let pending = self.pendingValue, pending != self.value {
                             self.value = pending
+                            self.lastApplied = ContinuousClock.now
                         }
                         self.pendingValue = nil
                         self.coalesceTask = nil

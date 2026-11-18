@@ -31,7 +31,10 @@ final class NetworkMonitor {
         isExpensive = path.isExpensive
         isWiFi = wifi
         isCellular = cellular
-        let signature = "\(connected)|\(wifi)|\(cellular)|\(wired)|\(path.isExpensive)"
+        // Interface names and gateways too: Wi-Fi to Wi-Fi, or a VPN/Tailscale toggle, keeps the type flags identical.
+        let interfaces = path.availableInterfaces.map(\.name).sorted().joined(separator: ",")
+        let gateways = path.gateways.map { "\($0)" }.sorted().joined(separator: ",")
+        let signature = "\(connected)|\(wifi)|\(cellular)|\(wired)|\(path.isExpensive)|\(path.isConstrained)|\(interfaces)|\(gateways)"
         defer { lastSignature = signature }
         guard let previous = lastSignature, previous != signature else { return }
         changeCount += 1

@@ -370,12 +370,15 @@ final class AppModel {
 
     func switchAccount(id: UUID) {
         guard id != activeAccount?.id, let account = accounts.accounts.first(where: { $0.id == id }) else { return }
+        let previousActive = accounts.active
         accounts.setActive(id)
         do {
             try activate(account)
             syncTask = Task { await self.refresh() }
         } catch {
-            session = .failed(error.localizedDescription)
+            // activate fails before it tears the old session down: keep that session and the persisted choice.
+            if let previousActive { accounts.setActive(previousActive.id) }
+            library.report(error, "Could not switch server")
             Log.app.error("switchAccount failed: \(error)")
         }
     }

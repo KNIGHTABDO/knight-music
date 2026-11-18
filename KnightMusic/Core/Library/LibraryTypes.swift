@@ -52,6 +52,7 @@ enum LibraryError: LocalizedError {
     case offline
     case notFound
     case accountChanged
+    case playlistChanged
 
     var errorDescription: String? {
         switch self {
@@ -59,6 +60,7 @@ enum LibraryError: LocalizedError {
         case .offline: return "You are offline. Go online to make this change."
         case .notFound: return "That item is no longer in your library."
         case .accountChanged: return "The server changed. Try the action again on the intended server."
+        case .playlistChanged: return "This playlist was changed elsewhere. It has been refreshed; try again."
         }
     }
 }

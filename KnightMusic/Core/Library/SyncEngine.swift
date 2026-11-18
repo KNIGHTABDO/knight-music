@@ -7,8 +7,9 @@ import GRDB
 actor SyncEngine {
     private let database: LibraryDatabase
     private var client: SubsonicClient
-    private let status: SyncStatus
+    private let status: SyncStatusHandle
     private var inflight: Task<Bool, Never>?
+    private var inflightForced = false
     private var softErrors: [String] = []
 
     private static let pageSize = 500
@@ -16,7 +17,7 @@ actor SyncEngine {
     init(database: LibraryDatabase, client: SubsonicClient, status: SyncStatus) {
         self.database = database
         self.client = client
-        self.status = status
+        self.status = SyncStatusHandle(status: status)
     }
 
     func setClient(_ client: SubsonicClient) { self.client = client }
@@ -27,11 +28,19 @@ actor SyncEngine {
     /// pass completed. `force` re-reads the whole library even if the server reports no change.
     @discardableResult
     func sync(force: Bool = false) async -> Bool {
-        if let inflight { return await inflight.value }
+        if let running = inflight {
+            let wasForced = inflightForced
+            let ok = await running.value
+            if inflight == running { inflight = nil }
+            // A cancelled run says nothing about this request, and a quiet pass must not swallow a forced one.
+            if running.isCancelled || (force && !wasForced) { return await sync(force: force) }
+            return ok
+        }
         let task = Task { await self.run(force: force) }
         inflight = task
+        inflightForced = force
         let ok = await task.value
-        inflight = nil
+        if inflight == task { inflight = nil }
         return ok
     }
 
@@ -102,6 +111,12 @@ actor SyncEngine {
             await status.finish(error: nil, completedAt: nil)
             return false
         } catch {
+            if Task.isCancelled {
+                // Torn down mid-run (account switch, logout): the closed database throws, which is not a sync failure.
+                Log.sync.info("sync aborted after cancellation: \(error)")
+                await status.finish(error: nil, completedAt: nil)
+                return false
+            }
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             Log.sync.error("sync failed: \(error)")
             await status.finish(error: message, completedAt: nil)
@@ -122,11 +137,11 @@ actor SyncEngine {
 
         await status.update(phase: "Syncing artists…", fraction: 0.02)
         let artists = try await client.getArtists()
+        let storedArtists = await countRows("artist") ?? 0
         try await database.pool.write { db in
             _ = try writeChanged(artists, in: db, same: sameArtist)
         }
-        let removedArtists = try await sweep("artist", keeping: Set(artists.map(\.id)))
-        Log.sync.info("artists: \(artists.count) (removed \(removedArtists))")
+        await sweepArtists(artists, storedBefore: storedArtists)
         let expectedAlbums = artists.reduce(0) { $0 + ($1.albumCount ?? 0) }
 
         await status.update(phase: "Syncing albums…", fraction: 0.06)
@@ -171,11 +186,11 @@ actor SyncEngine {
 
         await status.update(phase: "Syncing artists…", fraction: 0.02)
         let artists = try await client.getArtists()
+        let storedArtists = await countRows("artist") ?? 0
         try await database.pool.write { db in
             _ = try writeChanged(artists, in: db, same: sameArtist)
         }
-        let removedArtists = try await sweep("artist", keeping: Set(artists.map(\.id)))
-        Log.sync.info("artists: \(artists.count) (removed \(removedArtists))")
+        await sweepArtists(artists, storedBefore: storedArtists)
         let expectedAlbums = artists.reduce(0) { $0 + ($1.albumCount ?? 0) }
 
         await status.update(phase: "Syncing albums…", fraction: 0.06)
@@ -246,6 +261,17 @@ actor SyncEngine {
                 )
             }
             Log.sync.info("incremental: refreshed songs for \(changedAlbums.count) albums")
+        }
+    }
+
+    /// Artists are swept only when the answer looks complete, like albums and songs.
+    private func sweepArtists(_ artists: [Artist], storedBefore: Int) async {
+        guard guardSweep(seen: artists.count, expected: storedBefore, ratio: 0.9, what: "artists") else { return }
+        do {
+            let removed = try await sweep("artist", keeping: Set(artists.map(\.id)))
+            Log.sync.info("artists: \(artists.count) (removed \(removed))")
+        } catch {
+            Log.sync.error("artist sweep failed: \(error)")
         }
     }
 
@@ -379,8 +405,14 @@ actor SyncEngine {
     }
 
     private func syncStarred(client: SubsonicClient) async throws {
+        let epoch = database.starEpoch
         let items = try await client.getStarred2()
-        try await database.pool.write { db in
+        try await database.pool.write { [database] db in
+            // A heart tapped while this snapshot was in flight is newer than the snapshot: leave stars to the next pass.
+            guard database.starEpoch == epoch, !database.hasStarMutationInFlight else {
+                Log.sync.info("starred snapshot skipped: a star changed during the fetch")
+                return
+            }
             _ = try writeChanged(items.artists, in: db, same: sameArtist)
             _ = try writeChanged(items.albums, in: db, same: sameAlbum)
             _ = try writeChanged(items.songs, in: db, same: sameSong)

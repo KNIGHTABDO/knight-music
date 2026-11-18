@@ -149,7 +149,9 @@ final class AccountBackupService {
             let local = captureLocal(account: account)
             let localFingerprint = local.fingerprint
 
-            if let remote, remote.updatedAt.timeIntervalSince(state?.remoteUpdatedAt ?? .distantPast) > 0.001 {
+            // "Different", not "newer": the stamps come from each device's own clock, so a device whose clock runs
+            // behind would otherwise never be believed.
+            if let remote, abs(remote.updatedAt.timeIntervalSince(state?.remoteUpdatedAt ?? .distantPast)) > 0.001 {
                 let neverSynced = state == nil
                 if neverSynced || state?.fingerprint == localFingerprint {
                     apply(remote, accountId: account.id, freshInstall: neverSynced)
@@ -158,6 +160,7 @@ final class AccountBackupService {
                     return
                 }
                 Log.app.info("Backup: server and device both changed; keeping this device's settings")
+                postNotice("Settings changed on two devices. This device's copy was kept.")
             }
 
             if remote == nil || state?.fingerprint != localFingerprint || userInitiated {
