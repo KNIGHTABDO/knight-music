@@ -44,7 +44,8 @@ jobs:
           xcodebuild -version
 
       - name: Stub Kick secrets
-        run: printf 'enum KickSecrets {\n    static let CLIENT_ID = #""#\n    static let CLIENT_SECRET = #""#\n}\n' > KickLiveWidget/KickSecrets.swift
+        run: |
+          printf 'enum KickSecrets {\n    static let CLIENT_ID = #"%s"#\n    static let CLIENT_SECRET = #"%s"#\n}\n' "" "" > KickLiveWidget/KickSecrets.swift
 
       - uses: actions/cache@v4
         with:
