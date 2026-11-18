@@ -1,0 +1,303 @@
+# UI audit: build once, then screenshot / rotate / crawl the app on many simulators in parallel.
+# Runs on workflow_dispatch, or on a push whose commit message contains [audit] (or [audit:screen1,screen2]).
+# Artifacts: audit-<device>-<orientation> with PNGs, accessibility trees (*.ax.txt), events and the app log.
+name: UI audit
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['**.md', 'ref/**', 'server/**']
+  workflow_dispatch:
+    inputs:
+      screens:
+        description: Comma-separated screens (empty = all)
+        type: string
+        default: ''
+
+concurrency:
+  group: ui-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[audit')
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      screens: ${{ steps.screens.outputs.screens }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: screens
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          INPUT_SCREENS: ${{ inputs.screens }}
+        run: |
+          S="$INPUT_SCREENS"
+          [ -z "$S" ] && S="$(printf '%s' "$COMMIT_MESSAGE" | sed -n 's/.*\[audit:\([a-z,-]*\)\].*/\1/p' | head -1)"
+          echo "screens=$S" >> "$GITHUB_OUTPUT"
+
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: Stub Kick secrets
+        run: printf 'enum KickSecrets {\n    static let CLIENT_ID = #""#\n    static let CLIENT_SECRET = #""#\n}\n' > KickLiveWidget/KickSecrets.swift
+
+      - uses: actions/cache@v4
+        with:
+          path: Vendor/MobileVLCKit.xcframework
+          key: vlckit-${{ hashFiles('scripts/fetch-vlckit.sh') }}
+
+      - run: scripts/fetch-vlckit.sh
+      - run: scripts/fetch-intro.sh
+
+      - name: Generate project
+        run: |
+          brew install xcodegen >/dev/null
+          xcodegen generate
+
+      - uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-${{ hashFiles('project.yml') }}
+
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild -project KnightMusic.xcodeproj -scheme KnightMusic -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/dd -clonedSourcePackagesDirPath build/SourcePackages \
+            CODE_SIGNING_ALLOWED=NO build-for-testing > build.log 2>&1 \
+            || { grep -E "error:|fatal error" build.log | sort -u | head -80; tail -30 build.log; exit 1; }
+          echo "BUILD OK"
+          tar -C build/dd/Build -czf products.tgz Products
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-products
+          path: products.tgz
+          retention-days: 1
+
+  shots:
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        device:
+          - { label: iphone-17-pro, match: '^iPhone 17 Pro
+        orientation: [portrait, landscape]
+    steps:
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-products
+
+      - name: Run audit
+        env:
+          DEVICE: ${{ matrix.device.match }}
+          LABEL: ${{ matrix.device.label }}
+          ORIENTATION: ${{ matrix.orientation }}
+          SCREENS: ${{ needs.build.outputs.screens }}
+        run: |
+          mkdir -p build && tar -C build -xzf products.tgz
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys,re
+          d=json.load(sys.stdin)['devices']
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if re.search(sys.argv[1],x['name'])]
+          c.sort(key=lambda x:x['name']); print(c[-1]['udid'] if c else '')" "$DEVICE")
+          if [ -z "$UDID" ]; then echo "No simulator named $DEVICE"; xcrun simctl list devices available | grep -E "iPhone|iPad"; exit 1; fi
+          xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b > /dev/null
+          xcrun simctl ui "$UDID" appearance dark
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 || true
+          OUT="$PWD/audit"; mkdir -p "$OUT"
+          XCTESTRUN=$(ls build/Products/*.xctestrun | head -1)
+          set +e
+          TEST_RUNNER_SHOTS_DIR="$OUT" TEST_RUNNER_SHOTS_LABEL="$LABEL" TEST_RUNNER_SHOTS_ORIENTATION="$ORIENTATION" \
+          TEST_RUNNER_SHOTS_SCREENS="$SCREENS" \
+          xcodebuild test-without-building -xctestrun "$XCTESTRUN" -destination "id=$UDID" \
+            -resultBundlePath audit.xcresult > test.log 2>&1
+          echo "xcodebuild exit $?"
+          grep -E "Test Case .*(passed|failed)|error:|XCTAssert|NOT RUNNING|CRASH" test.log | head -60
+          xcrun xcresulttool export attachments --path audit.xcresult --output-path "$OUT/attachments" > /dev/null 2>&1 || true
+          xcrun simctl spawn "$UDID" log show --last 90m --predicate 'subsystem == "com.knightabdo.knightmusic"' --style compact > "$OUT/$LABEL-$ORIENTATION-app-log.txt" 2>/dev/null
+          find ~/Library/Logs/DiagnosticReports -name 'KnightMusic*' -newer products.tgz -exec cp {} "$OUT/" \; 2>/dev/null
+          cp test.log "$OUT/$LABEL-$ORIENTATION-test.log"
+          ls "$OUT" | wc -l
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-${{ matrix.device.label }}-${{ matrix.orientation }}
+          path: audit/
+          retention-days: 2
+ }
+          - { label: iphone-17-pro-max, match: '^iPhone 17 Pro Max
+        orientation: [portrait, landscape]
+    steps:
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-products
+
+      - name: Run audit
+        env:
+          DEVICE: ${{ matrix.device }}
+          ORIENTATION: ${{ matrix.orientation }}
+          SCREENS: ${{ needs.build.outputs.screens }}
+        run: |
+          mkdir -p build && tar -C build -xzf products.tgz
+          LABEL=$(printf '%s' "$DEVICE" | tr 'A-Z ' 'a-z-' | tr -cd 'a-z0-9-')
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']; want=sys.argv[1]
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if x['name']==want or x['name'].startswith(want+' (')]
+          c.sort(key=lambda x:x['name']); print(c[-1]['udid'] if c else '')" "$DEVICE")
+          if [ -z "$UDID" ]; then echo "No simulator named $DEVICE"; xcrun simctl list devices available | grep -E "iPhone|iPad"; exit 1; fi
+          echo "LABEL=$LABEL" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b > /dev/null
+          xcrun simctl ui "$UDID" appearance dark
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 || true
+          OUT="$PWD/audit"; mkdir -p "$OUT"
+          XCTESTRUN=$(ls build/Products/*.xctestrun | head -1)
+          set +e
+          TEST_RUNNER_SHOTS_DIR="$OUT" TEST_RUNNER_SHOTS_LABEL="$LABEL" TEST_RUNNER_SHOTS_ORIENTATION="$ORIENTATION" \
+          TEST_RUNNER_SHOTS_SCREENS="$SCREENS" \
+          xcodebuild test-without-building -xctestrun "$XCTESTRUN" -destination "id=$UDID" \
+            -resultBundlePath audit.xcresult > test.log 2>&1
+          echo "xcodebuild exit $?"
+          grep -E "Test Case .*(passed|failed)|error:|XCTAssert|NOT RUNNING|CRASH" test.log | head -60
+          xcrun xcresulttool export attachments --path audit.xcresult --output-path "$OUT/attachments" > /dev/null 2>&1 || true
+          xcrun simctl spawn "$UDID" log show --last 90m --predicate 'subsystem == "com.knightabdo.knightmusic"' --style compact > "$OUT/$LABEL-$ORIENTATION-app-log.txt" 2>/dev/null
+          find ~/Library/Logs/DiagnosticReports -name 'KnightMusic*' -newer products.tgz -exec cp {} "$OUT/" \; 2>/dev/null
+          cp test.log "$OUT/$LABEL-$ORIENTATION-test.log"
+          ls "$OUT" | wc -l
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-${{ env.LABEL }}-${{ matrix.orientation }}
+          path: audit/
+          retention-days: 2
+ }
+          - { label: iphone-small, match: '^iPhone (16e|17e|Air)
+        orientation: [portrait, landscape]
+    steps:
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-products
+
+      - name: Run audit
+        env:
+          DEVICE: ${{ matrix.device }}
+          ORIENTATION: ${{ matrix.orientation }}
+          SCREENS: ${{ needs.build.outputs.screens }}
+        run: |
+          mkdir -p build && tar -C build -xzf products.tgz
+          LABEL=$(printf '%s' "$DEVICE" | tr 'A-Z ' 'a-z-' | tr -cd 'a-z0-9-')
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']; want=sys.argv[1]
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if x['name']==want or x['name'].startswith(want+' (')]
+          c.sort(key=lambda x:x['name']); print(c[-1]['udid'] if c else '')" "$DEVICE")
+          if [ -z "$UDID" ]; then echo "No simulator named $DEVICE"; xcrun simctl list devices available | grep -E "iPhone|iPad"; exit 1; fi
+          echo "LABEL=$LABEL" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b > /dev/null
+          xcrun simctl ui "$UDID" appearance dark
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 || true
+          OUT="$PWD/audit"; mkdir -p "$OUT"
+          XCTESTRUN=$(ls build/Products/*.xctestrun | head -1)
+          set +e
+          TEST_RUNNER_SHOTS_DIR="$OUT" TEST_RUNNER_SHOTS_LABEL="$LABEL" TEST_RUNNER_SHOTS_ORIENTATION="$ORIENTATION" \
+          TEST_RUNNER_SHOTS_SCREENS="$SCREENS" \
+          xcodebuild test-without-building -xctestrun "$XCTESTRUN" -destination "id=$UDID" \
+            -resultBundlePath audit.xcresult > test.log 2>&1
+          echo "xcodebuild exit $?"
+          grep -E "Test Case .*(passed|failed)|error:|XCTAssert|NOT RUNNING|CRASH" test.log | head -60
+          xcrun xcresulttool export attachments --path audit.xcresult --output-path "$OUT/attachments" > /dev/null 2>&1 || true
+          xcrun simctl spawn "$UDID" log show --last 90m --predicate 'subsystem == "com.knightabdo.knightmusic"' --style compact > "$OUT/$LABEL-$ORIENTATION-app-log.txt" 2>/dev/null
+          find ~/Library/Logs/DiagnosticReports -name 'KnightMusic*' -newer products.tgz -exec cp {} "$OUT/" \; 2>/dev/null
+          cp test.log "$OUT/$LABEL-$ORIENTATION-test.log"
+          ls "$OUT" | wc -l
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-${{ env.LABEL }}-${{ matrix.orientation }}
+          path: audit/
+          retention-days: 2
+ }
+          - { label: ipad-mini, match: '^iPad mini' }
+          - { label: ipad-air-11, match: '^iPad Air 11' }
+          - { label: ipad-pro-13, match: '^iPad Pro 13' }
+        orientation: [portrait, landscape]
+    steps:
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-products
+
+      - name: Run audit
+        env:
+          DEVICE: ${{ matrix.device }}
+          ORIENTATION: ${{ matrix.orientation }}
+          SCREENS: ${{ needs.build.outputs.screens }}
+        run: |
+          mkdir -p build && tar -C build -xzf products.tgz
+          LABEL=$(printf '%s' "$DEVICE" | tr 'A-Z ' 'a-z-' | tr -cd 'a-z0-9-')
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']; want=sys.argv[1]
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if x['name']==want or x['name'].startswith(want+' (')]
+          c.sort(key=lambda x:x['name']); print(c[-1]['udid'] if c else '')" "$DEVICE")
+          if [ -z "$UDID" ]; then echo "No simulator named $DEVICE"; xcrun simctl list devices available | grep -E "iPhone|iPad"; exit 1; fi
+          echo "LABEL=$LABEL" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b > /dev/null
+          xcrun simctl ui "$UDID" appearance dark
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 || true
+          OUT="$PWD/audit"; mkdir -p "$OUT"
+          XCTESTRUN=$(ls build/Products/*.xctestrun | head -1)
+          set +e
+          TEST_RUNNER_SHOTS_DIR="$OUT" TEST_RUNNER_SHOTS_LABEL="$LABEL" TEST_RUNNER_SHOTS_ORIENTATION="$ORIENTATION" \
+          TEST_RUNNER_SHOTS_SCREENS="$SCREENS" \
+          xcodebuild test-without-building -xctestrun "$XCTESTRUN" -destination "id=$UDID" \
+            -resultBundlePath audit.xcresult > test.log 2>&1
+          echo "xcodebuild exit $?"
+          grep -E "Test Case .*(passed|failed)|error:|XCTAssert|NOT RUNNING|CRASH" test.log | head -60
+          xcrun xcresulttool export attachments --path audit.xcresult --output-path "$OUT/attachments" > /dev/null 2>&1 || true
+          xcrun simctl spawn "$UDID" log show --last 90m --predicate 'subsystem == "com.knightabdo.knightmusic"' --style compact > "$OUT/$LABEL-$ORIENTATION-app-log.txt" 2>/dev/null
+          find ~/Library/Logs/DiagnosticReports -name 'KnightMusic*' -newer products.tgz -exec cp {} "$OUT/" \; 2>/dev/null
+          cp test.log "$OUT/$LABEL-$ORIENTATION-test.log"
+          ls "$OUT" | wc -l
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: audit-${{ env.LABEL }}-${{ matrix.orientation }}
+          path: audit/
+          retention-days: 2

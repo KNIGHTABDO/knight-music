@@ -184,8 +184,51 @@ enum DebugLaunch {
         case "onboarding":
             // Handled in RootView by presenting LoginView regardless of session
             break
+        case "library-hub":
+            ui.selectedTab = isRegular ? .home : .library
+        case "genres":
+            show(.genres, ui: ui, nav: nav, isRegular: isRegular)
+        case "radio":
+            show(.radioStations, ui: ui, nav: nav, isRegular: isRegular)
+        case "replay":
+            show(.replay, ui: ui, nav: nav, isRegular: isRegular)
+        case "favorite-artists":
+            show(.favoriteArtists, ui: ui, nav: nav, isRegular: isRegular)
+        case "recent-albums":
+            show(.albumList(.recentlyAdded), ui: ui, nav: nav, isRegular: isRegular)
+        case "favorite-songs":
+            show(.songList(.favorites), ui: ui, nav: nav, isRegular: isRegular)
+        case "playlist":
+            if let playlist = try? await app.database?.pool.read({ db in try LibraryQueries.playlists(db).first }) {
+                show(.playlist(playlist.id), ui: ui, nav: nav, isRegular: isRegular)
+            }
+        case "genre":
+            if let genre = try? await app.database?.pool.read({ db in try LibraryQueries.genres(db).first }) {
+                show(.genre(genre.name), ui: ui, nav: nav, isRegular: isRegular)
+            }
+        case "song-info":
+            if let song = try? await app.database?.pool.read({ db in try Song.fetchOne(db) }) {
+                ui.songInfo = song
+            }
         default:
             break
+        }
+    }
+
+    /// Pushes a route where a user would find it: its sidebar section on iPad (or Home when it has none),
+    /// the Library tab on iPhone.
+    @MainActor
+    private static func show(_ route: Route, ui: UIState, nav: TabNavigationModel, isRegular: Bool) {
+        if isRegular {
+            if MainTabsView.libraryItems.contains(where: { $0.route == route }) {
+                ui.selectedTab = .section(route)
+            } else {
+                ui.selectedTab = .home
+                nav.home.append(route)
+            }
+        } else {
+            ui.selectedTab = .library
+            nav.library.append(route)
         }
     }
 }

@@ -29,6 +29,9 @@ targets:
   KnightMusic:
     type: application
     platform: iOS
+    scheme:
+      testTargets:
+        - KnightMusicUITests
     sources:
       - path: KnightMusic
       - path: KnightMusicWidgets/Shared
@@ -173,3 +176,16 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
+  # UI audit (CI only, .github/workflows/ui-audit.yml): screenshots, rotation and crawl passes on simulators.
+  KnightMusicUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: KnightMusicUITests
+    dependencies:
+      - target: KnightMusic
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.knightabdo.knightmusic.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: KnightMusic

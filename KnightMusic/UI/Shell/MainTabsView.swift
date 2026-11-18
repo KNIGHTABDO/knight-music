@@ -12,7 +12,7 @@ struct MainTabsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
 
-    private struct LibraryTabItem: Identifiable {
+    struct LibraryTabItem: Identifiable {
         let id: Route
         let title: String
         let systemImage: String
@@ -20,7 +20,7 @@ struct MainTabsView: View {
         let customizationId: String
     }
 
-    private static let libraryItems: [LibraryTabItem] = [
+    static let libraryItems: [LibraryTabItem] = [
         LibraryTabItem(id: .artists, title: "Artists", systemImage: "music.mic", route: .artists, customizationId: "library.artists"),
         LibraryTabItem(id: .albums, title: "Albums", systemImage: "square.stack", route: .albums, customizationId: "library.albums"),
         LibraryTabItem(id: .songs, title: "Songs", systemImage: "music.note", route: .songs, customizationId: "library.songs"),
