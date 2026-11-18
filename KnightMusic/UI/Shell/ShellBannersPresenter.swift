@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Toasts, Navidrome import progress and the "already in your library" question. Applied to the shell and to
-/// the full player (which covers the shell), showing in whichever is on screen.
+/// Navidrome import progress and the "already in your library" question. Applied to the shell and to
+/// the full player (which covers the shell), showing in whichever is on screen. Toasts live in `ToastWindow`.
 struct ShellBannersPresenter: ViewModifier {
     var insidePlayer: Bool
 
@@ -13,17 +13,10 @@ struct ShellBannersPresenter: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .onAppear { ToastWindow.shared.install(ui: ui) }
             .overlay(alignment: .top) {
                 if isActive {
                     VStack(spacing: 8) {
-                        if let toast = ui.toast {
-                            ToastCapsule(text: toast, actionTitle: ui.toastActionTitle) {
-                                let action = ui.toastAction
-                                ui.dismissToast()
-                                action?()
-                            }
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                        }
                         if let job = imports.visibleJob {
                             ImportProgressPill(job: job) {
                                 if let song = job.importedSong, job.state == .done {
@@ -39,10 +32,10 @@ struct ShellBannersPresenter: ViewModifier {
                             .transition(.move(edge: .top).combined(with: .opacity))
                         }
                     }
-                    .padding(.top, 12)
+                    .padding(.top, ui.toast == nil ? 12 : 64) // sits below the toast, which lives in its own window
                     .padding(.horizontal, 20)
-                    .animation(.smooth, value: ui.toast)
                     .animation(.smooth, value: imports.visibleJob)
+                    .animation(.smooth, value: ui.toast == nil)
                 }
             }
             .confirmationDialog(
@@ -73,32 +66,6 @@ struct ShellBannersPresenter: ViewModifier {
             ? "You already have \u{201C}\(confirmation.song.title)\u{201D}:"
             : "You have another version of \u{201C}\(confirmation.song.title)\u{201D}:"
         return lead + "\n" + list
-    }
-}
-
-private struct ToastCapsule: View {
-    let text: String
-    let actionTitle: String?
-    let action: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "info.circle.fill")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.accent)
-            Text(text)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Theme.label)
-                .lineLimit(2)
-            if let actionTitle {
-                Button(actionTitle, action: action)
-                    .font(.system(size: 14, weight: .bold))
-                    .tint(Theme.accent)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .glassEffect(.regular, in: .capsule)
     }
 }
 

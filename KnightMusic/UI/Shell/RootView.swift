@@ -108,7 +108,7 @@ struct RootView: View {
         .environment(nav)
         .task(id: ui.toastID) {
             guard ui.toast != nil else { return }
-            do { try await Task.sleep(for: .seconds(ui.toastAction == nil ? 2.5 : 8)) } catch { return }
+            do { try await Task.sleep(for: .seconds(ui.toastDuration)) } catch { return }
             withAnimation(.smooth) {
                 ui.dismissToast()
             }
