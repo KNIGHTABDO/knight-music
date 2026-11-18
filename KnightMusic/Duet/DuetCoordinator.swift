@@ -31,6 +31,8 @@ final class DuetCoordinator {
     @ObservationIgnored private var hudWindow: DuetHUDWindow?
     @ObservationIgnored private var stageController: StreamoraStageController?
     @ObservationIgnored private var pending: DuetWorld?
+    /// A request that arrived during the page curl; replayed when it ends.
+    @ObservationIgnored private var queuedWhileSwitching: DuetWorld?
     @ObservationIgnored private var restoredLastSide = false
     @ObservationIgnored private var lastShake = Date.distantPast
     @ObservationIgnored private var promptTask: Task<Void, Never>?
@@ -77,6 +79,7 @@ final class DuetCoordinator {
         if let stageWindow, let stageController, stageWindow.windowScene === scene { return (stageWindow, stageController) }
         let controller = stageController ?? StreamoraStageController()
         stageWindow?.isHidden = true
+        stageWindow?.rootViewController = nil   // the controller moves to the new scene's window
         let window = UIWindow(windowScene: scene)
         window.windowLevel = .normal + 1
         window.overrideUserInterfaceStyle = .dark
@@ -160,7 +163,9 @@ final class DuetCoordinator {
         hud.isHidden = false
         Haptics.impact(.light)
         promptTask?.cancel()
-        guard !DebugLaunch.isDemo else { return }
+        UIAccessibility.post(notification: .announcement, argument: "\(next.title). \(next.detail)")
+        // VoiceOver / Switch Control users need more than 4 s: the prompt waits for them
+        guard !DebugLaunch.isDemo, !UIAccessibility.isVoiceOverRunning, !UIAccessibility.isSwitchControlRunning else { return }
         promptTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.promptDuration))
             guard !Task.isCancelled, let self, self.prompt?.id == next.id else { return }
@@ -200,7 +205,8 @@ final class DuetCoordinator {
         promptTask?.cancel()
         promptTask = nil
         if prompt != nil { withAnimation(.snappy) { prompt = nil } }
-        guard target != world, !isSwitching else { return updateHUDVisibility() }
+        if isSwitching { queuedWhileSwitching = target != world ? target : nil; return updateHUDVisibility() }
+        guard target != world else { return updateHUDVisibility() }
         guard let scene = currentScene(), let music = musicWindow(in: scene) else {
             pending = target
             return
@@ -231,6 +237,10 @@ final class DuetCoordinator {
             self?.isSwitching = false
             self?.updateHUDVisibility()
             Haptics.impact(.light)
+            if let queued = self?.queuedWhileSwitching {
+                self?.queuedWhileSwitching = nil
+                self?.switchTo(queued)
+            }
         }
 
         if target == .movies {

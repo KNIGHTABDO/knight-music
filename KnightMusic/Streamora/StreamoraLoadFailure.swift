@@ -37,7 +37,7 @@ enum StreamoraLoadFailure: Equatable {
 
     var detail: String {
         switch self {
-        case .offline: "Connect to Wi-Fi or cellular data. Duet will retry when it can connect."
+        case .offline: "Connect to Wi-Fi or cellular data. Duet retries once when it can connect, or tap Try Again."
         case .network: "Streamora may be temporarily unavailable. Try again in a moment."
         case .secureConnection: "Check the network and your device’s date and time, then try again."
         case .http(429): "Wait a moment before trying again."

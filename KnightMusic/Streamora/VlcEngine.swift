@@ -13,6 +13,11 @@ import MobileVLCKit
 // Lock screen / Control Center: MPNowPlayingInfoCenter + MPRemoteCommandCenter (acts on VLC directly, then tells the page with a 'remote' {action, time?} event).
 // Events: 'engine' {time, duration, playing, buffering, rate, width, height, ended?, error?} ~4×/s,
 //         'tracks' {audio: [{id, name}], subs: [{id, name}], audioId, subId} when they change.
+extension Double {
+    /// Milliseconds as a VLC Int32, clamped so a bad page value can never trap.
+    var vlcMillis: Int32 { Int32(clamping: Int64(max(0, min(self.isFinite ? self : 0, 1_000_000)) * 1000)) }
+}
+
 final class VlcEngine: NSObject {
     private let player = VLCMediaPlayer()
     // VLC hangs a tap recognizer on the drawable's superview: keep it on a container that never gets touches
@@ -73,7 +78,7 @@ final class VlcEngine: NSObject {
         let media = VLCMedia(url: url)
         media.addOption(":network-caching=10000")   // a big cache is what keeps playback smooth on a shaky connection
         media.addOption(":http-reconnect")
-        if start > 1 { media.addOption(":start-time=\(Int(start))") }
+        if start > 1 { media.addOption(":start-time=\(Int(max(0, min(start, 1_000_000))))") }
         if !audioLang.isEmpty { media.addOption(":audio-language=\(audioLang),any") }
         media.addOption(":sub-language=none")       // the web side picks subtitles (the file's or online ones)
         player.drawable = videoView
@@ -170,7 +175,7 @@ final class VlcEngine: NSObject {
         updateNowPlaying()
     }
 
-    func setAudioDelay(_ seconds: Double) { player.currentAudioPlaybackDelay = Int(seconds * 1_000_000) }
+    func setAudioDelay(_ seconds: Double) { player.currentAudioPlaybackDelay = Int(max(-3600, min(seconds.isFinite ? seconds : 0, 3600)) * 1_000_000) }
 
     // MARK: - controls (from JS)
 
@@ -178,10 +183,10 @@ final class VlcEngine: NSObject {
     func pause() { if !done, player.canPause { player.pause() } }
     func seek(_ t: Double) {
         guard !done else { return }
-        player.time = VLCTime(int: Int32(max(0, t) * 1000))
+        player.time = VLCTime(int: t.vlcMillis)
         sameTicks = 0
     }
-    func setRate(_ r: Double) { player.rate = Float(r) }
+    func setRate(_ r: Double) { if r.isFinite, r > 0 { player.rate = Float(r) } }
     func setVolume(_ v: Double, muted: Bool) {
         if let a = player.audio as VLCAudio? {
             a.volume = Int32(max(0, min(1, v)) * 100)

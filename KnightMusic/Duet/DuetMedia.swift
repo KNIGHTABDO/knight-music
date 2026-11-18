@@ -60,10 +60,11 @@ final class DuetMedia {
     func movieStopped(_ source: Source) {
         activeSources.remove(source)
         guard activeSources.isEmpty, Self.movieHasFocus else { return }
-        // Debounced: the web player closes the engine and reopens it when switching episodes or sources.
+        // Debounced (5 s): the web player closes the engine and reopens it when switching episodes or sources,
+        // and resolving the next source can take a few seconds; releasing early would blip the music back on.
         releaseTask?.cancel()
         releaseTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled, let self, self.activeSources.isEmpty else { return }
             self.giveFocusToMusic(resume: true)
         }

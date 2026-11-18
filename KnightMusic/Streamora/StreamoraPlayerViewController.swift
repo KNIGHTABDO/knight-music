@@ -1,6 +1,7 @@
 // Copied from the Streamora repo (app/plugin/ios/Sources/StreamoraPlayer/PlayerViewController.swift, 71954a0), types renamed.
 import UIKit
 import AVFoundation
+import MediaPlayer
 import MobileVLCKit
 
 struct StreamoraPlayerOptions {
@@ -49,6 +50,7 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
     private let fillBtn = UIButton(type: .system)
 
     private var timer: Timer?
+    private var commandTargets: [(MPRemoteCommand, Any)] = []
     private var hideWork: DispatchWorkItem?
     private var scrubbing = false
     private var finished = false
@@ -116,7 +118,7 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
         // a big network cache is what keeps playback smooth on a shaky connection
         media.addOption(":network-caching=10000")
         media.addOption(":http-reconnect")
-        if opts.start > 1 { media.addOption(":start-time=\(Int(opts.start))") }
+        if opts.start > 1 { media.addOption(":start-time=\(Int(max(0, min(opts.start.isFinite ? opts.start : 0, 1_000_000))))") }
         // the file's own tracks in the viewer's languages (fall back to whatever the file prefers)
         if !opts.audioLang.isEmpty { media.addOption(":audio-language=\(opts.audioLang),any") }
         media.addOption(opts.subsLang == "off" || opts.subsLang.isEmpty ? ":sub-language=none" : ":sub-language=\(opts.subsLang)")
@@ -127,7 +129,38 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
         UIApplication.shared.isIdleTimerDisabled = true
         NotificationCenter.default.addObserver(self, selector: #selector(appBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        setupRemote()
         scheduleHide()
+    }
+
+    /// Lock screen / headset play-pause while the classic player has the movie focus (Knight Music's commands stay quiet then).
+    private func setupRemote() {
+        let c = MPRemoteCommandCenter.shared()
+        func add(_ cmd: MPRemoteCommand, _ f: @escaping (VLCMediaPlayer) -> Void) {
+            cmd.isEnabled = true
+            let t = cmd.addTarget { [weak self] _ in
+                guard let self = self, !self.finished, DuetMedia.movieHasFocus else { return .commandFailed }
+                f(self.player)
+                return .success
+            }
+            commandTargets.append((cmd, t))
+        }
+        add(c.playCommand) { [weak self] p in self?.onPlay?(); p.play() }
+        add(c.pauseCommand) { p in if p.canPause { p.pause() } }
+        add(c.togglePlayPauseCommand) { [weak self] p in if p.isPlaying { p.pause() } else { self?.onPlay?(); p.play() } }
+    }
+
+    private func updateNowPlaying() {
+        guard !finished, DuetMedia.movieHasFocus else { return }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: opts.title,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
+            MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
+        ]
+        if !opts.subtitle.isEmpty { info[MPMediaItemPropertyArtist] = opts.subtitle }
+        if duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = duration }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     override func viewDidLayoutSubviews() {
@@ -186,7 +219,7 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
             return
         default: break
         }
-        if Date().timeIntervalSince(lastReport) >= 5 { report() }
+        if Date().timeIntervalSince(lastReport) >= 5 { report(); updateNowPlaying() }
     }
 
     private func report() {
@@ -205,6 +238,8 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
         let t = ended ? d : (everPlayed ? position : opts.start)
         timer?.invalidate()
         hideWork?.cancel()
+        for (cmd, t) in commandTargets { cmd.removeTarget(t) }
+        commandTargets = []
         player.stop()
         UIApplication.shared.isIdleTimerDisabled = false
         if notify {
@@ -284,7 +319,7 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
 
     @objc private func tapSkip() {
         guard let t = skipTarget else { return }
-        player.time = VLCTime(int: Int32(t * 1000))
+        player.time = VLCTime(int: t.vlcMillis)
         sameTicks = 0
     }
 
@@ -467,7 +502,7 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
     @objc private func scrubStart() { scrubbing = true; hideWork?.cancel() }
     @objc private func scrubMove() { curLabel.text = fmt(Double(slider.value) * duration) }
     @objc private func scrubEnd() {
-        if duration > 0 { player.time = VLCTime(int: Int32(Double(slider.value) * duration * 1000)) }
+        if duration > 0 { player.time = VLCTime(int: (Double(slider.value) * duration).vlcMillis) }
         scrubbing = false
         sameTicks = 0
         scheduleHide()
