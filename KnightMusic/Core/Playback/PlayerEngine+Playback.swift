@@ -90,6 +90,7 @@ extension PlayerEngine {
     func load(index: Int, autoplay: Bool, startAt: TimeInterval = 0,
               scanBackward: Bool = false, silent: Bool = false) -> Bool {
         playbackLoadRevision += 1
+        isAwaitingAddress = false
         guard !order.isEmpty else {
             clearPlayback()
             return false
@@ -105,6 +106,8 @@ extension PlayerEngine {
         }
         for i in sequence {
             let entry = order[i]
+            // An explicit request for this very entry is a retry: an earlier (possibly transient) failure must not veto it.
+            if i == index { failedEntryIds.remove(entry.id) }
             if failedEntryIds.contains(entry.id) { continue }
             guard let resolved = resolve(entry.song) else { continue }
             currentIndex = i
@@ -352,7 +355,8 @@ extension PlayerEngine {
             endOfSongArmed = false
             sleepTimer.endOfSongReached()
             userWantsPlaying = false
-            if let i = nextExplicitIndex() {
+            // Repeat One keeps the repeated song selected instead of silently moving on.
+            if let i = repeatMode == .one ? currentIndex : nextExplicitIndex() {
                 load(index: i, autoplay: false)
             } else {
                 finishQueue()
@@ -494,8 +498,9 @@ extension PlayerEngine {
         audioSession.onNewDeviceAvailable = { [weak self] in
             guard let self else { return }
             PlaybackLog.logger.info("Audio route new device available (CarPlay connect): keeping playback state")
-            if self.userWantsPlaying, !self.isPlaying {
-                self.player.play()
+            if self.userWantsPlaying, !self.isPlaying, !self.isInterrupted {
+                self.audioSession.activate()
+                if !self.resumeAutoMixDecks() { self.player.play() }
                 self.isPlaying = true
                 let rate = self.isBuffering ? 0.0 : 1.0
                 self.nowPlaying.updatePlayback(elapsed: self.elapsedNow(), rate: rate, state: .playing)

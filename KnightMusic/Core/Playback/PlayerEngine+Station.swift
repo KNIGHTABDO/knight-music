@@ -34,8 +34,9 @@ extension PlayerEngine {
             guard let self else { return }
             let known = Set(self.order.map(\.song.id))
             let picks = await self.stationSongs(after: current, excluding: known)
+            guard !Task.isCancelled else { return }
             self.stationRefillTask = nil
-            guard !Task.isCancelled, self.stationSeed != nil, !picks.isEmpty else { return }
+            guard self.stationSeed != nil, !picks.isEmpty else { return }
             self.enqueue(picks, next: false)
         }
     }

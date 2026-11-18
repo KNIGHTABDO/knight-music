@@ -68,8 +68,13 @@ final class Scrobbler {
                     do {
                         try await server.scrobble(songId: row.songId, time: row.time, submission: row.submission)
                     } catch {
-                        PlaybackLog.logger.error("Pending scrobble flush failed: \(error.localizedDescription)")
-                        return
+                        // 70 = the song no longer exists on the server: retrying can never succeed, so drop the row.
+                        if case SubsonicError.server(let code, _) = error, code == 70 {
+                            PlaybackLog.logger.error("Dropping pending scrobble for missing song \(row.songId)")
+                        } else {
+                            PlaybackLog.logger.error("Pending scrobble flush failed: \(error.localizedDescription)")
+                            return
+                        }
                     }
                     if let id = row.id {
                         do {
