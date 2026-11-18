@@ -84,7 +84,7 @@ final class ShazamService {
         Log.app.info("Recognition starting (liveActivity=\(liveActivity), allowDeferral=\(allowDeferral))")
 
         publishCredentials()
-        guard let credentials = RecognitionCredentials.load() ?? makeCredentials() else {
+        guard let credentials = makeCredentials() else {
             return conclude(.failed("Sign in to your server to identify songs."), liveActivity: false)
         }
 
@@ -280,7 +280,11 @@ final class ShazamService {
     }
 
     private func publishCredentials() {
-        makeCredentials()?.save()
+        if let credentials = makeCredentials() {
+            credentials.save()
+        } else {
+            RecognitionCredentials.clear()
+        }
     }
 
     // MARK: - Library

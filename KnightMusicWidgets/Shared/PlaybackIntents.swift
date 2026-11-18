@@ -13,6 +13,20 @@ public protocol IntentPlaybackHandling: AnyObject {
 
 public enum IntentPlaybackBridge {
     @MainActor public static var handler: IntentPlaybackHandling?
+
+    /// The app process wires the handler at launch; when it hasn't yet, say so instead of reporting a silent success.
+    @MainActor public static func requireHandler() throws -> IntentPlaybackHandling {
+        guard let handler else { throw IntentPlaybackError.appNotReady }
+        return handler
+    }
+}
+
+public enum IntentPlaybackError: Error, CustomLocalizedStringResourceConvertible {
+    case appNotReady
+
+    public var localizedStringResource: LocalizedStringResource {
+        "Open Knight Music and sign in first, then try again."
+    }
 }
 
 public struct PlayPauseIntent: AudioPlaybackIntent {
@@ -24,7 +38,7 @@ public struct PlayPauseIntent: AudioPlaybackIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        IntentPlaybackBridge.handler?.playPause()
+        try IntentPlaybackBridge.requireHandler().playPause()
         return .result()
     }
 }
@@ -38,7 +52,7 @@ public struct NextTrackIntent: AudioPlaybackIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        IntentPlaybackBridge.handler?.nextTrack()
+        try IntentPlaybackBridge.requireHandler().nextTrack()
         return .result()
     }
 }
@@ -52,7 +66,7 @@ public struct PreviousTrackIntent: AudioPlaybackIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        IntentPlaybackBridge.handler?.previousTrack()
+        try IntentPlaybackBridge.requireHandler().previousTrack()
         return .result()
     }
 }
@@ -66,7 +80,7 @@ public struct ShuffleLibraryIntent: AudioPlaybackIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        await IntentPlaybackBridge.handler?.shuffleLibrary()
+        try await IntentPlaybackBridge.requireHandler().shuffleLibrary()
         return .result()
     }
 }
@@ -80,7 +94,7 @@ public struct PlayFavoritesIntent: AudioPlaybackIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        await IntentPlaybackBridge.handler?.playFavorites()
+        try await IntentPlaybackBridge.requireHandler().playFavorites()
         return .result()
     }
 }
@@ -102,7 +116,7 @@ public struct PlayFavoriteSongIntent: AudioPlaybackIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        await IntentPlaybackBridge.handler?.playFavorites(startingAt: songId)
+        try await IntentPlaybackBridge.requireHandler().playFavorites(startingAt: songId)
         return .result()
     }
 }
@@ -128,7 +142,7 @@ public struct RecognizeMusicIntent: AudioRecordingIntent, LiveActivityIntent {
 
     @MainActor
     public func perform() async throws -> some IntentResult {
-        guard let handler = IntentRecognitionBridge.handler else { return .result() }
+        guard let handler = IntentRecognitionBridge.handler else { throw IntentPlaybackError.appNotReady }
         if await handler.recognizeInBackground() { return .result() }
         try await continueInForeground(alwaysConfirm: false)
         await handler.recognizeInForeground()
