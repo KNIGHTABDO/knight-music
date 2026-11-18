@@ -45,7 +45,10 @@ struct KnightChatView: View {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     if let messages = conversation?.messages {
                         ForEach(messages) { message in
-                            messageView(message)
+                            // The live view below stands in for the reply being streamed.
+                            if !(isStreamingThisConversation && message.status == "running" && message.text.isEmpty) {
+                                messageView(message)
+                            }
                         }
                     }
 
@@ -254,6 +257,17 @@ struct KnightChatView: View {
 
                 if !message.addedTracks.isEmpty {
                     addedTracksSection(for: message)
+                }
+
+                if message.status == "failed", retryText(for: message) != nil {
+                    Button {
+                        retry(message)
+                    } label: {
+                        Label("Try Again", systemImage: "arrow.clockwise")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .disabled(hermes.isRunning)
                 }
             }
             .id(message.id)
@@ -507,8 +521,10 @@ struct KnightChatView: View {
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(dictation.isRecording ? "Stop Dictation" : "Dictate")
 
-            TextField("Ask Knight…", text: $inputText, axis: .vertical)
+            TextField(isBusyElsewhere ? "Knight is answering another chat…" : "Ask Knight…",
+                      text: $inputText, axis: .vertical)
                 .lineLimit(1...5)
                 .font(.system(size: 16))
                 .foregroundStyle(Theme.label)
@@ -522,6 +538,7 @@ struct KnightChatView: View {
                         .foregroundStyle(Theme.accent)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Stop Knight")
             } else {
                 Button {
                     sendMessage()
@@ -532,6 +549,7 @@ struct KnightChatView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
+                .accessibilityLabel("Send")
             }
         }
         .padding(.horizontal, 14)
@@ -539,6 +557,28 @@ struct KnightChatView: View {
         .glassEffect(.regular.interactive(), in: .capsule)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+
+    private var isBusyElsewhere: Bool { hermes.isRunning && !isStreamingThisConversation }
+
+    /// The question a failed reply answered: the closest user message before it.
+    private func retryText(for message: KnightMessage) -> String? {
+        guard let messages = conversation?.messages,
+              let index = messages.firstIndex(where: { $0.id == message.id }) else { return nil }
+        return messages[..<index].last(where: { $0.role == .user })?.text
+    }
+
+    /// Drops the failed exchange and asks again, so the transcript doesn't keep the error and a duplicate question.
+    private func retry(_ message: KnightMessage) {
+        guard !hermes.isRunning, let text = retryText(for: message),
+              let messages = conversation?.messages,
+              let index = messages.firstIndex(where: { $0.id == message.id }),
+              let question = messages[..<index].last(where: { $0.role == .user }) else { return }
+        Haptics.impact(.light)
+        hermes.store.deleteMessage(conversationId: conversationId, messageId: message.id)
+        hermes.store.deleteMessage(conversationId: conversationId, messageId: question.id)
+        hermes.sendMessage(conversationId: conversationId, text: text, app: app,
+                           library: library, artwork: artwork, ui: ui)
     }
 
     private func sendMessage() {
