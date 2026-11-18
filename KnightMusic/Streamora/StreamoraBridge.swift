@@ -28,16 +28,20 @@ final class StreamoraBridge: NSObject, WKScriptMessageHandlerWithReply {
             replyHandler(nil, "Bad message")
             return
         }
+        let origin = message.frameInfo.securityOrigin
+        let trusted = origin.`protocol` == "https" && origin.host == StreamoraStageController.home.host
+            && (origin.port == 0 || origin.port == 443)
+        guard trusted else {
+            replyHandler(nil, "Untrusted page")
+            return
+        }
         switch body["kind"] as? String {
         case "call":
             let method = body["method"] as? String ?? ""
             let options = body["options"] as? [String: Any] ?? [:]
             call(method, Options(options), reply: replyHandler)
         case "auth":
-            let origin = message.frameInfo.securityOrigin
-            guard origin.`protocol` == "https", origin.host == StreamoraStageController.home.host,
-                  origin.port == 0 || origin.port == 443,
-                  let urlString = body["url"] as? String, let url = URL(string: urlString),
+            guard let urlString = body["url"] as? String, let url = URL(string: urlString),
                   let state = body["state"] as? String, let stage else {
                 replyHandler(nil, "Invalid sign-in request")
                 return
@@ -176,7 +180,11 @@ private struct Options {
     init(_ raw: [String: Any]) { self.raw = raw }
 
     func string(_ key: String) -> String? { raw[key] as? String }
-    func double(_ key: String) -> Double? { (raw[key] as? NSNumber)?.doubleValue }
+    func double(_ key: String) -> Double? {
+        // NaN / infinity from the page would trap in Int conversions downstream
+        guard let v = (raw[key] as? NSNumber)?.doubleValue, v.isFinite else { return nil }
+        return v
+    }
     func bool(_ key: String) -> Bool? { (raw[key] as? NSNumber)?.boolValue }
     func int32(_ key: String) -> Int32? { (raw[key] as? NSNumber)?.int32Value }
 

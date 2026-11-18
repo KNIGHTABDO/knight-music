@@ -53,7 +53,9 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
         web.scrollView.backgroundColor = Self.background
         web.scrollView.contentInsetAdjustmentBehavior = .never
         web.scrollView.bounces = false
+        #if DEBUG
         web.isInspectable = true
+        #endif
         web.translatesAutoresizingMaskIntoConstraints = false
         webView = web
         bridge.webView = web
@@ -155,8 +157,10 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
     }
 
     private func handleNavigationFailure(_ navigation: WKNavigation?, error: Error) {
-        guard navigation === activeNavigation, let failure = StreamoraLoadFailure(error: error) else { return }
         let nsError = error as NSError
+        // 102 "Frame load interrupted" follows our own policy cancel of an HTTP error: keep the specific .http screen
+        if nsError.domain == "WebKitErrorDomain", nsError.code == 102 { return }
+        guard navigation === activeNavigation, let failure = StreamoraLoadFailure(error: error) else { return }
         Log.app.error("Streamora navigation failed (\(nsError.domain) \(nsError.code))")
         showFailure(failure)
     }
