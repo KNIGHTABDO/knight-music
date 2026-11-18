@@ -144,6 +144,28 @@ final class ArrivalWatcher {
         return artistOverlaps(trackArtist: track.artist, songArtist: songArtist)
     }
 
+    /// Whether `song` is the track Knight reported adding, not an older library song with a similar title.
+    /// Loose title matches ("Love" vs "Love Story") only count for songs the server added recently.
+    nonisolated static func confirmsArrival(track: AddedTrack, song: Song, since: Date) -> Bool {
+        guard matches(track: track, song: song) else { return false }
+        if isExactTitle(track: track, song: song) { return true }
+        guard let created = song.created else { return false }
+        return created >= since
+    }
+
+    nonisolated static func isExactTitle(track: AddedTrack, song: Song) -> Bool {
+        normalize(track.title) == normalize(song.title)
+            && NavidromeImportCenter.versionTags(track.title) == NavidromeImportCenter.versionTags(song.title)
+    }
+
+    /// The best confirmed arrival: an exact title first, then a recently added loose match.
+    nonisolated static func bestArrival(for track: AddedTrack, in songs: [Song], since: Date) -> Song? {
+        var seen = Set<String>()
+        let unique = songs.filter { !$0.isYouTube && seen.insert($0.id).inserted }
+        return unique.first { matches(track: track, song: $0) && isExactTitle(track: track, song: $0) }
+            ?? unique.first { confirmsArrival(track: track, song: $0, since: since) }
+    }
+
     // MARK: - Persistence (UserDefaults JSON)
 
     private func loadPendingWatches() -> [PendingArrivalWatch] {
@@ -309,8 +331,10 @@ final class ArrivalWatcher {
                 Log.sync.info("ArrivalWatcher [\(messageId)]: Matching track '\(track.title)' by '\(track.artist)' in local DB...")
 
                 var matchedSong: Song?
+                // Knight downloads before it replies, so allow songs added a while before the watch began.
+                let since = watchStart.addingTimeInterval(-30 * 60)
                 if let database = library.database {
-                    matchedSong = await searchDatabase(database: database, for: track)
+                    matchedSong = await searchDatabase(database: database, for: track, since: since)
                 }
 
                 // If no DB match, ask the server client.search3(query: <title>, songCount: 10, ...)
@@ -321,12 +345,12 @@ final class ArrivalWatcher {
                         let serverSongs = searchResult.songs
                         Log.sync.info("ArrivalWatcher [\(messageId)]: Server search3 returned \(serverSongs.count) song(s)")
 
-                        if let serverMatch = serverSongs.first(where: { Self.matches(track: track, song: $0) }) {
+                        if let serverMatch = Self.bestArrival(for: track, in: serverSongs, since: since) {
                             Log.sync.info("ArrivalWatcher [\(messageId)]: Found on server: '\(serverMatch.title)' (\(serverMatch.id)). DB lacks it. Performing forced refresh...")
                             let forceOk = await app.refresh(force: true)
                             Log.sync.info("ArrivalWatcher [\(messageId)]: Forced refresh completed: \(forceOk). Re-matching in DB...")
                             if let database = library.database {
-                                matchedSong = await searchDatabase(database: database, for: track, specificId: serverMatch.id)
+                                matchedSong = await searchDatabase(database: database, for: track, since: since, specificId: serverMatch.id)
                             }
                         }
                     } catch {
@@ -371,13 +395,14 @@ final class ArrivalWatcher {
         }
     }
 
-    private func searchDatabase(database: LibraryDatabase, for track: AddedTrack, specificId: String? = nil) async -> Song? {
+    private func searchDatabase(database: LibraryDatabase, for track: AddedTrack, since: Date,
+                                specificId: String? = nil) async -> Song? {
         let cleanTitle = track.title.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             return try await database.pool.read { db in
                 // 1. If specific ID provided, check that first
                 if let specificId, let song = try Song.fetchOne(db, sql: "SELECT * FROM song WHERE id = ?", arguments: [specificId]) {
-                    if Self.matches(track: track, song: song) {
+                    if Self.confirmsArrival(track: track, song: song, since: since) {
                         return song
                     }
                 }
@@ -400,16 +425,7 @@ final class ArrivalWatcher {
                     candidates.append(contentsOf: byLike)
                 }
 
-                // Deduplicate and test matches
-                var seen = Set<String>()
-                for song in candidates {
-                    if seen.insert(song.id).inserted {
-                        if Self.matches(track: track, song: song) {
-                            return song
-                        }
-                    }
-                }
-                return nil
+                return Self.bestArrival(for: track, in: candidates, since: since)
             }
         } catch {
             Log.database.error("searchDatabase failed in ArrivalWatcher: \(error)")
