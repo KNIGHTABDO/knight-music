@@ -443,7 +443,13 @@ extension PlayerEngine {
     /// Starts B at the host time A reaches `a.start`: both decks then run off the same clock, beat for beat.
     private func schedule(_ session: MixSession) {
         guard session.phase == .ready, let deck = session.deck, let incoming = session.incoming,
-              let timebase = session.outgoing.item.timebase else { return }
+              let timebase = session.outgoing.item.timebase else {
+            if session.phase == .ready {
+                PlaybackLog.logger.error("AutoMix: outgoing item has no timebase, cancelling the blend")
+                cancelMix(reprepare: true)
+            }
+            return
+        }
         // The host-time conversion below assumes A already runs at its blend tempo.
         if abs(player.rate - session.aRate) >= 0.0005 {
             if retempoJob?.purpose == .outgoing { return }
@@ -497,6 +503,7 @@ extension PlayerEngine {
         let curves = [session.b.gain, session.b.hpf, session.b.lpf, session.b.rateRamp ?? []]
         let automationEnd = curves.compactMap { $0.last?.first }.max() ?? 0
         let tempoAt = session.b.rateRamp?.first?.first ?? automationEnd
+        if let old = mixTail { stopOutgoing(old) }
         mixTail = MixTail(player: outgoingPlayer, prepared: session.outgoing, stopAt: session.a.stop ?? session.a.start,
                           outgoingRate: session.aRate, automationEnd: automationEnd, tempoAt: tempoAt,
                           tempo: abs(session.deckRate - 1) > 0.0005 ? .pending : .done)

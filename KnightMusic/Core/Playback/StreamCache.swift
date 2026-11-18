@@ -171,7 +171,7 @@ final class StreamCache: @unchecked Sendable {
         protectedIds = songIds
         queued.removeAll { !songIds.contains($0.songId) }
         let cancelled = active.filter { !songIds.contains($0.key) }
-        for id in cancelled.keys { active[id] = nil }
+        for id in cancelled.keys { active[id] = nil; fractions[id] = nil; urgentIds.remove(id) }
         lock.unlock()
         for task in cancelled.values { task.cancel() }
         report(force: true)
@@ -275,11 +275,14 @@ final class StreamCache: @unchecked Sendable {
         } catch {
             PlaybackLog.logger.error("Stream cache download failed for \(job.songId): \(error.localizedDescription)")
         }
-        lock.lock()
-        active[job.songId] = nil
-        fractions[job.songId] = nil
-        urgentIds.remove(job.songId)
-        lock.unlock()
+        // A cancelled job was already unregistered by its canceller; a newer job for the same song may own the slots now.
+        if !Task.isCancelled {
+            lock.lock()
+            active[job.songId] = nil
+            fractions[job.songId] = nil
+            urgentIds.remove(job.songId)
+            lock.unlock()
+        }
         pump()
         report(force: true)
     }

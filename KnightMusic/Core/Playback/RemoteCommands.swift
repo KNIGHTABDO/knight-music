@@ -70,7 +70,7 @@ final class RemoteCommands {
     }
 
     private func handleSeek(engine: PlayerEngine, event: MPRemoteCommandEvent, delta: TimeInterval) {
-        guard engine.currentRadio == nil, let seekEvent = event as? MPSeekCommandEvent else { return }
+        guard engine.currentRadio == nil, engine.currentSong != nil, let seekEvent = event as? MPSeekCommandEvent else { return }
         switch seekEvent.type {
         case .beginSeeking:
             cancelSeeking()

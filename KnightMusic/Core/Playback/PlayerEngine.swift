@@ -179,6 +179,8 @@ final class PlayerEngine {
     @ObservationIgnored var serverQueuePreviewEndpoint: URL?
     @ObservationIgnored var serverQueuePreviewActivation: Int?
     @ObservationIgnored var isInterrupted = false
+    /// Cold-launch play tap is waiting for the server address; a second tap pauses instead of being swallowed.
+    @ObservationIgnored var isAwaitingAddress = false
     @ObservationIgnored var streamRetryHistory: [UUID: [TimeInterval]] = [:]
     @ObservationIgnored var bufferingStartedAt: TimeInterval?
     @ObservationIgnored var trackedNetworkChangeCount = 0
@@ -225,6 +227,7 @@ final class PlayerEngine {
 
     /// Call when `services.artwork` / `services.urls` / `services.server` were replaced.
     func servicesDidChange() {
+        remote?.refresh()
         nowPlaying.artwork = services.artwork
         if !services.isOffline { scrobbler.flushPending() }
         checkNextPreparedAddress()
@@ -232,6 +235,7 @@ final class PlayerEngine {
 
     /// Call when settings changed (ReplayGain, gapless, quality...).
     func settingsDidChange() {
+        remote?.refresh()
         applyVolume()
         applyAudioEffects()
         if tracked != nil { prepareNext() }
@@ -262,6 +266,8 @@ final class PlayerEngine {
 
     /// Call when connectivity changed: re-prepares the next item and flushes pending scrobbles.
     func networkDidChange() {
+        if !services.isOffline { failedEntryIds = [] }
+        remote?.refresh()
         if isBuffering, let tracked, tracked.resolved.kind == .streaming, !isRetryingHandoff {
             PlaybackLog.logger.info("Network path changed while stream is buffering: attempting handoff retry")
             isRetryingHandoff = true
@@ -339,10 +345,11 @@ final class PlayerEngine {
     }
 
     func togglePlayPause() {
-        if isPlaying { pause() } else { resume() }
+        if isPlaying || isAwaitingAddress { pause() } else { resume() }
     }
 
     func pause() {
+        isAwaitingAddress = false
         playbackLoadRevision += 1
         userWantsPlaying = false
         remote?.cancelSeeking()
@@ -367,10 +374,15 @@ final class PlayerEngine {
         if let tracked, let currentSong, !currentSong.isYouTube, !isLocal(currentSong), services.isResolvingAddress?() == true {
             let loadRevision = playbackLoadRevision
             let activation = AppModel.shared?.accountActivation
+            isAwaitingAddress = true
+            isBuffering = true
             Task { @MainActor [weak self, weak tracked] in
                 guard let self, let tracked else { return }
                 PlaybackLog.logger.info("Cold launch: waiting up to 5s for address resolution before playing")
                 await self.services.waitForAddressResolution?(5.0)
+                guard self.isAwaitingAddress, self.playbackLoadRevision == loadRevision else { return }
+                self.isAwaitingAddress = false
+                self.isBuffering = false
                 guard self.tracked === tracked, self.playbackLoadRevision == loadRevision,
                       AppModel.shared?.accountActivation == activation, self.userWantsPlaying else { return }
                 if tracked.resolved.kind == .streaming,
@@ -415,7 +427,7 @@ final class PlayerEngine {
             player.advanceToNextItem()
             player.play()
             isPlaying = true
-            currentTime = 0
+            // currentTime stays: publishCurrent records the outgoing long-track position from it, then resets it.
             promoteNext()
             return
         }

@@ -114,7 +114,8 @@ extension PlayerEngine {
                   AppModel.shared?.accountActivation == activation,
                   settings.serverQueueSyncEnabled else { return }
             let sameQueue = remoteQueue.songs.map(\.id) == serverQueueWindowIds()
-            let sameCurrent = remoteQueue.currentSongId == currentSong?.id
+            let localCurrentId = currentSong.flatMap { $0.isYouTube ? nil : $0.id }
+            let sameCurrent = remoteQueue.currentSongId == localCurrentId
             if sameQueue && sameCurrent { return }
             let serverNewer: Bool
             if let changed = remoteQueue.changed {
@@ -183,7 +184,9 @@ extension PlayerEngine {
     func serverQueueWindowIds() -> [String] {
         let windowStart = max(0, currentIndex - 20)
         guard windowStart < order.count else { return [] }
+        // Same rule as the server upload: YouTube songs never exist on the server.
         return order[windowStart..<min(order.count, windowStart + 500)].map { $0.song.id }
+            .filter { !$0.hasPrefix(Song.youTubePrefix) }
     }
 
     func pushServerQueue() async {
@@ -203,12 +206,19 @@ extension PlayerEngine {
         guard settings.serverQueueSyncEnabled, services.server != nil else { return }
         serverSaveTask?.cancel()
         var background = UIBackgroundTaskIdentifier.invalid
-        background = UIApplication.shared.beginBackgroundTask {
+        var push: Task<Void, Never>?
+        func endBackground() {
+            guard background != .invalid else { return }
             UIApplication.shared.endBackgroundTask(background)
+            background = .invalid
         }
-        Task { [weak self] in
+        background = UIApplication.shared.beginBackgroundTask {
+            push?.cancel()
+            endBackground()
+        }
+        push = Task { [weak self] in
             await self?.pushServerQueue()
-            UIApplication.shared.endBackgroundTask(background)
+            endBackground()
         }
     }
 }
