@@ -66,9 +66,11 @@ final class ScreenAuditTests: XCTestCase {
     private func launch(screen: String, wait seconds: UInt32) -> XCUIApplication {
         let app = XCUIApplication()
         app.terminate()
-        XCUIDevice.shared.orientation = orientation
         app.launchArguments = ["-KMDemo", "YES", "-KMScreen", screen]
         app.launch()
+        // Rotate once the app is in front: the iPhone home screen never confirms a rotation, so setting it before
+        // launch times out on a fresh simulator and aborts the test.
+        if XCUIDevice.shared.orientation != orientation { XCUIDevice.shared.orientation = orientation }
         sleep(seconds)
         return app
     }

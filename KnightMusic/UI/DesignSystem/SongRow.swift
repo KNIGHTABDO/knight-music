@@ -91,6 +91,9 @@ struct SongRow<MenuContent: View>: View {
                         NowPlayingIndicator(isAnimating: !isPaused, color: .white, size: 18)
                     }
                 }
+                // Decorative: callers add the button trait to the whole row, which otherwise turns the cover into an
+                // unlabelled button of its own.
+                .accessibilityHidden(true)
         case .trackNumber(let n):
             ZStack {
                 if isPlaying {
