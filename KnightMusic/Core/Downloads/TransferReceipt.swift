@@ -39,6 +39,8 @@ struct TransferReceipt: Codable, Sendable {
     let bytes: Int
     let message: String?
     let createdAt: Date
+    /// NSURLError code (negative) or HTTP status (positive) behind a failure; used to tell transient from permanent.
+    var errorCode: Int? = nil
 }
 
 enum TransferReceiptStore {
@@ -63,7 +65,15 @@ enum TransferReceiptStore {
         guard FileManager.default.fileExists(atPath: folder.path) else { return [] }
         return try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
-            .map { try JSONDecoder().decode(TransferReceipt.self, from: Data(contentsOf: $0)) }
+            .compactMap { file -> TransferReceipt? in
+                do { return try JSONDecoder().decode(TransferReceipt.self, from: Data(contentsOf: file)) }
+                catch {
+                    // One unreadable receipt must not block every other download of the account.
+                    PlaybackLog.logger.error("Dropping unreadable download receipt \(file.lastPathComponent): \(error.localizedDescription)")
+                    try? FileManager.default.removeItem(at: file)
+                    return nil
+                }
+            }
     }
 
     static func remove(_ receipt: TransferReceipt, under root: URL) {

@@ -44,6 +44,7 @@ final class AppModel {
                 stopReachabilityRecovery()
                 // Back from an outage, whatever noticed it: catch the library up (SyncEngine dedupes overlapping syncs).
                 Log.api.info("Server reachable again")
+                downloads.networkDidChange()
                 Task { await self.refresh() }
             } else {
                 startReachabilityRecovery()
@@ -276,6 +277,8 @@ final class AppModel {
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled, let self else { return }
             await self.reresolveAddress()
+            // Downloads queued while the address was unsettled can now bind to the right host.
+            self.downloads.networkDidChange()
             await self.refresh()
         }
     }
@@ -391,6 +394,7 @@ final class AppModel {
         if wasActive { teardownSession() }
         accounts.remove(id)
         addressResolver.forget(accountId: id)
+        downloads.purge(ownerId: id.uuidString)
         LibraryDatabase.deleteFiles(for: id)
         Task { await SpotlightIndexer.removeAll(accountId: id) }
         guard wasActive else { return }
@@ -410,6 +414,7 @@ final class AppModel {
     // MARK: - Session lifecycle
 
     private func restoreSession() {
+        downloads.sweepOrphanedOwners(keeping: accounts.accounts.map(\.id))
         guard let account = accounts.active else { return }
         do {
             try activate(account)

@@ -30,7 +30,7 @@ final class AutoDownloader {
                     let missing = songs.filter { downloads.status(for: $0.id) == nil && seen.insert($0.id).inserted }
                     if !missing.isEmpty {
                         Log.downloads.info("Auto-download: queueing \(missing.count) songs")
-                        downloads.download(songs: missing)
+                        downloads.download(songs: missing, automatic: true)
                     }
                 }
             } catch is CancellationError {
