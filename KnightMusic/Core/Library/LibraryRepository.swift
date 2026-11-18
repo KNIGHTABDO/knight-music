@@ -331,7 +331,10 @@ final class LibraryRepository {
     }
 
     private func loadTopSongs(artistId: String) async {
-        guard let database, let client, !isOfflineProvider() else { return }
+        guard let database, let client, !isOfflineProvider() else {
+            requestedTopSongs.remove(artistId) // offline or not configured yet: ask again next time the shelf is shown
+            return
+        }
         let key = "topSongs.\(artistId)"
         if let raw = await database.stateValue(key), let t = TimeInterval(raw), Date().timeIntervalSince1970 - t < 7 * 86400 { return }
         do {
@@ -405,6 +408,8 @@ final class LibraryRepository {
         let client = try requireClient()
         let database = try requireDatabase()
         let table = table(for: kind)
+        database.beginStarMutation()
+        defer { database.endStarMutation() }
         let previous: Date? = try await database.pool.read { db in
             try Date.fetchOne(db, sql: "SELECT starred FROM \(table) WHERE id = ?", arguments: [id])
         }
@@ -569,7 +574,6 @@ final class LibraryRepository {
 
         do {
             try await client.updatePlaylist(id: id, songIdsToAdd: songIds)
-            try await refreshPlaylist(id: id)
         } catch {
             do {
                 let before = try await playlistSongIds(database, id: id)
@@ -588,6 +592,18 @@ final class LibraryRepository {
             report(error, "Could not add to playlist")
             throw error
         }
+        // The server has the songs. A failed refresh must not read as a failed add (a retry would duplicate them).
+        do {
+            try await refreshPlaylist(id: id)
+        } catch {
+            Log.sync.warning("Playlist \(id) updated, refresh failed: \(error.localizedDescription)")
+            do {
+                let before = try await playlistSongIds(database, id: id)
+                try await replaceEntries(database, playlistId: id, songIds: before + songIds)
+            } catch let mirrorError {
+                Log.database.error("Optimistic playlist add failed for \(id): \(mirrorError)")
+            }
+        }
     }
 
     /// `indexes` are positions in the playlist (0-based, as displayed).
@@ -597,6 +613,16 @@ final class LibraryRepository {
         let database = try requireDatabase()
         let removed = Set(indexes)
         let before = try await playlistSongIds(database, id: id)
+        // Removal is by position: make sure the server's order is what the user is looking at.
+        if let (playlist, songs) = try? await client.getPlaylist(id: id) {
+            let remote = songs.map(\.id)
+            let matches = indexes.allSatisfy { $0 >= 0 && $0 < before.count && $0 < remote.count && remote[$0] == before[$0] }
+            if !matches {
+                try await database.storePlaylist(playlist, songs: songs)
+                report(LibraryError.playlistChanged, "Could not remove from playlist")
+                throw LibraryError.playlistChanged
+            }
+        }
         try await replaceEntries(database, playlistId: id, songIds: before.enumerated().filter { !removed.contains($0.offset) }.map(\.element))
         do {
             try await client.updatePlaylist(id: id, songIndexesToRemove: indexes)

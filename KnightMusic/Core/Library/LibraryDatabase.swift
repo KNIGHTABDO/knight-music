@@ -32,13 +32,51 @@ final class LibraryDatabase: @unchecked Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         url = directory.appendingPathComponent("library.sqlite")
 
+        do {
+            pool = try Self.openPool(at: url)
+        } catch let error as DatabaseError where error.resultCode == .SQLITE_CORRUPT || error.resultCode == .SQLITE_NOTADB {
+            // The mirror is reproducible from the server: move the damaged file aside and start clean (a full sync follows).
+            Log.database.error("library database is damaged (\(error)); rebuilding")
+            Self.quarantine(url)
+            pool = try Self.openPool(at: url)
+        }
+        Log.database.info("opened \(url.path)")
+    }
+
+    private static func openPool(at url: URL) throws -> DatabasePool {
         var configuration = Configuration()
         configuration.label = "library"
         configuration.busyMode = .timeout(8)
-        pool = try DatabasePool(path: url.path, configuration: configuration)
-        try Self.migrator.migrate(pool)
-        Log.database.info("opened \(url.path)")
+        let pool = try DatabasePool(path: url.path, configuration: configuration)
+        try migrator.migrate(pool)
+        return pool
     }
+
+    private static func quarantine(_ url: URL) {
+        let fm = FileManager.default
+        let stamp = Int(Date().timeIntervalSince1970)
+        for suffix in ["", "-wal", "-shm"] {
+            let source = URL(fileURLWithPath: url.path + suffix)
+            guard fm.fileExists(atPath: source.path) else { continue }
+            let target = url.deletingLastPathComponent().appendingPathComponent("library.damaged-\(stamp).sqlite\(suffix)")
+            do { try fm.moveItem(at: source, to: target) } catch {
+                Log.database.error("could not move \(source.lastPathComponent) aside: \(error)")
+                try? fm.removeItem(at: source)
+            }
+        }
+    }
+
+    // MARK: - Star mutations (guards snapshot syncs against optimistic writes)
+
+    private let starLock = NSLock()
+    private var _starEpoch = 0
+    private var _starInFlight = 0
+
+    var starEpoch: Int { starLock.withLock { _starEpoch } }
+    var hasStarMutationInFlight: Bool { starLock.withLock { _starInFlight > 0 } }
+
+    func beginStarMutation() { starLock.withLock { _starEpoch += 1; _starInFlight += 1 } }
+    func endStarMutation() { starLock.withLock { _starEpoch += 1; _starInFlight -= 1 } }
 
     func close() {
         do {

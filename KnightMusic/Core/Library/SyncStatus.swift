@@ -11,7 +11,11 @@ final class SyncStatus {
     private(set) var lastSyncAt: Date?
     private(set) var lastError: String?
 
-    func begin(phase: String, initial: Bool) {
+    /// Only the engine that last called `begin` may publish; a torn-down account's run is ignored.
+    @ObservationIgnored private var currentToken: UUID?
+
+    func begin(phase: String, initial: Bool, token: UUID? = nil) {
+        currentToken = token
         isSyncing = true
         isInitialSync = initial
         self.phase = phase
@@ -19,12 +23,14 @@ final class SyncStatus {
         lastError = nil
     }
 
-    func update(phase: String? = nil, fraction: Double? = nil) {
+    func update(phase: String? = nil, fraction: Double? = nil, token: UUID? = nil) {
+        guard token == nil || token == currentToken else { return }
         if let phase { self.phase = phase }
         if let fraction { self.fraction = max(self.fraction, min(1, fraction)) }
     }
 
-    func finish(error: String?, completedAt: Date?) {
+    func finish(error: String?, completedAt: Date?, token: UUID? = nil) {
+        guard token == nil || token == currentToken else { return }
         isSyncing = false
         isInitialSync = false
         phase = ""
@@ -34,6 +40,7 @@ final class SyncStatus {
     }
 
     func reset() {
+        currentToken = nil
         isSyncing = false
         isInitialSync = false
         phase = ""
@@ -47,6 +54,16 @@ final class SyncStatus {
             lastSyncAt = Date(timeIntervalSince1970: t)
         }
     }
+}
+
+/// What one SyncEngine uses to talk to the shared SyncStatus.
+struct SyncStatusHandle: Sendable {
+    let status: SyncStatus
+    let token = UUID()
+
+    func begin(phase: String, initial: Bool) async { await status.begin(phase: phase, initial: initial, token: token) }
+    func update(phase: String? = nil, fraction: Double? = nil) async { await status.update(phase: phase, fraction: fraction, token: token) }
+    func finish(error: String?, completedAt: Date?) async { await status.finish(error: error, completedAt: completedAt, token: token) }
 }
 
 enum SyncKey {
