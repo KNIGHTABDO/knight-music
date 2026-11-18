@@ -78,7 +78,8 @@ struct SongsView: View {
                             .padding(.vertical, 4)
                             .selectable(song.id, in: selection)
                             .contentShape(Rectangle())
-                            .onTapGesture {
+                            .accessibilityAddTraits(.isButton)
+                    .onTapGesture {
                                 if selection.isActive {
                                     selection.toggle(song.id)
                                     return

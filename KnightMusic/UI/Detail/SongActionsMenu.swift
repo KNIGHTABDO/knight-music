@@ -17,7 +17,6 @@ struct SongActionsMenu: View {
         let isStarred = song.starred != nil
         let isDownloaded = downloads.isDownloaded(song.id)
         let downloadStatus = downloads.status(for: song.id)
-        let playlists = library.playlists()
 
         Button {
             UIPasteboard.general.string = "\(song.title) — \(song.artist ?? "")"
@@ -52,7 +51,7 @@ struct SongActionsMenu: View {
         if song.isYouTube {
             youTubeActions
         } else {
-            libraryActions(isStarred: isStarred, isDownloaded: isDownloaded, downloadStatus: downloadStatus, playlists: playlists.value)
+            libraryActions(isStarred: isStarred, isDownloaded: isDownloaded, downloadStatus: downloadStatus)
         }
     }
 
@@ -99,23 +98,12 @@ struct SongActionsMenu: View {
     }
 
     @ViewBuilder
-    private func libraryActions(isStarred: Bool, isDownloaded: Bool, downloadStatus: DownloadStatus?, playlists: [Playlist]) -> some View {
+    private func libraryActions(isStarred: Bool, isDownloaded: Bool, downloadStatus: DownloadStatus?) -> some View {
         Divider()
 
-        Menu {
-            Button {
-                ui.playlistPicker = PlaylistPickerRequest(songs: [song], createNew: true)
-            } label: {
-                Label("New Playlist…", systemImage: "plus")
-            }
-            if !playlists.isEmpty {
-                Divider()
-                ForEach(playlists) { pl in
-                    Button(pl.name) {
-                        ui.playlistPicker = PlaylistPickerRequest(songs: [song], targetPlaylist: pl)
-                    }
-                }
-            }
+        // The picker sheet observes the playlists itself; a menu cannot keep a LiveQuery alive.
+        Button {
+            ui.playlistPicker = PlaylistPickerRequest(songs: [song])
         } label: {
             Label("Add to a Playlist…", systemImage: "plus")
         }

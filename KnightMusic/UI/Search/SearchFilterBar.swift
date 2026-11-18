@@ -51,12 +51,13 @@ struct SearchFilterBar: View {
                         Capsule().fill(Theme.accent)
                             .matchedGeometryEffect(id: "selected", in: chipSpace)
                     } else {
-                        Capsule().fill(Color.white.opacity(0.1))
+                        Capsule().fill(Color(.tertiarySystemFill))
                     }
                 }
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

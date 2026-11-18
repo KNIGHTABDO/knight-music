@@ -9,17 +9,20 @@ struct ArtistsView: View {
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
     @State private var searchText = ""
+    @State private var debouncedSearch = ""
+    @State private var previousArtists: [Artist] = []
     @State private var sortOrder: ArtistSortOrder = .name
     @AppStorage("artists.favoritesOnly") private var favoritesOnly = false
 
     var body: some View {
-        let query = library.artists(search: searchText)
-        let allArtists = sortedArtists(favoritesOnly ? query.value.filter { $0.starred != nil } : query.value)
+        let query = library.artists(search: debouncedSearch)
+        let source = query.isLoaded ? query.value : previousArtists
+        let allArtists = sortedArtists(favoritesOnly ? source.filter { $0.starred != nil } : source)
         let sections = Sectioning.byFirstLetter(allArtists, letterFor: \.name)
 
         ScrollViewReader { proxy in
             Group {
-                if !query.isLoaded {
+                if !query.isLoaded && previousArtists.isEmpty {
                     List {
                         SkeletonRowList(count: 8, circularLeading: true)
                             .listRowInsets(EdgeInsets(top: 8, leading: Theme.margin, bottom: 8, trailing: Theme.margin))
@@ -102,6 +105,15 @@ struct ArtistsView: View {
             }
         }
         .observing(query)
+        .task(id: searchText) {
+            let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed != debouncedSearch {
+                if !trimmed.isEmpty || !debouncedSearch.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
+                if Task.isCancelled { return }
+                debouncedSearch = trimmed
+            }
+        }
+        .onChange(of: query.value) { _, new in if query.isLoaded { previousArtists = new } }
     }
 
     @ViewBuilder

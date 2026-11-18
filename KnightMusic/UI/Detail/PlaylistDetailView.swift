@@ -39,7 +39,7 @@ struct PlaylistDetailView: View {
             if !playlistQuery.isLoaded {
                 skeletonView
             } else if let playlist = playlistQuery.value {
-                playlistContentView(playlist: playlist, songs: songsQuery.value)
+                playlistContentView(playlist: playlist, songs: songsQuery.value, songsLoaded: songsQuery.isLoaded)
             } else {
                 EmptyStateView(
                     title: "Playlist Not Found",
@@ -63,9 +63,15 @@ struct PlaylistDetailView: View {
 
     // MARK: - Playlist Content
 
-    private func playlistContentView(playlist: Playlist, songs: [Song]) -> some View {
+    private func playlistContentView(playlist: Playlist, songs: [Song], songsLoaded: Bool) -> some View {
         let isOwned = playlist.isOwned(by: library.currentUsername)
-        let items = songs.indices.map { PlaylistItem(id: "\($0)-\(songs[$0].id)", index: $0, song: songs[$0]) }
+        // Identity = song id + occurrence, so moves and deletes do not recreate every row after the edit point.
+        var seen: [String: Int] = [:]
+        let items: [PlaylistItem] = songs.indices.map { i in
+            let n = seen[songs[i].id, default: 0]
+            seen[songs[i].id] = n + 1
+            return PlaylistItem(id: "\(songs[i].id)#\(n)", index: i, song: songs[i])
+        }
 
         return List {
             Section {
@@ -76,7 +82,13 @@ struct PlaylistDetailView: View {
             }
 
             Section {
-                if songs.isEmpty {
+                if songs.isEmpty && !songsLoaded {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .padding(.vertical, 24)
+                } else if songs.isEmpty {
                     Text("This playlist has no songs.")
                         .font(.system(size: 15))
                         .foregroundStyle(Theme.secondaryLabel)

@@ -24,6 +24,7 @@ struct PlaylistPickerSheet: View {
     @State private var playlistToFork: Playlist?
     @State private var showForkAlert = false
     @State private var didApplyRequest = false
+    @State private var errorText: String?
     @FocusState private var nameFocused: Bool
 
     var body: some View {
@@ -123,6 +124,9 @@ struct PlaylistPickerSheet: View {
                 Text("'\(playlist.name)' is managed by the server or shared by another user. Create your own editable copy with \(request.songs.count == 1 ? "this song" : "these songs") added?")
             }
             .overlay { if isSaving { ProgressView() } }
+            .alert("Couldn't Save", isPresented: Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(errorText ?? "") }
         }
         .observing(playlists)
         .onChange(of: app.activeAccount?.id) { _, _ in dismiss() }
@@ -152,10 +156,14 @@ struct PlaylistPickerSheet: View {
         isSaving = true
         Task {
             defer { isSaving = false }
-            if (try? await library.createPlaylist(name: name, songIds: request.songs.map(\.id))) != nil {
+            do {
+                _ = try await library.createPlaylist(name: name, songIds: request.songs.map(\.id))
                 Haptics.success()
                 ui.showToast("Created \(name)")
                 dismiss()
+            } catch {
+                Log.sync.error("Create playlist failed: \(error)")
+                errorText = error.localizedDescription
             }
         }
     }
@@ -173,7 +181,8 @@ struct PlaylistPickerSheet: View {
                 playlistToFork = p
                 showForkAlert = true
             } catch {
-                // Handled in repository
+                Log.sync.error("Add to playlist failed: \(error)")
+                errorText = error.localizedDescription
             }
         }
     }
@@ -188,7 +197,8 @@ struct PlaylistPickerSheet: View {
                 ui.showToast("Created '\(copy.name)'")
                 dismiss()
             } catch {
-                ui.showToast("Could not duplicate playlist")
+                Log.sync.error("Duplicate playlist failed: \(error)")
+                errorText = "Could not duplicate playlist: \(error.localizedDescription)"
             }
         }
     }
