@@ -277,7 +277,10 @@ enum YouTubeParser {
             ?? findAll("musicDetailHeaderRenderer", in: root).first) as? JSON
         let title = text(header?["title"]) ?? text(dig(root, "header", "musicEditablePlaylistDetailHeaderRenderer", "header", "musicResponsiveHeaderRenderer", "title"))
         guard let title else { return nil }
-        let shelves = findAll("musicPlaylistShelfRenderer", in: root) + findAll("musicShelfRenderer", in: root)
+        // Playlists keep their tracks in the playlist shelf; a plain shelf beside it holds suggestions,
+        // which must not be mixed into the tracks or drive paging.
+        let playlistShelves = findAll("musicPlaylistShelfRenderer", in: root)
+        let shelves = playlistShelves.isEmpty ? findAll("musicShelfRenderer", in: root) : playlistShelves
         let songs: [YTSong] = items(in: shelves).compactMap { if case .song(let s) = $0 { return s } else { return nil } }
         return YTPlaylistPage(browseId: browseId, title: title, subtitle: text(header?["subtitle"]),
                               detail: text(header?["secondSubtitle"]), thumbnail: thumbnail(header),
