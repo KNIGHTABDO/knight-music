@@ -1,6 +1,5 @@
 import ReplayKit
 import SwiftUI
-import UserNotifications
 
 /// Starts the ReplayKit extension that identifies audio from other apps on this device, including on headphones.
 /// iOS only opens its broadcast dialog from a tap on its own picker, so a clear picker sits above the styled label.
@@ -21,7 +20,7 @@ struct DeviceAudioBroadcastButton: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .task {
-            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            await AppNotifications.shared.requestAuthorizationIfNeeded()
         }
     }
 }
