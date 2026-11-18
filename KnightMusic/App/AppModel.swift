@@ -55,7 +55,9 @@ final class AppModel {
     private(set) var sessionRevision = 0
     private(set) var accountActivation = 0
     /// Screen requested via `-KMScreen` in screenshot mode; the shell routes on it.
-    var debugScreen: String?
+    /// Read at init so the first frame already matches: setting it later swapped the iPad sidebar TabView out for
+    /// LoginView mid-animation, and UIKit aborted building a targeted preview of a view no longer in a window.
+    var debugScreen: String? = DebugLaunch.isDemo ? DebugLaunch.screen : nil
 
     @ObservationIgnored let playbackServices = PlaybackServices()
     @ObservationIgnored var lastConfiguredDatabaseId: ObjectIdentifier?
