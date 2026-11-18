@@ -10,6 +10,25 @@ final class ToastWindow {
     fileprivate(set) var capsuleFrame: CGRect = .zero
     private var window: PassthroughWindow?
     private var ui: UIState?
+    private var hideTask: Task<Void, Never>?
+
+    func statusBarAppearanceChanged() {
+        window?.rootViewController?.setNeedsStatusBarAppearanceUpdate()
+    }
+
+    /// Visible only while a toast is up, so an idle topmost window never owns the status bar.
+    func setHasToast(_ hasToast: Bool) {
+        hideTask?.cancel()
+        if hasToast {
+            window?.isHidden = false
+            return
+        }
+        hideTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(600)) } catch { return } // let the exit transition finish
+            guard let self, self.ui?.toast == nil else { return }
+            self.window?.isHidden = true
+        }
+    }
 
     func install(ui: UIState) {
         self.ui = ui
@@ -19,10 +38,10 @@ final class ToastWindow {
         let window = PassthroughWindow(windowScene: scene)
         window.windowLevel = .normal + 3
         window.backgroundColor = .clear
-        let host = UIHostingController(rootView: ToastHostView(ui: ui))
+        let host = ToastHostingController(rootView: ToastHostView(ui: ui))
         host.view.backgroundColor = .clear
         window.rootViewController = host
-        window.isHidden = false
+        window.isHidden = ui.toast == nil
         self.window = window
     }
 }
@@ -37,6 +56,12 @@ private final class PassthroughWindow: UIWindow {
         guard frame.insetBy(dx: -6, dy: -6).contains(point) else { return nil }
         return hit
     }
+}
+
+/// Topmost window: forward status-bar appearance so Streamora's hidden status bar is not overridden.
+private final class ToastHostingController: UIHostingController<ToastHostView> {
+    override var prefersStatusBarHidden: Bool { DuetCoordinator.shared.statusBarHidden }
+    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 }
 
 private struct ToastHostView: View {

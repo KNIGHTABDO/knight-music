@@ -105,6 +105,7 @@ final class UIState {
             toast = nil
             toastActionTitle = nil
             toastAction = nil
+            ToastWindow.shared.setHasToast(false)
         } else {
             present(queuedToasts.removeFirst())
         }
@@ -115,6 +116,7 @@ final class UIState {
         toastAction = item.action
         toastID = UUID()
         toast = item.message
+        ToastWindow.shared.setHasToast(true)
     }
 
     func askKnight(_ prompt: String) {

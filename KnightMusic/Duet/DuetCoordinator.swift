@@ -106,6 +106,7 @@ final class DuetCoordinator {
     private func updateHUDVisibility() {
         hudWindow?.isHidden = prompt == nil && !isSwitching
         hudWindow?.rootViewController?.setNeedsStatusBarAppearanceUpdate()
+        ToastWindow.shared.statusBarAppearanceChanged()
     }
 
     // MARK: - requests
@@ -276,6 +277,7 @@ final class DuetCoordinator {
         }
         stageController?.publishDuetVisibility()
         hudWindow?.rootViewController?.setNeedsStatusBarAppearanceUpdate()
+        ToastWindow.shared.statusBarAppearanceChanged()
     }
 
     // MARK: - settings actions
