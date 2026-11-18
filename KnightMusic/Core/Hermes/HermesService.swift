@@ -195,6 +195,8 @@ final class HermesService {
         self.library = library
         self.artwork = artwork
         self.ui = ui
+        // The first chat is when "tell me when Knight answers" starts to matter.
+        Task { await AppNotifications.shared.requestAuthorizationIfNeeded() }
 
         // Find or create conversation
         var conversation = store.conversation(for: conversationId) ?? KnightConversation(
@@ -277,6 +279,7 @@ final class HermesService {
                         updatedConvo.updatedAt = Date()
                         self.store.save(updatedConvo)
                     }
+                    self.notifyReply(conversationId: conversationId, text: error.localizedDescription, failed: true)
                 }
                 if self.activeConversationId == conversationId {
                     self.isRunning = false
@@ -376,6 +379,7 @@ final class HermesService {
                     updatedConvo.updatedAt = Date()
                     self.store.save(updatedConvo)
                 }
+                notifyReply(conversationId: conversationId, text: error.localizedDescription, failed: true)
             }
         }
 
@@ -390,6 +394,49 @@ final class HermesService {
         currentStreamingText = ""
         activeToolSteps = []
         currentRunId = nil
+    }
+
+    /// Inline reply from a notification. The app may have been launched in the background just for this, so the
+    /// services fall back to the root model.
+    func sendReply(conversationId: String, text: String) {
+        guard let app = app ?? AppModel.shared else {
+            Log.app.error("Knight reply dropped: the app model isn't ready")
+            return
+        }
+        sendMessage(conversationId: conversationId, text: text, app: app,
+                    library: library ?? app.library, artwork: artwork ?? app.artwork, ui: ui ?? UIState())
+    }
+
+    /// Tells the user Knight answered (or failed) when they aren't looking at that chat.
+    private func notifyReply(conversationId: String, text: String, failed: Bool) {
+        let notifications = AppNotifications.shared
+        let watching = UIApplication.shared.applicationState == .active
+            && notifications.visibleConversationId == conversationId
+        guard !watching else { return }
+        let chat = store.conversation(for: conversationId)?.title
+        let preview = Self.notificationPreview(text)
+        notifications.post(
+            .knight,
+            id: "knight.\(conversationId)",
+            title: failed ? "Knight couldn't finish" : "Knight",
+            subtitle: chat.flatMap { $0.isEmpty || $0 == "New Chat" ? nil : $0 },
+            body: preview.isEmpty ? (failed ? "Something went wrong. Open the chat to try again." : "Replied in your chat.") : preview,
+            category: failed ? AppNotifications.Category.failure : AppNotifications.Category.knight,
+            info: [AppNotifications.Key.route: "knight:\(conversationId)",
+                   AppNotifications.Key.conversationId: conversationId],
+            thread: "knight.\(conversationId)",
+            relevance: failed ? 0.6 : 0.9)
+    }
+
+    /// Plain text for a banner: no markdown markers, links reduced to their titles, one paragraph.
+    nonisolated static func notificationPreview(_ markdown: String) -> String {
+        var text = markdown
+        text = text.replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?m)^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"[*_`~]{1,3}"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.count > 220 ? String(text.prefix(219)) + "…" : text
     }
 
     private func handleRunCompleted(
@@ -414,6 +461,7 @@ final class HermesService {
             updatedConvo.updatedAt = Date()
             self.store.save(updatedConvo)
         }
+        notifyReply(conversationId: conversationId, text: parsed.cleanedText, failed: false)
 
         if self.activeConversationId == conversationId {
             self.isRunning = false
@@ -522,6 +570,7 @@ final class HermesService {
                         updatedConvo.messages[msgIdx].toolSteps = target.existingSteps.map { var s = $0; s.isRunning = false; return s }
                         store.save(updatedConvo)
                     }
+                    notifyReply(conversationId: target.conversationId, text: status.output ?? "", failed: true)
                     if currentRunId == target.runId { clearLiveState() }
                 } else {
                     // Never steal the stream of another run that's alive.

@@ -341,6 +341,12 @@ final class ArrivalWatcher {
                     hermes.appendMatchedSong(conversationId: conversationId, messageId: messageId, song: song)
                     ui?.showToast("Added \(song.title) to your library")
                     artwork.prefetch(for: [song])
+                    AppNotifications.shared.post(
+                        .arrivals, id: "arrival.\(song.id)", title: "Now in your library",
+                        body: [song.title, song.artist].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
+                        category: AppNotifications.Category.song,
+                        info: [AppNotifications.Key.songId: song.id, AppNotifications.Key.route: "play-song:\(song.id)"],
+                        thread: "arrivals.\(conversationId)")
                 }
             }
 

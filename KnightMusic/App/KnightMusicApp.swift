@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // Before launch returns, so a tap or inline reply that launched the app is delivered to the delegate.
+        AppNotifications.shared.install()
         // Launches without a phone window (CarPlay, steering-wheel play, Siri) never run RootView's .task.
         AppModel.shared?.startIfNeeded()
         return true

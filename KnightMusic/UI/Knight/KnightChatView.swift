@@ -88,6 +88,8 @@ struct KnightChatView: View {
                 }
                 didApplyDraft = true
                 proxy.scrollTo("bottomID", anchor: .bottom)
+                AppNotifications.shared.visibleConversationId = conversationId
+                AppNotifications.shared.clearKnight(conversationId: conversationId)
             }
         }
         .background(Theme.background.ignoresSafeArea())
@@ -158,6 +160,9 @@ struct KnightChatView: View {
             composerBar
         }
         .onDisappear {
+            if AppNotifications.shared.visibleConversationId == conversationId {
+                AppNotifications.shared.visibleConversationId = nil
+            }
             dictation.stop()
             if resumeAfterDictation { player.resume(); resumeAfterDictation = false }
             newChatId = "km-\(UUID().uuidString.lowercased())"

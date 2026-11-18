@@ -72,6 +72,22 @@ final class AppActionRouter {
                     return
                 }
                 NavidromeImportCenter.shared.add(song, app: app, ui: ui)
+            case "retry-downloads":
+                app.downloads.retryFailed()
+                ui.open(.songList(.downloaded))
+            case let action where action.hasPrefix("play-song:"):
+                let songId = String(action.dropFirst("play-song:".count))
+                guard let database = app.database,
+                      let song = try await database.pool.read({ try LibraryQueries.songs($0, ids: [songId]) }).first else {
+                    ui.showToast("That song isn't in your library yet")
+                    return
+                }
+                app.player.play([song], startAt: 0, shuffle: false)
+                ui.isPlayerPresented = true
+            case let action where action.hasPrefix("knight:"):
+                ui.isPlayerPresented = false
+                ui.knightConversation = String(action.dropFirst("knight:".count))
+                ui.selectedTab = .knight
             default: break
             }
         } catch is CancellationError {

@@ -145,6 +145,9 @@ struct SettingsView: View {
                 NavigationLink(destination: DuetSettingsView()) {
                     Label("Duet · Streamora", systemImage: "film.stack")
                 }
+                NavigationLink(destination: NotificationSettingsView()) {
+                    Label("Notifications", systemImage: "bell.badge")
+                }
                 NavigationLink("Playback", destination: PlaybackSettingsView())
                 NavigationLink("Storage", destination: StorageView())
                 NavigationLink("Duplicate Songs", destination: DuplicateSongsView())

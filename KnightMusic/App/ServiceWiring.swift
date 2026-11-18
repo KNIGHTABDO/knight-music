@@ -165,6 +165,7 @@ extension AppModel {
                     app.downloads.configure(services: app.playbackServices, database: db.pool,
                                             ownerId: account.id)
                     app.player.configure(services: app.playbackServices, downloads: app.downloads, database: db.pool)
+                    TransferActivityController.shared.attach(app.downloads, database: db.pool)
                 }
             } else {
                 app.lastConfiguredDatabaseId = nil

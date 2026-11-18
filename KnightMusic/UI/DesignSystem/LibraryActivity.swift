@@ -36,6 +36,10 @@ extension View {
                     NotificationCenter.default.post(name: .showMusicRecognition, object: nil)
                     return
                 }
+                if host == "downloads" {
+                    open(.songList(.downloaded))
+                    return
+                }
                 let id = url.pathComponents.dropFirst().first ?? ""
                 if let route = SpotlightIndexer.route(for: "\(host):\(id)") { open(route) }
             }

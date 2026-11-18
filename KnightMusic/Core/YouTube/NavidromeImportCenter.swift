@@ -407,6 +407,17 @@ final class NavidromeImportCenter {
         case .done:
             Haptics.success()
             ui?.showToast("\u{201C}\(title)\u{201D} is in your library")
+            if UIApplication.shared.applicationState != .active {
+                var info: [String: String] = [:]
+                if let songId = job.importedSong?.id {
+                    info[AppNotifications.Key.songId] = songId
+                    info[AppNotifications.Key.route] = "play-song:\(songId)"
+                }
+                AppNotifications.shared.post(
+                    .imports, id: "import.\(id.uuidString)", title: "Added to your library",
+                    body: [title, job.song.artist].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "),
+                    category: AppNotifications.Category.song, info: info, thread: "imports")
+            }
         case .failed(let message):
             if let conversationId = job.conversationId,
                let reply = app?.hermes.store.conversation(for: conversationId)?.messages.last(where: { $0.role == .assistant }) {
@@ -415,6 +426,10 @@ final class NavidromeImportCenter {
             Haptics.error()
             Log.api.warning("Navidrome import of \(title) failed: \(message)")
             ui?.showToast(message)
+            AppNotifications.shared.post(
+                .imports, id: "import.\(id.uuidString)", title: "Couldn't add \u{201C}\(title)\u{201D}",
+                body: message, category: AppNotifications.Category.failure,
+                info: job.conversationId.map { [AppNotifications.Key.route: "knight:\($0)"] } ?? [:], thread: "imports")
         default:
             break
         }

@@ -13,6 +13,7 @@ struct KnightMusicWidgetsBundle: WidgetBundle {
         RecognizeMusicControlWidget()
         LoveCurrentSongControlWidget()
         MusicRecognitionLiveActivity()
+        TransferLiveActivity()
         KickLiveWidget()
     }
 }
