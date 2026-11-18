@@ -61,6 +61,7 @@ struct RadioStationsView: View {
                     }
                     .padding(.vertical, 4)
                     .contentShape(Rectangle())
+                    .accessibilityAddTraits(.isButton)
                     .onTapGesture {
                         Haptics.impact(.medium)
                         player.playRadio(station)

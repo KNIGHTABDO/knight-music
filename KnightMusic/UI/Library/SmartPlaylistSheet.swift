@@ -10,6 +10,7 @@ struct SmartPlaylistSheet: View {
     @State private var rules = SmartPlaylistRules()
     @State private var isSaving = false
     @State private var createdCount = 0
+    @State private var errorText: String?
 
     var body: some View {
         NavigationStack {
@@ -86,6 +87,9 @@ struct SmartPlaylistSheet: View {
             }
         }
         .sensoryFeedback(.success, trigger: createdCount)
+        .alert("Couldn't Save", isPresented: Binding(get: { errorText != nil }, set: { if !$0 { errorText = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(errorText ?? "") }
     }
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -93,10 +97,14 @@ struct SmartPlaylistSheet: View {
     private func create() {
         isSaving = true
         Task {
-            if (try? await library.createSmartPlaylist(name: trimmedName, rules: rules)) != nil {
+            do {
+                try await library.createSmartPlaylist(name: trimmedName, rules: rules)
                 createdCount += 1
                 ui?.showToast("Created “\(trimmedName)”")
                 dismiss()
+            } catch {
+                Log.sync.error("Create smart playlist failed: \(error)")
+                errorText = error.localizedDescription
             }
             isSaving = false
         }

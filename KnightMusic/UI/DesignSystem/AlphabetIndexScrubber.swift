@@ -47,6 +47,7 @@ struct AlphabetIndexScrubber: View {
         .onAppear { haptic.prepare() }
         .accessibilityElement()
         .accessibilityLabel("Index")
+        .accessibilityValue(current ?? "")
         .accessibilityAdjustableAction { direction in
             let i = current.flatMap { letters.firstIndex(of: $0) } ?? 0
             let next = direction == .increment ? min(letters.count - 1, i + 1) : max(0, i - 1)

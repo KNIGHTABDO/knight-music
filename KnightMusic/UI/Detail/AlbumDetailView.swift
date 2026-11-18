@@ -356,7 +356,11 @@ struct AlbumDetailView: View {
                             .frame(width: 18, height: 18)
                             .rotationEffect(.degrees(-90))
                     }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Cancel Album Download")
+                .accessibilityValue(progress.formatted(.percent.precision(.fractionLength(0))))
             } else {
                 Button {
                     downloads.download(songs: songs)

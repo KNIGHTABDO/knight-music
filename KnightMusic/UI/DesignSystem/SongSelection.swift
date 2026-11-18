@@ -101,6 +101,7 @@ struct SongSelectionBar: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.secondaryLabel)
                 .contentTransition(.numericText())
+            ScrollView(.horizontal) {
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
                     barButton(allSelected ? "Deselect All" : "Select All",
@@ -134,15 +135,23 @@ struct SongSelectionBar: View {
                         let ids = picked.filter { $0.starred == nil }.map(\.id)
                         selection.end()
                         Task {
+                            var done = 0
                             for id in ids {
-                                guard (try? await library.setStarred(.song, id: id, true)) != nil else { return }
+                                guard (try? await library.setStarred(.song, id: id, true)) != nil else { break }
+                                done += 1
                             }
+                            if done < ids.count { ui?.showToast("Loved \(done) of \(ids.count)") }
                         }
                     }
                 }
             }
+            .padding(.horizontal, Theme.margin)
+            }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .defaultScrollAnchor(.center)
+            .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, Theme.margin)
         .padding(.bottom, 8)
         .sensoryFeedback(.selection, trigger: picked.count)
     }

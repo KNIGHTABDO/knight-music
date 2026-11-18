@@ -35,8 +35,8 @@ enum Sectioning {
     static func normalizeLetter(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = trimmed.first else { return "#" }
-        let s = String(first).uppercased()
-        if let scalar = s.unicodeScalars.first, scalar.value >= 65 && scalar.value <= 90 {
+        let s = String(first).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current).uppercased()
+        if s.unicodeScalars.count == 1, let scalar = s.unicodeScalars.first, scalar.value >= 65 && scalar.value <= 90 {
             return s
         }
         return "#"
@@ -50,11 +50,12 @@ enum Sectioning {
             return
         }
         if letter != "#" {
-            if let nextSection = sections.first(where: { $0.letter > letter }) {
+            // Direction-agnostic: the nearest following letter, whether the list is ascending or reversed.
+            if let nextSection = sections.filter({ $0.letter != "#" && $0.letter > letter }).min(by: { $0.letter < $1.letter }) {
                 withAnimation(.snappy(duration: 0.2)) {
                     proxy.scrollTo(nextSection.letter, anchor: .top)
                 }
-            } else if let last = sections.last {
+            } else if let last = sections.filter({ $0.letter != "#" }).max(by: { $0.letter < $1.letter }) ?? sections.last {
                 withAnimation(.snappy(duration: 0.2)) {
                     proxy.scrollTo(last.letter, anchor: .top)
                 }
