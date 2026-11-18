@@ -204,7 +204,7 @@ enum DebugLaunch {
             }
         case "genre":
             if let genre = try? await app.database?.pool.read({ db in try LibraryQueries.genres(db).first }) {
-                show(.genre(genre.name), ui: ui, nav: nav, isRegular: isRegular)
+                show(.genre(genre.value), ui: ui, nav: nav, isRegular: isRegular)
             }
         case "song-info":
             if let song = try? await app.database?.pool.read({ db in try Song.fetchOne(db) }) {
