@@ -168,6 +168,8 @@ extension PlayerEngine {
         if startAt > 0 { seek(to: startAt) }
         applyVolume()
         if autoplay {
+            prepared.startRequestedAt = ProcessInfo.processInfo.systemUptime
+            holdBackgroundCaching(for: prepared)
             player.play()
             isPlaying = true
         } else {
@@ -338,6 +340,12 @@ extension PlayerEngine {
         seekTarget = nil
         publishCurrent(next, startAt: 0, playing: true)
         applyVolume()
+        if player.currentItem === next.item, next.item.status == .readyToPlay, player.timeControlStatus == .playing {
+            startupFinished(next)               // gapless handoff: already audible
+        } else {
+            next.startRequestedAt = ProcessInfo.processInfo.systemUptime
+            holdBackgroundCaching(for: next)
+        }
         prepareNext()
         syncCache()
         saveQueueSoon()
@@ -385,7 +393,10 @@ extension PlayerEngine {
             let depth = services.network == .cellular ? 2 : 3
             let upper = min(order.count, currentIndex + depth)
             // YouTube songs stream on demand; saving them ahead is what "Add to Navidrome" is for.
-            let songs = order[currentIndex..<upper].map(\.song).filter { !$0.isYouTube }
+            // The current song is already streaming: its local copy is queued after the upcoming ones.
+            let window = order[currentIndex..<upper].map(\.song).filter { !$0.isYouTube }
+            let currentId = order[currentIndex].song.id
+            let songs = window.filter { $0.id != currentId } + window.filter { $0.id == currentId }
             streamCache.retainOnly(Set(songs.map(\.id) + (plannedMix.map { [$0.to.id] } ?? [])))
             let quality = currentQuality()
             for song in songs where downloads?.localFileURL(for: song.id) == nil && !streamCache.contains(song.id) {
@@ -576,6 +587,8 @@ extension PlayerEngine {
         // While buffering publish rate 0 so the car's progress bar does not run ahead
         let effectiveRate = (status == .playing && !buffering) ? 1.0 : 0.0
         nowPlaying.updatePlayback(elapsed: elapsedNow(), rate: effectiveRate)
+        if status == .playing, let tracked, player.currentItem === tracked.item { startupFinished(tracked) }
+        if buffering, let tracked { kickStartIfBuffered(tracked) }
     }
 
     func currentItemChanged() {
@@ -617,6 +630,7 @@ extension PlayerEngine {
             let end = p.item.loadedTimeRanges.map { $0.timeRangeValue }
                 .map { ($0.start + $0.duration).seconds }.filter { $0.isFinite }.max() ?? 0
             bufferedFraction = min(max(end / duration, 0), 1)
+            kickStartIfBuffered(p)
         case .radio:
             break
         }

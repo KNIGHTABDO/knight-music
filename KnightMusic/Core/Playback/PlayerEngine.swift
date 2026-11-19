@@ -45,6 +45,13 @@ final class PreparedItem {
     var isRadio: Bool { resolved.kind == .radio }
     /// Set when the item is an AutoMix incoming song with its blend tempo baked in (item time ≠ song time).
     var warp: TimeWarp?
+    /// Startup bookkeeping: when play was asked for (for the time-to-first-sound log), how many times a stalled
+    /// start was nudged, and whether upcoming YouTube songs were already resolved ahead.
+    var startRequestedAt: TimeInterval?
+    var kicks = 0
+    var startedOnce = false
+    /// True until the song first plays and again after each seek: a short buffer is enough to start.
+    var quickStart = true
 
     func songTime(_ itemTime: Double) -> Double { warp?.songTime(itemTime) ?? itemTime }
     func itemTime(_ songTime: Double) -> Double { warp?.itemTime(songTime) ?? songTime }
@@ -464,6 +471,8 @@ final class PlayerEngine {
         let generation = seekGeneration
         seekTarget = target
         currentTime = target
+        tracked.quickStart = true
+        tracked.kicks = 0
         player.seek(to: CMTime(seconds: tracked.itemTime(target), preferredTimescale: 600_000),
                     toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
             Task { @MainActor in

@@ -41,6 +41,8 @@ final class StreamCache: @unchecked Sendable {
     private let maxConcurrent = 3
     private var fractions: [String: Double] = [:]
     private var lastReport: TimeInterval = 0
+    /// Until this uptime, background (non-urgent) jobs wait in the queue: a song is starting to stream.
+    private var holdUntil: TimeInterval = 0
     /// Called (on any thread) whenever what is queued/downloading or its progress changes.
     var onActivity: (@Sendable ([CacheTransfer]) -> Void)?
 
@@ -233,9 +235,33 @@ final class StreamCache: @unchecked Sendable {
         report()
     }
 
+    /// Keep background downloads from starting for up to `seconds` (already running ones continue), so a song
+    /// that is starting to stream is not competing with save-ahead for bandwidth. AutoMix's urgent jobs still run.
+    func holdBackground(seconds: TimeInterval) {
+        lock.lock()
+        holdUntil = ProcessInfo.processInfo.systemUptime + seconds
+        lock.unlock()
+        Task.detached(priority: .utility) { [weak self] in
+            // A little past the deadline so the re-pump sees the hold as over.
+            try? await Task.sleep(nanoseconds: UInt64((seconds + 0.1) * 1_000_000_000))
+            self?.pump()
+        }
+    }
+
+    /// The song started playing: let held downloads go now.
+    func releaseHold() {
+        lock.lock()
+        let wasHeld = holdUntil > ProcessInfo.processInfo.systemUptime
+        holdUntil = 0
+        lock.unlock()
+        if wasHeld { pump() }
+    }
+
     private func pump() {
         lock.lock()
-        while !queued.isEmpty, active.count < maxConcurrent || (queued[0].urgent && active.count < maxConcurrent + 1) {
+        let held = ProcessInfo.processInfo.systemUptime < holdUntil
+        while !queued.isEmpty, !held || queued[0].urgent,
+              active.count < maxConcurrent || (queued[0].urgent && active.count < maxConcurrent + 1) {
             let job = queued.removeFirst()
             let task = Task.detached(priority: .utility) { [weak self] in
                 await self?.run(job)

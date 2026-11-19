@@ -153,6 +153,13 @@ extension AppModel {
             ArtworkLoader.configure(provider: app.client)
             let youTubeServer: (@Sendable (String) -> URL?)? = app.client.map { client in { path in client.autoMixURL(path: path) } }
             Task { await YouTubeConfigStore.shared.setServer(youTubeServer) }
+            if app.client != nil {
+                // Have the YouTube visitor session ready before the first YouTube song is played.
+                Task.detached(priority: .utility) {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    await YouTubeMusic.shared.warmUp()
+                }
+            }
             app.playbackServices.urls = app.client
             app.playbackServices.server = app.client.map(SubsonicServerActions.init)
             app.playbackServices.autoMix = app.client.map { client in

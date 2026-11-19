@@ -94,6 +94,16 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
             var entityTag: String?
             // Small first read so playback starts quickly; then the stream's full chunk size.
             var chunk: Int64 = min(256 << 10, stream.chunkSize)
+            // The first bytes were already fetched when the stream was resolved: answer from memory.
+            if let head = await YouTubeMusic.shared.head(videoId: videoId, url: stream.url), head.total == length,
+               offset < Int64(head.data.count) {
+                try Task.checkCancellation()
+                let stop = min(end + 1, Int64(head.data.count))
+                dataRequest.respond(with: head.data.subdata(in: Int(offset)..<Int(stop)))
+                offset = stop
+                if let tag = head.entityTag { entityTag = tag }
+                chunk = stream.chunkSize
+            }
             while offset <= end {
                 try Task.checkCancellation()
                 guard chunk > 0 else { throw YouTubeError.invalidResponse }
@@ -125,7 +135,6 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
                     bytes.task.cancel()
                     throw YouTubeError.invalidResponse
                 }
-                let piece: Data
                 if status == 206 {
                     let responseTag = http.value(forHTTPHeaderField: "ETag")
                     if let entityTag, responseTag != entityTag {
@@ -145,17 +154,32 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
                         bytes.task.cancel()
                         throw YouTubeError.invalidResponse
                     }
-                    var data = Data()
-                    data.reserveCapacity(Int(expectedBytes))
+                    // Hand bytes to AVPlayer as they arrive instead of after the whole range: it can start
+                    // decoding while the rest of the chunk is still on the wire.
+                    let flushBytes = 64 << 10
+                    var buffer = Data()
+                    buffer.reserveCapacity(flushBytes)
+                    var received: Int64 = 0
                     for try await byte in bytes {
-                        guard Int64(data.count) < expectedBytes else {
+                        guard received < expectedBytes else {
                             bytes.task.cancel()
                             throw YouTubeError.invalidResponse
                         }
-                        data.append(byte)
+                        buffer.append(byte)
+                        received += 1
+                        if buffer.count >= flushBytes {
+                            if Task.isCancelled { bytes.task.cancel(); throw CancellationError() }
+                            dataRequest.respond(with: buffer)
+                            offset += Int64(buffer.count)
+                            buffer.removeAll(keepingCapacity: true)
+                        }
                     }
-                    guard Int64(data.count) == expectedBytes else { throw YouTubeError.invalidResponse }
-                    piece = data
+                    guard received == expectedBytes else { throw YouTubeError.invalidResponse }
+                    try Task.checkCancellation()
+                    if !buffer.isEmpty {
+                        dataRequest.respond(with: buffer)
+                        offset += Int64(buffer.count)
+                    }
                 } else if status == 200 {
                     // Supported AutoMix /yt/audio responses honor Range and return 206. Cancel
                     // before reading the body: ignored Range must not buffer a whole song here.
@@ -165,9 +189,6 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
                     bytes.task.cancel()
                     throw YouTubeError.http(status)
                 }
-                try Task.checkCancellation()
-                dataRequest.respond(with: piece)
-                offset += Int64(piece.count)
                 chunk = stream.chunkSize
             }
             request.finishLoading()
@@ -181,7 +202,7 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
 
     /// Strict single-range parser: bytes start-end/total. Wildcard and malformed totals are not
     /// useful for joining a known YouTube representation, so reject them.
-    private static func contentRange(_ value: String?) -> (Int64, Int64, Int64)? {
+    static func contentRange(_ value: String?) -> (Int64, Int64, Int64)? {
         guard let value, value.hasPrefix("bytes ") else { return nil }
         let parts = value.dropFirst(6).split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 2, let total = Int64(parts[1]), total > 0 else { return nil }

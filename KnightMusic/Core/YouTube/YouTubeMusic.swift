@@ -39,6 +39,15 @@ struct YTStream: Sendable {
     }
 }
 
+/// The first bytes of a stream, fetched while checking that its URL works. AVPlayer's first reads are answered
+/// from memory, so a song starts without another round trip to googlevideo.
+struct YTHead: Sendable {
+    let url: URL
+    let data: Data
+    let entityTag: String?
+    let total: Int64
+}
+
 /// YouTube Music over InnerTube: catalog (WEB_REMIX) and audio streams (player clients from `YouTubeConfig`).
 /// A visitor session (cookies + visitorData, like a fresh browser) keeps the player API from asking to sign in.
 actor YouTubeMusic {
@@ -54,14 +63,56 @@ actor YouTubeMusic {
     private var resolving: [String: Task<YTStream, Error>] = [:]
     private var feedCache: [String: (feed: YTDiscoverFeed, fetchedAt: Date)] = [:]
     private var moodSectionsCache: (sections: [YTMoodGenreSection], fetchedAt: Date)? = nil
-    private var lastGoodClient: String?
+    /// Persisted so the first song after a launch asks the client that worked last time instead of walking
+    /// the configured order through clients that currently fail.
+    private var lastGoodClient: String? {
+        didSet {
+            if lastGoodClient != oldValue { UserDefaults.standard.set(lastGoodClient, forKey: Self.lastGoodClientKey) }
+        }
+    }
+    private var heads: [String: YTHead] = [:]
+    private var headOrder: [String] = []
     private var store: YouTubeConfigStore { .shared }
+    private static let lastGoodClientKey = "youtube.lastGoodClient"
+    private static let headBytes: Int64 = 256 << 10
+    private static let maxHeads = 8
 
     private init() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .always
         configuration.timeoutIntervalForRequest = 20
         session = URLSession(configuration: configuration)
+        lastGoodClient = UserDefaults.standard.string(forKey: Self.lastGoodClientKey)
+    }
+
+    /// Start the visitor session before the first YouTube song is played, so that play is one API call.
+    func warmUp() async {
+        let config = await store.current()
+        guard !config.disabled else { return }
+        _ = await visitor()
+    }
+
+    /// Resolve a song that is about to play (its stream and first bytes). Failures only cost the head start:
+    /// playing the song resolves again and reports the error then.
+    func prefetch(videoId: String) async {
+        do {
+            _ = try await stream(videoId: videoId)
+        } catch {
+            Log.playback.info("YouTube \(videoId): prefetch failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// The prefetched first bytes of `videoId`, if they came from this exact stream URL.
+    func head(videoId: String, url: URL) -> YTHead? {
+        guard let head = heads[videoId], head.url == url else { return nil }
+        return head
+    }
+
+    private func storeHead(_ head: YTHead, videoId: String) {
+        heads[videoId] = head
+        headOrder.removeAll { $0 == videoId }
+        headOrder.append(videoId)
+        while headOrder.count > Self.maxHeads { heads[headOrder.removeFirst()] = nil }
     }
 
     // MARK: Catalog
@@ -356,6 +407,8 @@ actor YouTubeMusic {
     /// Forget a stream whose URL stopped working (expired or blocked) so the next request mints a new one.
     func invalidate(videoId: String) {
         streams[videoId] = nil
+        heads[videoId] = nil
+        headOrder.removeAll { $0 == videoId }
     }
 
     private func resolveStream(_ videoId: String) async throws -> YTStream {
@@ -403,7 +456,7 @@ actor YouTubeMusic {
             let root = try await post("player", payload, client: client, visitor: visitor)
             let status = YouTubeParser.dig(root, "playabilityStatus", "status") as? String ?? "?"
             if status == "OK" {
-                return try await pickStream(root, key: key, client: client)
+                return try await pickStream(root, videoId: videoId, key: key, client: client)
             }
             let reason = YouTubeParser.dig(root, "playabilityStatus", "reason") as? String ?? status
             // A bot check means the visitor session went stale: start a fresh one once.
@@ -416,7 +469,7 @@ actor YouTubeMusic {
         throw YouTubeError.unavailable("sign-in required")
     }
 
-    private func pickStream(_ root: JSON, key: String, client: YouTubeClientProfile) async throws -> YTStream {
+    private func pickStream(_ root: JSON, videoId: String, key: String, client: YouTubeClientProfile) async throws -> YTStream {
         let formats = YouTubeParser.dig(root, "streamingData", "adaptiveFormats") as? [JSON] ?? []
         let audio = formats.filter { ($0["mimeType"] as? String)?.hasPrefix("audio/mp4") == true && $0["url"] != nil }
         let ranked = [140, 139].compactMap { itag in audio.first { $0["itag"] as? Int == itag } } + audio
@@ -427,14 +480,50 @@ actor YouTubeMusic {
         let expire = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .first { $0.name == "expire" }?.value.flatMap { TimeInterval($0) }
         let small = key == "android_vr" || key == "tv"
-        let stream = YTStream(url: url, userAgent: client.userAgent.isEmpty ? nil : client.userAgent,
+        var stream = YTStream(url: url, userAgent: client.userAgent.isEmpty ? nil : client.userAgent,
                               contentLength: length, client: key,
                               expires: expire.map { Date(timeIntervalSince1970: $0) } ?? Date().addingTimeInterval(5 * 3600),
                               chunkSize: small ? 512 << 10 : 1 << 20)
         // Some clients get URLs that answer 403 (they would need a PO token): check before trusting one.
-        let (_, response) = try await session.data(for: stream.request(range: 0...1))
-        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard code == 206 || code == 200 else { throw YouTubeError.http(code) }
+        // The check reads the song's first bytes, which the loader then serves without another request.
+        let wanted = max(min(length ?? Self.headBytes, Self.headBytes), 2)
+        let (bytes, response) = try await session.bytes(for: stream.request(range: 0...(wanted - 1)))
+        guard let http = response as? HTTPURLResponse else {
+            bytes.task.cancel()
+            throw YouTubeError.invalidResponse
+        }
+        guard http.statusCode == 206 else {
+            // A 200 ignored the range: never read a whole song here. The loader reports it if it persists.
+            bytes.task.cancel()
+            guard http.statusCode == 200 else { throw YouTubeError.http(http.statusCode) }
+            return stream
+        }
+        guard let range = YouTubeResourceLoader.contentRange(http.value(forHTTPHeaderField: "Content-Range")),
+              range.0 == 0, range.1 == min(wanted, range.2) - 1, length == nil || length == range.2 else {
+            bytes.task.cancel()
+            Log.playback.warning("YouTube \(videoId): unexpected Content-Range on the first bytes; streaming without them")
+            return stream
+        }
+        let expected = range.1 + 1
+        var data = Data()
+        data.reserveCapacity(Int(expected))
+        var overflow = false
+        do {
+            for try await byte in bytes {
+                guard Int64(data.count) < expected else { overflow = true; break }
+                data.append(byte)
+            }
+        } catch {
+            // The URL answered; only the head start is lost.
+            Log.playback.info("YouTube \(videoId): first bytes interrupted: \(error.localizedDescription)")
+            return stream
+        }
+        bytes.task.cancel()
+        if stream.contentLength == nil { stream.contentLength = range.2 }
+        if !overflow, Int64(data.count) == expected {
+            storeHead(YTHead(url: url, data: data, entityTag: http.value(forHTTPHeaderField: "ETag"), total: range.2),
+                      videoId: videoId)
+        }
         return stream
     }
 }
