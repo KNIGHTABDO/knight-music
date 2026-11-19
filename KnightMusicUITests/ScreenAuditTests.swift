@@ -58,7 +58,11 @@ final class ScreenAuditTests: XCTestCase {
 
     func test_c_crawlSettingsAndLibrary() {
         crawl(screen: "settings", prefix: "crawl-settings")
-        crawl(screen: "library-hub", prefix: "crawl-library")
+        // On iPad the sidebar is the library hub and "library-hub" lands on Home, which has no list rows: the crawl
+        // just swiped the shelves until a UI query timed out. test_a already shoots every sidebar section there.
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            crawl(screen: "library-hub", prefix: "crawl-library")
+        }
     }
 
     // MARK: - Helpers
@@ -86,7 +90,8 @@ final class ScreenAuditTests: XCTestCase {
         var visited = Set<String>()
         var stalls = 0
         var step = 0
-        while stalls < 3, step < 60 {
+        let deadline = Date().addingTimeInterval(8 * 60)   // keep one slow screen from timing out the whole test
+        while stalls < 3, step < 60, Date() < deadline {
             let candidates = rowLabels(app).filter { !visited.contains($0) }
             guard let next = candidates.first else {
                 app.swipeUp()
