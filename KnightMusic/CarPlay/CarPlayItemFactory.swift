@@ -33,6 +33,14 @@ final class CarPlayPlayableFilter {
         return songs.filter { isSongPlayable($0) }
     }
 
+    /// Same predicate as `LibraryQueries.downloadedSongs`; bind `DownloadState.completed.rawValue`.
+    nonisolated private static let completedDownloadSongIds = """
+        SELECT songId FROM download
+        WHERE state = ?
+          AND attemptId IS NOT NULL
+          AND relativePath GLOB '????????-????-????-????-????????????/*'
+        """
+
     func fetchPlayableAlbumIds() async -> Set<String> {
         guard isOffline, let db = appModel.database else { return [] }
         do {
@@ -42,9 +50,10 @@ final class CarPlayPlayableFilter {
                     sql: """
                     SELECT DISTINCT albumId FROM song
                     WHERE albumId IS NOT NULL
-                    AND (id IN (SELECT songId FROM download WHERE state = 'done')
+                    AND (id IN (\(Self.completedDownloadSongIds))
                          OR id IN (SELECT songId FROM cachedSong))
-                    """
+                    """,
+                    arguments: [DownloadState.completed.rawValue]
                 )
             }
             return Set(ids)
@@ -62,9 +71,10 @@ final class CarPlayPlayableFilter {
                     db,
                     sql: """
                     SELECT DISTINCT playlistId FROM playlistEntry
-                    WHERE songId IN (SELECT songId FROM download WHERE state = 'done')
+                    WHERE songId IN (\(Self.completedDownloadSongIds))
                        OR songId IN (SELECT songId FROM cachedSong)
-                    """
+                    """,
+                    arguments: [DownloadState.completed.rawValue]
                 )
             }
             return Set(ids)
@@ -83,9 +93,10 @@ final class CarPlayPlayableFilter {
                     sql: """
                     SELECT DISTINCT artistId FROM song
                     WHERE artistId IS NOT NULL
-                    AND (id IN (SELECT songId FROM download WHERE state = 'done')
+                    AND (id IN (\(Self.completedDownloadSongIds))
                          OR id IN (SELECT songId FROM cachedSong))
-                    """
+                    """,
+                    arguments: [DownloadState.completed.rawValue]
                 )
             }
             return Set(ids)
