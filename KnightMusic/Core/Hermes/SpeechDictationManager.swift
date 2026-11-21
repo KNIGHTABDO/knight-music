@@ -11,6 +11,8 @@ final class SpeechDictationManager: NSObject {
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    /// Set while permission prompts are pending; `stop()` clears it so a late grant doesn't start the mic.
+    private var pendingStartID: UUID?
     private let audioEngine = AVAudioEngine()
 
     override init() {
@@ -32,38 +34,49 @@ final class SpeechDictationManager: NSObject {
     }
 
     func start(onText: @escaping (String) -> Void) {
-        guard !isRecording else { return }
+        guard !isRecording, pendingStartID == nil else { return }
+        let startID = UUID()
+        pendingStartID = startID
+        errorMessage = nil
 
-        SFSpeechRecognizer.requestAuthorization { [weak self] status in
-            Task { @MainActor in
-                guard status == .authorized else {
-                    self?.errorMessage = "Speech recognition access denied"
+        // Permission callbacks arrive on arbitrary queues: build them outside the main actor and hop back.
+        SFSpeechRecognizer.requestAuthorization(Self.authorizationHandler { [weak self] authorized in
+            guard let self, self.pendingStartID == startID else { return }
+            guard authorized else {
+                self.pendingStartID = nil
+                self.errorMessage = "Speech recognition access denied"
+                return
+            }
+            AVAudioApplication.requestRecordPermission(Self.permissionHandler { [weak self] granted in
+                guard let self, self.pendingStartID == startID else { return }
+                guard granted else {
+                    self.pendingStartID = nil
+                    self.errorMessage = "Microphone access denied"
                     return
                 }
-                if #available(iOS 17.0, *) {
-                    AVAudioApplication.requestRecordPermission { [weak self] granted in
-                        Task { @MainActor in
-                            guard granted else {
-                                self?.errorMessage = "Microphone access denied"
-                                return
-                            }
-                            self?.beginRecording(onText: onText)
-                        }
-                    }
-                } else {
-                    AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
-                        Task { @MainActor in
-                            guard granted else {
-                                self?.errorMessage = "Microphone access denied"
-                                return
-                            }
-                            self?.beginRecording(onText: onText)
-                        }
-                    }
-                }
+                self.beginRecording(onText: onText)
+            })
+        })
+    }
 
-            }
+    private nonisolated static func authorizationHandler(
+        _ body: @escaping @MainActor @Sendable (Bool) -> Void
+    ) -> @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void {
+        { status in
+            let authorized = status == .authorized
+            Task { @MainActor in body(authorized) }
         }
+    }
+
+    private nonisolated static func permissionHandler(
+        _ body: @escaping @MainActor @Sendable (Bool) -> Void
+    ) -> @Sendable (Bool) -> Void {
+        { granted in Task { @MainActor in body(granted) } }
+    }
+
+    /// The tap runs on CoreAudio's realtime thread, so it must not inherit the main actor's isolation.
+    private nonisolated static func makeTap(for request: SFSpeechAudioBufferRecognitionRequest) -> AVAudioNodeTapBlock {
+        { buffer, _ in request.append(buffer) }
     }
 
     private func beginRecording(onText: @escaping (String) -> Void) {
@@ -90,10 +103,14 @@ final class SpeechDictationManager: NSObject {
 
             let inputNode = audioEngine.inputNode
             let recordingFormat = inputNode.outputFormat(forBus: 0)
-            inputNode.removeTap(onBus: 0)
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-                request.append(buffer)
+            // No input route (e.g. mic in use by a call) reports a 0 Hz / 0 channel format; installTap would crash.
+            guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+                errorMessage = "Microphone is not available right now"
+                stop()
+                return
             }
+            inputNode.removeTap(onBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat, block: Self.makeTap(for: request))
 
             audioEngine.prepare()
             try audioEngine.start()
@@ -122,10 +139,11 @@ final class SpeechDictationManager: NSObject {
     }
 
     func stop() {
+        pendingStartID = nil
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
+        audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()
         recognitionRequest = nil

@@ -171,7 +171,10 @@ struct KnightChatView: View {
             newChatId = "km-\(UUID().uuidString.lowercased())"
         }
         .onChange(of: dictation.errorMessage) { _, message in
-            if let message { ui.showToast(message) }
+            guard let message else { return }
+            ui.showToast(message)
+            // A failed start never flips isRecording, so resume the music paused for dictation here.
+            if !dictation.isRecording, resumeAfterDictation { player.resume(); resumeAfterDictation = false }
         }
         .onChange(of: dictation.isRecording) { _, recording in
             if !recording, resumeAfterDictation { player.resume(); resumeAfterDictation = false }
