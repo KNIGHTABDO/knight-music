@@ -105,7 +105,7 @@ jobs:
         with:
           name: screens
           path: screens/
-          retention-days: 1
+          retention-days: 14
 
       - name: Archive unsigned IPA
         if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.candidate_version != '')
