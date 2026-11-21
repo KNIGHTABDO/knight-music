@@ -66,6 +66,7 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
     private var autoSubDone = false
     private var intro: (Double, Double)?
     private var outro: (Double, Double)?
+    private var pausedByInterruption = false
 
     init(options: StreamoraPlayerOptions, send: @escaping (String, [String: Any]) -> Void) {
         self.opts = options
@@ -129,6 +130,9 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
         UIApplication.shared.isIdleTimerDisabled = true
         NotificationCenter.default.addObserver(self, selector: #selector(appBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        let session = AVAudioSession.sharedInstance()
+        NotificationCenter.default.addObserver(self, selector: #selector(routeChanged), name: AVAudioSession.routeChangeNotification, object: session)
+        NotificationCenter.default.addObserver(self, selector: #selector(interrupted), name: AVAudioSession.interruptionNotification, object: session)
         setupRemote()
         scheduleHide()
     }
@@ -145,9 +149,45 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
             }
             commandTargets.append((cmd, t))
         }
-        add(c.playCommand) { [weak self] p in self?.onPlay?(); p.play() }
+        add(c.playCommand) { [weak self] _ in self?.resumePlayback() }
         add(c.pauseCommand) { p in if p.canPause { p.pause() } }
-        add(c.togglePlayPauseCommand) { [weak self] p in if p.isPlaying { p.pause() } else { self?.onPlay?(); p.play() } }
+        add(c.togglePlayPauseCommand) { [weak self] p in if p.isPlaying { p.pause() } else { self?.resumePlayback() } }
+    }
+
+    /// The viewer resumes: take the movie focus and the audio session back (music or a call may hold it).
+    private func resumePlayback() {
+        guard !finished else { return }
+        onPlay?()
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        pausedByInterruption = false
+        player.play()
+    }
+
+    // VLC doesn't follow the audio session: pause when headphones go away or a call starts, like every iOS player.
+    @objc private func routeChanged(_ note: Notification) {
+        guard let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              AVAudioSession.RouteChangeReason(rawValue: raw) == .oldDeviceUnavailable else { return }
+        DispatchQueue.main.async { [weak self] in self?.pauseFromApp() }
+    }
+
+    @objc private func interrupted(_ note: Notification) {
+        guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        let rawOptions = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+        let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.finished else { return }
+            switch type {
+            case .began:
+                self.pausedByInterruption = self.player.isPlaying
+                if self.pausedByInterruption { self.pauseFromApp() }
+            case .ended:
+                if shouldResume, self.pausedByInterruption, DuetMedia.movieHasFocus { self.resumePlayback() }
+                self.pausedByInterruption = false
+            @unknown default: break
+            }
+        }
     }
 
     private func updateNowPlaying() {
@@ -216,6 +256,10 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
             return
         case .stopped where everPlayed && d > 0 && d - position < 5:
             finish(ended: true)
+            return
+        case .stopped where everPlayed:
+            // VLC gave up mid-stream (lost connection): an error lets the page fail over to another source.
+            finish(error: "The stream stopped.")
             return
         default: break
         }
@@ -482,7 +526,7 @@ final class StreamoraPlayerViewController: UIViewController, UIGestureRecognizer
 
     @objc private func tapClose() { finish() }
     @objc private func tapPlay() {
-        if player.isPlaying { player.pause() } else { onPlay?(); player.play() }
+        if player.isPlaying { player.pause() } else { resumePlayback() }
         scheduleHide()
     }
 

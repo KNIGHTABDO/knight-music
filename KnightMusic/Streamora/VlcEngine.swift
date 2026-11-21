@@ -41,6 +41,8 @@ final class VlcEngine: NSObject {
     private var commandTargets: [(MPRemoteCommand, Any)] = []
     private var infoTicks = 0
     private var lastPlaying = false
+    private var sessionObservers: [NSObjectProtocol] = []
+    private var pausedByInterruption = false
 
     init?(webView: WKWebView, url: URL, start: Double, audioLang: String, title: String = "", subtitle: String = "", poster: String = "", send: @escaping (String, [String: Any]) -> Void) {
         guard let parent = webView.superview else { return nil }
@@ -71,8 +73,7 @@ final class VlcEngine: NSObject {
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
 
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
-        try? AVAudioSession.sharedInstance().setActive(true)
+        Self.activateSession()
         UIApplication.shared.isIdleTimerDisabled = true
 
         let media = VLCMedia(url: url)
@@ -88,6 +89,43 @@ final class VlcEngine: NSObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
         setMeta(title: title, subtitle: subtitle, poster: poster)
         setupRemote()
+        observeAudioSession()
+    }
+
+    // MARK: - audio session
+
+    private static func activateSession() {
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    /// VLC doesn't follow the audio session: pause when headphones go away or a call starts (like every iOS
+    /// player), and tell the page so its controls stay in step.
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+        sessionObservers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: session,
+                                                   queue: .main) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  AVAudioSession.RouteChangeReason(rawValue: raw) == .oldDeviceUnavailable else { return }
+            self?.pauseFromApp()
+        })
+        sessionObservers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: session,
+                                                   queue: .main) { [weak self] note in
+            guard let self, !self.done, let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            switch type {
+            case .began:
+                self.pausedByInterruption = self.player.isPlaying
+                if self.pausedByInterruption { self.remotePause() }
+            case .ended:
+                let rawOptions = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let resume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+                if resume, self.pausedByInterruption, DuetMedia.movieHasFocus { self.remotePlay() }
+                self.pausedByInterruption = false
+            @unknown default: break
+            }
+        })
     }
 
     // MARK: - lock screen
@@ -179,7 +217,13 @@ final class VlcEngine: NSObject {
 
     // MARK: - controls (from JS)
 
-    func play() { if !done { player.play() } }
+    func play() {
+        guard !done else { return }
+        // Music (or a call) may have taken the session over while the movie was paused.
+        Self.activateSession()
+        pausedByInterruption = false
+        player.play()
+    }
     func pause() { if !done, player.canPause { player.pause() } }
     func seek(_ t: Double) {
         guard !done else { return }
@@ -200,6 +244,8 @@ final class VlcEngine: NSObject {
         guard !done else { return }
         done = true
         timer?.invalidate()
+        for observer in sessionObservers { NotificationCenter.default.removeObserver(observer) }
+        sessionObservers = []
         for (cmd, t) in commandTargets { cmd.removeTarget(t) }
         commandTargets = []
         // Knight Music shares these commands: DuetMedia hands them (and Now Playing) back to the music player.
@@ -242,6 +288,9 @@ final class VlcEngine: NSObject {
             d["ended"] = true
         case .stopped where everPlayed && duration > 0 && duration - Double(t) / 1000 < 5:
             d["ended"] = true
+        case .stopped where everPlayed:
+            // VLC gave up mid-stream (lost connection): an error lets the page fail over to another source.
+            d["error"] = "The stream stopped."
         case .error:
             d["error"] = everPlayed ? "The stream stopped." : "This file couldn't be played."
         default: break

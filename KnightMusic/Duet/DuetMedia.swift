@@ -51,8 +51,14 @@ final class DuetMedia {
             }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = false
-        MPRemoteCommandCenter.shared().previousTrackCommand.isEnabled = false
+        // Music-only commands would show dead buttons (or act on paused music) next to the movie. The movie
+        // re-enables the ones it handles in `reclaimMovie`; `RemoteCommands.refresh()` restores these for music.
+        let c = MPRemoteCommandCenter.shared()
+        for command in [c.nextTrackCommand, c.previousTrackCommand, c.changePlaybackPositionCommand,
+                        c.seekForwardCommand, c.seekBackwardCommand, c.likeCommand,
+                        c.changeRepeatModeCommand, c.changeShuffleModeCommand] {
+            command.isEnabled = false
+        }
         reclaimMovie?()
         Log.app.info("duet: movie has focus (\(String(describing: source)))")
     }

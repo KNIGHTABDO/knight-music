@@ -99,7 +99,8 @@ final class RemoteCommands {
 
     /// Re-sync enabled/active states with the engine (call after queue/song/repeat/shuffle changes).
     func refresh() {
-        guard let engine else { return }
+        // A Streamora movie owns the commands; DuetMedia calls this again when music gets the focus back.
+        guard let engine, !DuetMedia.movieHasFocus else { return }
         let c = MPRemoteCommandCenter.shared()
         let live = engine.currentRadio != nil
         c.nextTrackCommand.isEnabled = !live && engine.hasNext
