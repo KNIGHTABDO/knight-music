@@ -11,7 +11,7 @@ struct CacheTransfer: Equatable, Sendable, Identifiable {
     var id: String { songId }
 }
 
-/// Disk cache of streamed songs (Caches/StreamCache/). Songs are fetched in parallel with playback at low
+/// Disk cache of streamed songs (Caches/StreamCache/<account id>/). Songs are fetched in parallel with playback at low
 /// priority, using the SAME URL/quality the player streams, then LRU-evicted under the size limit.
 final class StreamCache: @unchecked Sendable {
     private struct Entry {
@@ -29,7 +29,9 @@ final class StreamCache: @unchecked Sendable {
         var urgent = false
     }
 
-    let directory: URL
+    private let root: URL
+    /// The active account's folder; each account's database only indexes its own files.
+    private(set) var directory: URL
     private let session: URLSession
     private let lock = NSLock()
     private var index: [String: Entry] = [:]
@@ -48,17 +50,21 @@ final class StreamCache: @unchecked Sendable {
 
     init() {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        directory = base.appendingPathComponent("StreamCache", isDirectory: true)
+        root = base.appendingPathComponent("StreamCache", isDirectory: true)
+        directory = root
         let config = URLSessionConfiguration.default
         config.urlCache = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.timeoutIntervalForRequest = 30
         session = URLSession(configuration: config)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        excludeFromBackup(directory)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        excludeFromBackup(root)
     }
 
-    func configure(database: DatabaseWriter) {
+    func configure(database: DatabaseWriter, accountId: String) {
+        let directory = root.appendingPathComponent(safeFileComponent(accountId), isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        removeLegacyRootFiles()
         let rows: [CachedSongRecord]
         do {
             rows = try database.read { try CachedSongRecord.fetchAll($0) }
@@ -69,6 +75,7 @@ final class StreamCache: @unchecked Sendable {
         var missing: [String] = []
         lock.lock()
         self.database = database
+        self.directory = directory
         index = [:]
         for row in rows {
             let url = directory.appendingPathComponent(row.relativePath)
@@ -87,6 +94,32 @@ final class StreamCache: @unchecked Sendable {
             for name in files where !known.contains(name) {
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
             }
+        }
+    }
+
+    /// Account signed out or switched: stop every transfer and forget the old database (its pool gets closed).
+    func deactivate() {
+        lock.lock()
+        let tasks = Array(active.values)
+        active = [:]
+        queued = []
+        fractions = [:]
+        urgentIds = []
+        protectedIds = []
+        index = [:]
+        database = nil
+        directory = root
+        lock.unlock()
+        tasks.forEach { $0.cancel() }
+        report(force: true)
+    }
+
+    /// Files cached before the cache was split per account sit loose in the root; none of them is indexed anymore.
+    private func removeLegacyRootFiles() {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        for item in items where (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true {
+            try? fm.removeItem(at: item)
         }
     }
 
@@ -143,6 +176,7 @@ final class StreamCache: @unchecked Sendable {
     /// Queue a background download of `url` for `songId`. No-op if cached, queued or in flight.
     func cache(songId: String, url: URL, quality: StreamQuality, fileExtension: String, limitMB: Int) {
         lock.lock()
+        guard database != nil else { lock.unlock(); return }
         limitBytes = max(limitMB, 0) * 1_048_576
         let already = index[songId] != nil || active[songId] != nil || queued.contains { $0.songId == songId }
         if !already {
@@ -156,6 +190,7 @@ final class StreamCache: @unchecked Sendable {
     /// before its transition starts.
     func prioritize(songId: String, url: URL, quality: StreamQuality, fileExtension: String, limitMB: Int) {
         lock.lock()
+        guard database != nil else { lock.unlock(); return }
         limitBytes = max(limitMB, 0) * 1_048_576
         if index[songId] == nil, active[songId] == nil {
             queued.removeAll { $0.songId == songId }
@@ -317,7 +352,14 @@ final class StreamCache: @unchecked Sendable {
 
     private func store(tmp: URL, job: Job) {
         let name = "\(safeFileComponent(job.songId)).\(job.ext)"
+        lock.lock()
+        let configured = database != nil
         let dest = directory.appendingPathComponent(name)
+        lock.unlock()
+        guard configured else {
+            try? FileManager.default.removeItem(at: tmp)
+            return
+        }
         let fm = FileManager.default
         do {
             try? fm.removeItem(at: dest)

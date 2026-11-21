@@ -396,7 +396,7 @@ final class AppModel {
 
     func removeAccount(id: UUID) {
         let wasActive = activeAccount?.id == id
-        if wasActive { teardownSession() }
+        if wasActive { teardownSession(clearPersistedQueue: true) }
         accounts.remove(id)
         addressResolver.forget(accountId: id)
         downloads.purge(ownerId: id.uuidString)
@@ -474,8 +474,13 @@ final class AppModel {
         }
     }
 
-    private func teardownSession() {
+    private func teardownSession(clearPersistedQueue: Bool = false) {
         accountActivation &+= 1
+        // Before the database closes: the player, scrobbler and stream cache hold its pool.
+        if database != nil {
+            player.deactivate(clearPersistedQueue: clearPersistedQueue)
+            lastConfiguredDatabaseId = nil
+        }
         addressResolver.invalidateActiveProbes()
         networkTask?.cancel()
         stopReachabilityRecovery()

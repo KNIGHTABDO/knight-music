@@ -49,6 +49,13 @@ final class Scrobbler {
         song = nil
     }
 
+    /// Signed out / switched servers: drop the old account's database (about to be closed) and server.
+    func deactivate() {
+        song = nil
+        services = nil
+        database = nil
+    }
+
     func flushPending() {
         guard !isFlushing, let services, let database, let server = services.server,
               services.settings.scrobblingEnabled, !services.isOffline else { return }

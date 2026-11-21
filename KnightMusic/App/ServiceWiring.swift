@@ -171,7 +171,8 @@ extension AppModel {
                     app.lastConfiguredDatabaseId = dbId
                     app.downloads.configure(services: app.playbackServices, database: db.pool,
                                             ownerId: account.id)
-                    app.player.configure(services: app.playbackServices, downloads: app.downloads, database: db.pool)
+                    app.player.configure(services: app.playbackServices, downloads: app.downloads, database: db.pool,
+                                         accountId: account.id.uuidString)
                     TransferActivityController.shared.attach(app.downloads, database: db.pool)
                 }
             } else {

@@ -219,17 +219,70 @@ final class PlayerEngine {
     }
 
     /// Wire collaborators and restore the saved queue (paused). Call once at launch after the database is ready.
-    func configure(services: PlaybackServices, downloads: DownloadManager, database: DatabaseWriter) {
+    func configure(services: PlaybackServices, downloads: DownloadManager, database: DatabaseWriter, accountId: String) {
         self.services = services
         self.downloads = downloads
         nowPlaying.artwork = services.artwork
-        streamCache.configure(database: database)
+        queueStore.setAccount(accountId)
+        streamCache.configure(database: database, accountId: accountId)
         stationDatabase = database
         scrobbler.configure(services: services, database: database)
         applyVolume()
         applyAudioEffects()
         restoreSavedQueue()
         Task { await checkServerQueue() }
+    }
+
+    /// Call before the active account's session is torn down (logout or switch): stops playback, releases the
+    /// account's database and empties the in-memory queue so the next account restores its own.
+    /// `clearPersistedQueue` deletes the account's saved queue (signing out); otherwise it is saved for next time.
+    func deactivate(clearPersistedQueue: Bool) {
+        queueSaveTask?.cancel()
+        queueSaveTask = nil
+        serverSaveTask?.cancel()
+        serverSaveTask = nil
+        stationRefillTask?.cancel()
+        stationRefillTask = nil
+        autoMixPlanTask?.cancel()
+        autoMixPlanTask = nil
+        if clearPersistedQueue {
+            queueStore.removeAll()
+        } else {
+            saveQueueNow(synchronous: true)
+        }
+        queueStore.setAccount(nil)
+        userWantsPlaying = false
+        stopPlayer()
+        scrobbler.end()
+        scrobbler.deactivate()
+        remote?.cancelSeeking()
+        streamCache.deactivate()
+        stationDatabase = nil
+        order = []
+        originalOrder = []
+        currentIndex = 0
+        currentSong = nil
+        currentRadio = nil
+        stationSeed = nil
+        duration = 0
+        currentTime = 0
+        bufferedFraction = 0
+        formatDescription = ""
+        failedEntryIds = []
+        retriedFromStream = []
+        consecutiveFailures = 0
+        streamRetryHistory = [:]
+        localSavedAt = nil
+        lastSavedQueueSignature = nil
+        savedQueueRevision = nil
+        queueEditRevision &+= 1
+        serverQueueAvailable = false
+        serverQueuePreview = nil
+        serverQueuePreviewRevision = nil
+        serverQueuePreviewEndpoint = nil
+        serverQueuePreviewActivation = nil
+        nowPlaying.clear()
+        remote?.refresh()
     }
 
     /// Call when `services.artwork` / `services.urls` / `services.server` were replaced.
