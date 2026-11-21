@@ -42,7 +42,9 @@ final class AccountBackupService {
     private enum Keys {
         static let enabled = "backup.enabled"
         static let deviceId = "backup.deviceId"
-        static let pendingDownloads = "backup.pendingDownloads"
+        /// Before pending downloads were kept per account; read once as the active account's.
+        static let legacyPendingDownloads = "backup.pendingDownloads"
+        static func pendingDownloads(_ id: UUID) -> String { "backup.pendingDownloads.\(id.uuidString)" }
         static func state(_ id: UUID) -> String { "backup.state.\(id.uuidString)" }
     }
 
@@ -234,7 +236,10 @@ final class AccountBackupService {
 
     /// After a library sync, re-downloads what this device had before a reinstall (songs must be in the mirror).
     func resumePendingDownloads() async {
-        guard let app, let pending = UserDefaults.standard.stringArray(forKey: Keys.pendingDownloads), !pending.isEmpty else { return }
+        guard let app, let accountId = app.activeAccount?.id else { return }
+        adoptLegacyPendingDownloads(for: accountId)
+        let key = Keys.pendingDownloads(accountId)
+        guard let pending = UserDefaults.standard.stringArray(forKey: key), !pending.isEmpty else { return }
         let missing = pending.filter { !app.downloads.isDownloaded($0) && app.downloads.status(for: $0) == nil }
         let songs = await app.library.songs(ids: missing)
         if !songs.isEmpty {
@@ -242,7 +247,7 @@ final class AccountBackupService {
             Log.app.info("Backup: re-downloading \(songs.count) songs from before the reinstall")
         }
         // Runs after a full library sync, so songs not found are gone from the server: stop looking for them.
-        UserDefaults.standard.removeObject(forKey: Keys.pendingDownloads)
+        UserDefaults.standard.removeObject(forKey: key)
         let gone = missing.count - songs.count
         if gone > 0 { Log.app.info("Backup: \(gone) previously downloaded songs are no longer on the server") }
     }
@@ -251,16 +256,27 @@ final class AccountBackupService {
 
     /// Songs still being re-downloaded after a restore (or not yet looked up) stay in this device's backup list,
     /// so the first upload doesn't shrink it to whatever happened to finish already.
-    private func backedUpDownloadIds() -> Set<String> {
+    private func backedUpDownloadIds(accountId: UUID?) -> Set<String> {
         var ids = app?.downloads.wantedSongIds ?? []
-        if let pending = UserDefaults.standard.stringArray(forKey: Keys.pendingDownloads) { ids.formUnion(pending) }
+        if let accountId, let pending = UserDefaults.standard.stringArray(forKey: Keys.pendingDownloads(accountId)) {
+            ids.formUnion(pending)
+        }
         return ids
+    }
+
+    private func adoptLegacyPendingDownloads(for accountId: UUID) {
+        let defaults = UserDefaults.standard
+        guard let legacy = defaults.stringArray(forKey: Keys.legacyPendingDownloads) else { return }
+        if defaults.stringArray(forKey: Keys.pendingDownloads(accountId)) == nil {
+            defaults.set(legacy, forKey: Keys.pendingDownloads(accountId))
+        }
+        defaults.removeObject(forKey: Keys.legacyPendingDownloads)
     }
 
     private func captureLocal(account: ServerAccount) -> BackupContent {
         BackupSnapshot.capture(
             account: account,
-            downloadedSongIds: backedUpDownloadIds(),
+            downloadedSongIds: backedUpDownloadIds(accountId: account.id),
             otherDevicesDownloads: otherDevicesDownloads
         )
     }
@@ -273,7 +289,7 @@ final class AccountBackupService {
             postNotice("Some saved keys in the backup couldn't be unlocked (password changed?). This device's copies were kept.")
         }
         if freshInstall, let ids = remote.content.downloads[BackupSnapshot.deviceKind], !ids.isEmpty {
-            UserDefaults.standard.set(ids, forKey: Keys.pendingDownloads)
+            UserDefaults.standard.set(ids, forKey: Keys.pendingDownloads(accountId))
         }
         mergeAddresses(remote.content.serverAddresses, accountId: accountId)
         app?.reloadRestoredSettings()
@@ -281,7 +297,7 @@ final class AccountBackupService {
         let account = app?.accounts.accounts.first { $0.id == accountId }
         let fingerprint = BackupSnapshot.capture(
             account: account,
-            downloadedSongIds: backedUpDownloadIds(),
+            downloadedSongIds: backedUpDownloadIds(accountId: accountId),
             otherDevicesDownloads: otherDevicesDownloads
         ).fingerprint
         saveState(SyncState(fingerprint: fingerprint, remoteUpdatedAt: remote.updatedAt, syncedAt: Date()), accountId: accountId)
