@@ -304,7 +304,20 @@ final class PlayerEngine {
         remote?.refresh()
         nowPlaying.artwork = services.artwork
         if !services.isOffline { scrobbler.flushPending() }
+        // A paused stream still points at the old host (e.g. a LAN address after leaving home): rebind it now so
+        // pressing play doesn't first stall on a dead URL.
+        if !userWantsPlaying, !isAwaitingAddress, trackedStreamIsStale() {
+            PlaybackLog.logger.info("Address changed while paused: re-preparing current song")
+            load(index: currentIndex, autoplay: false, startAt: currentTime)
+        }
         checkNextPreparedAddress()
+    }
+
+    /// The current item streams from a server address that is no longer the resolved one.
+    func trackedStreamIsStale() -> Bool {
+        guard let tracked, tracked.resolved.kind == .streaming, !tracked.entry.song.isYouTube,
+              let curBase = services.currentBaseURL?() else { return false }
+        return !tracked.resolved.url.absoluteString.hasPrefix(curBase.absoluteString)
     }
 
     /// Call when settings changed (ReplayGain, gapless, quality...).
@@ -344,13 +357,7 @@ final class PlayerEngine {
         remote?.refresh()
         if isBuffering, let tracked, tracked.resolved.kind == .streaming, !isRetryingHandoff {
             PlaybackLog.logger.info("Network path changed while stream is buffering: attempting handoff retry")
-            isRetryingHandoff = true
-            Task { @MainActor [weak self, weak tracked] in
-                if let tracked {
-                    await self?.retryCurrentStreamAfterHandoff(for: tracked, reason: "network path changed while buffering")
-                }
-                self?.isRetryingHandoff = false
-            }
+            startHandoffRetry(for: tracked, reason: "network path changed while buffering")
         }
         if let next = nextPrepared, services.isOffline, next.resolved.kind == .streaming {
             prepareNext()
@@ -459,9 +466,7 @@ final class PlayerEngine {
                 self.isBuffering = false
                 guard self.tracked === tracked, self.playbackLoadRevision == loadRevision,
                       AppModel.shared?.accountActivation == activation, self.userWantsPlaying else { return }
-                if tracked.resolved.kind == .streaming,
-                   let curBase = self.services.currentBaseURL?(),
-                   !tracked.resolved.url.absoluteString.hasPrefix(curBase.absoluteString) {
+                if self.trackedStreamIsStale() {
                     PlaybackLog.logger.info("Cold launch: reloading current song with newly resolved address")
                     self.load(index: self.currentIndex, autoplay: true, startAt: self.currentTime)
                     return
@@ -471,6 +476,11 @@ final class PlayerEngine {
                 let rate = self.isBuffering ? 0.0 : 1.0
                 self.nowPlaying.updatePlayback(elapsed: self.elapsedNow(), rate: rate, state: .playing)
             }
+            return
+        }
+        if trackedStreamIsStale() {
+            PlaybackLog.logger.info("Resume: reloading current song with the newly resolved address")
+            load(index: currentIndex, autoplay: true, startAt: currentTime)
             return
         }
         if !resumeAutoMixDecks() { player.play() }

@@ -558,13 +558,7 @@ extension PlayerEngine {
             let addressChanged = services.currentBaseURL?() != trackedBaseURL
             if pathChanged || addressChanged {
                 PlaybackLog.logger.warning("Stream stalled (> 6s buffering) with network/address change: triggering handoff retry")
-                isRetryingHandoff = true
-                Task { @MainActor [weak self, weak tracked] in
-                    if let tracked {
-                        await self?.retryCurrentStreamAfterHandoff(for: tracked, reason: "buffering stalled > 6s with network/address change")
-                    }
-                    self?.isRetryingHandoff = false
-                }
+                startHandoffRetry(for: tracked, reason: "buffering stalled > 6s with network/address change")
             }
         }
 
@@ -659,6 +653,13 @@ extension PlayerEngine {
         guard tracked === self.tracked, tracked.resolved.kind == .streaming, !tracked.entry.song.isYouTube else { return false }
         let activation = AppModel.shared?.accountActivation
         let entry = tracked.entry
+        // The song finished downloading or caching meanwhile: play that copy, no server address needed.
+        if let local = resolve(entry.song), local.kind == .downloaded || local.kind == .cached {
+            PlaybackLog.logger.info("Handoff retry for \(entry.song.title): switching to the local copy")
+            activate(entry: entry, resolved: local, autoplay: userWantsPlaying, startAt: seekTarget ?? elapsedNow())
+            checkNextPreparedAddress()
+            return true
+        }
         let now = ProcessInfo.processInfo.systemUptime
         var timestamps = streamRetryHistory[entry.id] ?? []
         timestamps = timestamps.filter { now - $0 < 60 }
@@ -680,9 +681,9 @@ extension PlayerEngine {
         }
         PlaybackLog.logger.info("Address resolved to \(newBase.absoluteString)")
 
-        // Check if playable with new client
-        guard let resolved = resolve(entry.song), resolved.kind == .streaming else {
-            PlaybackLog.logger.error("Failed to resolve stream URL from new client")
+        // Any playable source will do: a local copy may have appeared while the address was re-resolving.
+        guard let resolved = resolve(entry.song) else {
+            PlaybackLog.logger.error("Failed to resolve a source after re-resolving the address")
             return false
         }
 
@@ -693,6 +694,21 @@ extension PlayerEngine {
         activate(entry: entry, resolved: resolved, autoplay: userWantsPlaying, startAt: position)
         checkNextPreparedAddress()
         return true
+    }
+
+    /// Runs one handoff retry at a time. If it can't reload the item and the item has failed meanwhile
+    /// (its own failure was deferred to this retry), the failure is finished here.
+    func startHandoffRetry(for p: PreparedItem, reason: String) {
+        isRetryingHandoff = true
+        Task { @MainActor [weak self, weak p] in
+            guard let self else { return }
+            defer { self.isRetryingHandoff = false }
+            guard let p else { return }
+            let ok = await self.retryCurrentStreamAfterHandoff(for: p, reason: reason)
+            if !ok, p === self.tracked, p.item.status == .failed {
+                self.finishFailedItem(p, message: p.item.error?.localizedDescription ?? "Unknown playback error")
+            }
+        }
     }
 
     func handleFailure(_ p: PreparedItem) {
@@ -722,14 +738,10 @@ extension PlayerEngine {
             let pathChanged = (services.networkChangeCount?() ?? 0) != trackedNetworkChangeCount
             let addressChanged = services.currentBaseURL?() != trackedBaseURL
             if pathChanged || addressChanged {
+                // A retry already running reloads this item, or finishes it as failed if it can't.
+                guard !isRetryingHandoff else { return }
                 PlaybackLog.logger.info("Current stream item failed during network/address change: attempting handoff retry")
-                Task { @MainActor [weak self] in
-                    guard let self, p === self.tracked else { return }
-                    let ok = await self.retryCurrentStreamAfterHandoff(for: p, reason: "stream item failed with network/address change")
-                    if !ok {
-                        self.finishFailedItem(p, message: message)
-                    }
-                }
+                startHandoffRetry(for: p, reason: "stream item failed with network/address change")
                 return
             }
         }
