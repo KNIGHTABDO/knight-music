@@ -47,7 +47,7 @@ final class SpeechDictationManager: NSObject {
                 self.errorMessage = "Speech recognition access denied"
                 return
             }
-            AVAudioApplication.requestRecordPermission(Self.permissionHandler { [weak self] granted in
+            AVAudioApplication.requestRecordPermission(completionHandler: Self.permissionHandler { [weak self] granted in
                 guard let self, self.pendingStartID == startID else { return }
                 guard granted else {
                     self.pendingStartID = nil
