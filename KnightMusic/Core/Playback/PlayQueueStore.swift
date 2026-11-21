@@ -77,6 +77,35 @@ final class PlayQueueStore: @unchecked Sendable {
         }
     }
 
+    /// Deletes a removed account's saved queue and position (not the active account's: the player owns those).
+    func purge(accountId: String) {
+        lock.lock()
+        let isActive = self.accountId == accountId
+        lock.unlock()
+        guard !isActive else { return }
+        let files = urls(for: accountId)
+        ioQueue.async {
+            try? FileManager.default.removeItem(at: files.queue)
+            try? FileManager.default.removeItem(at: files.position)
+        }
+    }
+
+    /// Launch sweep: queue files of accounts that no longer exist (removed before this cleanup, or by a crash).
+    func sweepOrphanedAccounts(keeping accountIds: Set<String>) {
+        let base = self.base
+        ioQueue.async {
+            let fm = FileManager.default
+            guard let names = try? fm.contentsOfDirectory(atPath: base.path) else { return }
+            for name in names {
+                for prefix in ["PlayQueue-", "PlayPosition-"] where name.hasPrefix(prefix) && name.hasSuffix(".json") {
+                    let id = String(name.dropFirst(prefix.count).dropLast(".json".count))
+                    guard UUID(uuidString: id) != nil, !accountIds.contains(id) else { continue }
+                    try? fm.removeItem(at: base.appendingPathComponent(name))
+                }
+            }
+        }
+    }
+
     func save(_ queue: SavedQueue?, synchronous: Bool = false) {
         guard let urls = currentURLs() else { return }
         write(queue, to: urls.queue, synchronous: synchronous)

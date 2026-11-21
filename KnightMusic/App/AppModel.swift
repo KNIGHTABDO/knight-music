@@ -401,6 +401,7 @@ final class AppModel {
         accounts.remove(id)
         addressResolver.forget(accountId: id)
         downloads.purge(ownerId: id.uuidString)
+        player.purgeAccountStorage(accountId: id.uuidString)
         LibraryDatabase.deleteFiles(for: id)
         Task { await SpotlightIndexer.removeAll(accountId: id) }
         guard wasActive else { return }
@@ -421,7 +422,10 @@ final class AppModel {
 
     private func restoreSession() {
         // An empty list may mean the account file failed to load: never sweep everything on that.
-        if !accounts.accounts.isEmpty { downloads.sweepOrphanedOwners(keeping: accounts.accounts.map(\.id)) }
+        if !accounts.accounts.isEmpty {
+            downloads.sweepOrphanedOwners(keeping: accounts.accounts.map(\.id))
+            player.sweepOrphanedAccountStorage(keeping: Set(accounts.accounts.map(\.id.uuidString)))
+        }
         guard let account = accounts.active else { return }
         do {
             try activate(account)

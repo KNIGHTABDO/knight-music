@@ -233,6 +233,18 @@ final class PlayerEngine {
         Task { await checkServerQueue() }
     }
 
+    /// A non-active account was removed: delete its saved queue and cached songs.
+    func purgeAccountStorage(accountId: String) {
+        queueStore.purge(accountId: accountId)
+        streamCache.purge(accountId: accountId)
+    }
+
+    /// Launch sweep of per-account queue files and stream cache folders whose account no longer exists.
+    func sweepOrphanedAccountStorage(keeping accountIds: Set<String>) {
+        queueStore.sweepOrphanedAccounts(keeping: accountIds)
+        streamCache.sweepOrphanedAccounts(keeping: accountIds)
+    }
+
     /// Call before the active account's session is torn down (logout or switch): stops playback, releases the
     /// account's database and empties the in-memory queue so the next account restores its own.
     /// `clearPersistedQueue` deletes the account's saved queue (signing out); otherwise it is saved for next time.

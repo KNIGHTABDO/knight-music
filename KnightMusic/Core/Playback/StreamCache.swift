@@ -31,7 +31,10 @@ final class StreamCache: @unchecked Sendable {
 
     private let root: URL
     /// The active account's folder; each account's database only indexes its own files.
-    private(set) var directory: URL
+    /// Read and written only under `lock`.
+    private var directory: URL
+    /// Bumped by every configure/deactivate, so a transfer that finishes after a switch never lands in the new account.
+    private var generation = 0
     private let session: URLSession
     private let lock = NSLock()
     private var index: [String: Entry] = [:]
@@ -73,26 +76,54 @@ final class StreamCache: @unchecked Sendable {
             rows = []
         }
         var missing: [String] = []
-        lock.lock()
-        self.database = database
-        self.directory = directory
-        index = [:]
+        var entries: [String: Entry] = [:]
         for row in rows {
             let url = directory.appendingPathComponent(row.relativePath)
             if FileManager.default.fileExists(atPath: url.path) {
-                index[row.songId] = Entry(relativePath: row.relativePath, bytes: row.bytes,
-                                          lastAccess: row.lastAccess, quality: row.quality)
+                entries[row.songId] = Entry(relativePath: row.relativePath, bytes: row.bytes,
+                                            lastAccess: row.lastAccess, quality: row.quality)
             } else {
                 missing.append(row.songId)
             }
         }
-        let known = Set(index.values.map(\.relativePath))
-        lock.unlock()
-        if !missing.isEmpty { dropRows(missing) }
-        // Orphans (e.g. interrupted moves) only waste space.
+        let known = Set(entries.values.map(\.relativePath))
+        lock.lock()
+        // Before this folder is live: no transfer of the new generation can be mid-move into it yet.
+        generation &+= 1
         if let files = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
+            // Orphans (e.g. interrupted moves) only waste space.
             for name in files where !known.contains(name) {
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+            }
+        }
+        self.database = database
+        self.directory = directory
+        index = entries
+        lock.unlock()
+        if !missing.isEmpty { dropRows(missing, in: database) }
+    }
+
+    /// Deletes a removed account's cached songs (its database is deleted separately).
+    func purge(accountId: String) {
+        let folder = root.appendingPathComponent(safeFileComponent(accountId), isDirectory: true)
+        lock.lock()
+        let isActive = database != nil && directory.standardizedFileURL == folder.standardizedFileURL
+        lock.unlock()
+        guard !isActive else { return }
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    /// Launch sweep: folders of accounts that no longer exist (removed before this cleanup, or by a crash).
+    func sweepOrphanedAccounts(keeping accountIds: Set<String>) {
+        let keep = Set(accountIds.map(safeFileComponent))
+        let root = self.root
+        Task.detached(priority: .utility) {
+            let fm = FileManager.default
+            guard let names = try? fm.contentsOfDirectory(atPath: root.path) else { return }
+            for name in names where !keep.contains(name) {
+                let url = root.appendingPathComponent(name, isDirectory: true)
+                guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+                try? fm.removeItem(at: url)
             }
         }
     }
@@ -109,6 +140,7 @@ final class StreamCache: @unchecked Sendable {
         index = [:]
         database = nil
         directory = root
+        generation &+= 1
         lock.unlock()
         tasks.forEach { $0.cancel() }
         report(force: true)
@@ -132,7 +164,7 @@ final class StreamCache: @unchecked Sendable {
         let url = directory.appendingPathComponent(entry.relativePath)
         guard FileManager.default.fileExists(atPath: url.path) else {
             index[songId] = nil
-            dropRows([songId])
+            dropRows([songId], in: database)
             return nil
         }
         let previousAccess = entry.lastAccess
@@ -142,7 +174,7 @@ final class StreamCache: @unchecked Sendable {
         guard entry.lastAccess.timeIntervalSince(previousAccess) > 600 else { return url }
         let record = CachedSongRecord(songId: songId, relativePath: entry.relativePath, bytes: entry.bytes,
                                       lastAccess: entry.lastAccess, quality: entry.quality)
-        write { try record.save($0) }
+        write(to: database) { try record.save($0) }
         return url
     }
 
@@ -217,9 +249,11 @@ final class StreamCache: @unchecked Sendable {
     func remove(songId: String) {
         lock.lock()
         let entry = index.removeValue(forKey: songId)
+        let directory = self.directory
+        let database = self.database
         lock.unlock()
         if let entry { try? FileManager.default.removeItem(at: directory.appendingPathComponent(entry.relativePath)) }
-        dropRows([songId])
+        dropRows([songId], in: database)
     }
 
     func clear() {
@@ -231,10 +265,12 @@ final class StreamCache: @unchecked Sendable {
         urgentIds = []
         let paths = index.values.map(\.relativePath)
         index = [:]
+        let directory = self.directory
+        let database = self.database
         lock.unlock()
         tasks.forEach { $0.cancel() }
         for p in paths { try? FileManager.default.removeItem(at: directory.appendingPathComponent(p)) }
-        write { _ = try CachedSongRecord.deleteAll($0) }
+        write(to: database) { _ = try CachedSongRecord.deleteAll($0) }
     }
 
     // MARK: Internals
@@ -354,6 +390,7 @@ final class StreamCache: @unchecked Sendable {
         let name = "\(safeFileComponent(job.songId)).\(job.ext)"
         lock.lock()
         let configured = database != nil
+        let startGeneration = generation
         let dest = directory.appendingPathComponent(name)
         lock.unlock()
         guard configured else {
@@ -372,11 +409,17 @@ final class StreamCache: @unchecked Sendable {
             }
             let entry = Entry(relativePath: name, bytes: size, lastAccess: Date(), quality: job.quality.key)
             lock.lock()
+            // The account switched while the file moved: it belongs to no live index, so drop it.
+            guard generation == startGeneration, let database = self.database else {
+                lock.unlock()
+                try? fm.removeItem(at: dest)
+                return
+            }
             index[job.songId] = entry
             lock.unlock()
             let record = CachedSongRecord(songId: job.songId, relativePath: name, bytes: size,
                                           lastAccess: entry.lastAccess, quality: entry.quality)
-            write { try record.save($0) }
+            write(to: database) { try record.save($0) }
             evictIfNeeded()
         } catch {
             PlaybackLog.logger.error("Stream cache store failed for \(job.songId): \(error.localizedDescription)")
@@ -396,19 +439,22 @@ final class StreamCache: @unchecked Sendable {
             }
             for (id, _) in victims { index[id] = nil }
         }
+        let directory = self.directory
+        let database = self.database
         lock.unlock()
         guard !victims.isEmpty else { return }
         for (_, entry) in victims {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(entry.relativePath))
         }
-        dropRows(victims.map(\.0))
+        dropRows(victims.map(\.0), in: database)
     }
 
-    private func dropRows(_ ids: [String]) {
-        write { _ = try CachedSongRecord.deleteAll($0, keys: ids) }
+    /// `database` is captured under `lock` by the caller, so a write never reaches another account's database.
+    private func dropRows(_ ids: [String], in database: DatabaseWriter?) {
+        write(to: database) { _ = try CachedSongRecord.deleteAll($0, keys: ids) }
     }
 
-    private func write(_ work: @escaping @Sendable (Database) throws -> Void) {
+    private func write(to database: DatabaseWriter?, _ work: @escaping @Sendable (Database) throws -> Void) {
         guard let db = database else { return }
         Task.detached(priority: .utility) {
             do {
