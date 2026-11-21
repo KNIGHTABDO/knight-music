@@ -390,6 +390,16 @@ final class DownloadManager {
         startQueued()
     }
 
+    /// The server address finished resolving: admit downloads `startQueued()` held back while it was probing.
+    /// Unlike a network change this keeps the retry backoff of failed transfers.
+    func addressDidSettle() {
+        guard receiptsReconciled else {
+            retryRecovery()
+            return
+        }
+        startQueued()
+    }
+
     func retryRecovery() {
         guard let ownerId else { return }
         let epoch = configurationEpoch

@@ -267,6 +267,8 @@ final class AppModel {
                 installClient(baseURL: url)
                 notifySessionChanged()
             }
+            // Downloads queued while the probe ran were held back so they bind to the settled host.
+            downloads.addressDidSettle()
             return url
         } else {
             serverReachable = false
