@@ -249,10 +249,18 @@ final class AccountBackupService {
 
     // MARK: - Internals
 
+    /// Songs still being re-downloaded after a restore (or not yet looked up) stay in this device's backup list,
+    /// so the first upload doesn't shrink it to whatever happened to finish already.
+    private func backedUpDownloadIds() -> Set<String> {
+        var ids = app?.downloads.wantedSongIds ?? []
+        if let pending = UserDefaults.standard.stringArray(forKey: Keys.pendingDownloads) { ids.formUnion(pending) }
+        return ids
+    }
+
     private func captureLocal(account: ServerAccount) -> BackupContent {
         BackupSnapshot.capture(
             account: account,
-            downloadedSongIds: app?.downloads.downloadedSongIds ?? [],
+            downloadedSongIds: backedUpDownloadIds(),
             otherDevicesDownloads: otherDevicesDownloads
         )
     }
@@ -273,7 +281,7 @@ final class AccountBackupService {
         let account = app?.accounts.accounts.first { $0.id == accountId }
         let fingerprint = BackupSnapshot.capture(
             account: account,
-            downloadedSongIds: app?.downloads.downloadedSongIds ?? [],
+            downloadedSongIds: backedUpDownloadIds(),
             otherDevicesDownloads: otherDevicesDownloads
         ).fingerprint
         saveState(SyncState(fingerprint: fingerprint, remoteUpdatedAt: remote.updatedAt, syncedAt: Date()), accountId: accountId)

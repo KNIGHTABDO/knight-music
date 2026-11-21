@@ -197,9 +197,10 @@ final class AppModel {
                 self.accounts.touchSync(account.id)
                 Task {
                     guard self.accountActivation == activation else { return }
-                    await self.backup.resumePendingDownloads()
-                    guard self.accountActivation == activation else { return }
+                    // Sync first: a fresh install's restore must land before its pending downloads are resumed.
                     await self.backup.sync()
+                    guard self.accountActivation == activation else { return }
+                    await self.backup.resumePendingDownloads()
                 }
                 // Siri resolves album/artist/playlist names from these parameters; refresh them once the mirror changed.
                 KnightMusicShortcuts.updateParameters()

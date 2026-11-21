@@ -46,6 +46,11 @@ final class DownloadManager {
         Set(statuses.filter { $0.value.state == .completed }.map(\.key))
     }
 
+    /// Downloaded plus still queued or in flight: what this device means to keep offline.
+    var wantedSongIds: Set<String> {
+        Set(statuses.filter { [.completed, .queued, .downloading, .needsRetry].contains($0.value.state) }.map(\.key))
+    }
+
     let directory: URL
     @ObservationIgnored var database: DatabaseWriter?
     @ObservationIgnored private var services = PlaybackServices()
