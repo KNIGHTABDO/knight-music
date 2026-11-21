@@ -59,7 +59,8 @@ class Store:
         return json.loads(row[0]) if row else None
 
     def fresh(self, track: dict) -> bool:
-        row = self.db().execute("select path, size, updated, version from analysis where id=?", (track["id"],)).fetchone()
+        row = self.db().execute("select path, size, updated, version from analysis where id=? and status='ok'",
+                               (track["id"],)).fetchone()
         return bool(row) and tuple(row) == (track["path"], track["size"], track["updated"], ANALYSIS_VERSION)
 
     def known(self) -> dict[str, tuple]:
@@ -119,7 +120,8 @@ class Worker(threading.Thread):
         todo = []
         for t in tracks:
             k = known.get(t["id"])
-            stale = k is None or k[0] != t["path"] or k[1] != t["size"] or k[2] != t["updated"] or k[3] != ANALYSIS_VERSION
+            stale = k is None or k[0] != t["path"] or k[1] != t["size"] or k[2] != t["updated"] or k[3] != ANALYSIS_VERSION \
+                or k[4] != "ok"     # failed before: retry (a few times per run, see failures)
             if stale and t["id"] != self.current and self.failures.get(t["id"], 0) < 3:
                 todo.append(t)
         todo.sort(key=lambda t: t["created"] or "", reverse=True)     # newest additions first
