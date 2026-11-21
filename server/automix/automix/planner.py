@@ -218,7 +218,8 @@ def beatmatch(a: dict, b: dict) -> dict | None:
         if a_start < p - 0.05:
             b_gain = _equal_power(s_b, d, 0.0, 0.55 * loud)
         else:
-            b_gain = _equal_power(s_b, b_at(p + beat_a * 8), 0.0, 0.6 * loud)
+            # On a 4-bar blend the bass swap is 8 beats in: end the intro ramp a beat before its pre-swap keyframe.
+            b_gain = _equal_power(s_b, min(b_at(p + beat_a * 8), b_at(h) - beat_b), 0.0, 0.6 * loud)
         b_gain += [[round(b_at(h) - beat_b * 0.25, 4), 0.85 * loud], [round(b_at(h), 4), loud],
                    [round(b_at(e), 4), loud]]
         if loud < 0.999:
@@ -255,6 +256,8 @@ def plan(a: dict | None, b: dict | None, meta_a: dict, meta_b: dict) -> dict:
         (meta_b.get("track_number") or 0) == (meta_a.get("track_number") or 0) + 1
     if consecutive and a and b and a["lastAudible"] > a["duration"] - 0.6 and b["firstAudible"] < 0.4:
         return gapless("continuous album: tracks run into each other")
+    if a is None and float(meta_a.get("duration") or 0) < 10.0:
+        return gapless("not analysed yet")     # no length known: a crossfade would land at 0 s
     if not a or not b:
         return crossfade(a, b, float(meta_a.get("duration") or 0), "not analysed yet")
     if a["duration"] < 45 or b["duration"] < 45:
