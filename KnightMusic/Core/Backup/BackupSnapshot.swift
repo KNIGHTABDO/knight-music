@@ -65,7 +65,8 @@ enum BackupSnapshot {
                 do { try Keychain.set(secret, account: account) } catch {
                     Log.app.error("Restoring \(account) to the Keychain failed: \(error)")
                 }
-            } else {
+            } else if content.undecryptedSecrets[account] == nil {
+                // Only when the backup really has no such secret: one we couldn't decrypt keeps the local copy.
                 Keychain.delete(account: account)
             }
         }

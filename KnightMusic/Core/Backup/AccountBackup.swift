@@ -13,6 +13,13 @@ struct BackupContent: Codable, Equatable, Sendable {
     var conversations: [String: Data] = [:]
     /// Device kind ("phone" / "pad") → downloaded song ids.
     var downloads: [String: [String]] = [:]
+    /// Keychain account → `enc1:` ciphertext from the server copy that this device could not open (sealed under a
+    /// different password). Never coded on its own: `BackupCodec.encode` folds it back into `secrets` so it survives.
+    var undecryptedSecrets: [String: String] = [:]
+
+    private enum CodingKeys: String, CodingKey {
+        case defaults, secrets, serverAddresses, conversations, downloads
+    }
 
     /// Stable fingerprint, used to tell whether anything changed since the last sync.
     var fingerprint: String {
@@ -57,7 +64,7 @@ enum BackupCodec {
     }
 
     private static func sealSecrets(_ secrets: [String: String], key: SymmetricKey?) -> [String: String] {
-        // No password to derive a key from: upload no secrets rather than clear text.
+        // No password to derive a key from: upload no new secrets rather than clear text.
         guard let key else { return [:] }
         var out: [String: String] = [:]
         for (name, value) in secrets {
@@ -71,8 +78,9 @@ enum BackupCodec {
         return out
     }
 
-    private static func openSecrets(_ secrets: [String: String], key: SymmetricKey?) -> [String: String] {
+    private static func openSecrets(_ secrets: [String: String], key: SymmetricKey?) -> (opened: [String: String], undecrypted: [String: String]) {
         var out: [String: String] = [:]
+        var undecrypted: [String: String] = [:]
         for (name, value) in secrets {
             guard value.hasPrefix(secretPrefix) else { out[name] = value; continue } // older clear-text backup
             guard let key,
@@ -80,17 +88,24 @@ enum BackupCodec {
                   let box = try? AES.GCM.SealedBox(combined: data),
                   let plain = try? AES.GCM.open(box, using: key),
                   let text = String(data: plain, encoding: .utf8) else {
-                Log.app.error("Backup: could not decrypt \(name) (different password?); skipping it")
+                Log.app.error("Backup: could not decrypt \(name) (different password?); keeping it sealed")
+                undecrypted[name] = value
                 continue
             }
             out[name] = text
         }
-        return out
+        return (out, undecrypted)
     }
 
     static func encode(_ envelope: BackupEnvelope, key: SymmetricKey?) throws -> String {
         var envelope = envelope
-        envelope.content.secrets = sealSecrets(envelope.content.secrets, key: key)
+        var sealed = sealSecrets(envelope.content.secrets, key: key)
+        // A local plaintext replaces it; otherwise keep the sealed copy so a device that can open it still can.
+        for (name, ciphertext) in envelope.content.undecryptedSecrets where sealed[name] == nil {
+            sealed[name] = ciphertext
+        }
+        envelope.content.secrets = sealed
+        envelope.content.undecryptedSecrets = [:]
         let json = try JSONEncoder().encode(envelope)
         let compressed = try (json as NSData).compressed(using: .zlib) as Data
         return commentPrefix + compressed.base64EncodedString()
@@ -102,7 +117,7 @@ enum BackupCodec {
         do {
             let json = try (compressed as NSData).decompressed(using: .zlib) as Data
             var envelope = try JSONDecoder().decode(BackupEnvelope.self, from: json)
-            envelope.content.secrets = openSecrets(envelope.content.secrets, key: key)
+            (envelope.content.secrets, envelope.content.undecryptedSecrets) = openSecrets(envelope.content.secrets, key: key)
             guard envelope.format <= BackupEnvelope.currentFormat else {
                 Log.app.error("Backup was written by a newer Knight Music (format \(envelope.format)); update the app to use it")
                 return nil

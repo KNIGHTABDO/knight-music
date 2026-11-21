@@ -164,7 +164,10 @@ final class AccountBackupService {
             }
 
             if remote == nil || state?.fingerprint != localFingerprint || userInitiated {
-                try await upload(local, playlists: playlists, client: client, account: account)
+                var outgoing = local
+                // Secrets this device couldn't open stay on the server unless this device has its own.
+                outgoing.undecryptedSecrets = (remote?.content.undecryptedSecrets ?? [:]).filter { local.secrets[$0.key] == nil }
+                try await upload(outgoing, playlists: playlists, client: client, account: account)
                 if userInitiated { postNotice("Settings backed up to \(account.name)") }
             }
             status = .idle
@@ -258,6 +261,9 @@ final class AccountBackupService {
         applying = true
         defer { applying = false }
         BackupSnapshot.apply(remote.content)
+        if !remote.content.undecryptedSecrets.isEmpty {
+            postNotice("Some saved keys in the backup couldn't be unlocked (password changed?). This device's copies were kept.")
+        }
         if freshInstall, let ids = remote.content.downloads[BackupSnapshot.deviceKind], !ids.isEmpty {
             UserDefaults.standard.set(ids, forKey: Keys.pendingDownloads)
         }
