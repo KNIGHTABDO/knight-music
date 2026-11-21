@@ -510,6 +510,8 @@ def make_handler(store: Store, worker: Worker, auth: Auth, yt: YouTube):
             if url.path.rstrip("/") == "/automix/v1/yt/import":
                 if not auth.check(query):
                     return self._send(401, {"error": "invalid credentials"})
+                if not songs.is_admin(NAVIDROME_DB, query["u"]):
+                    return self._send(403, {"error": "only an admin can add songs to the library"})
                 try:
                     length = min(int(self.headers.get("Content-Length", "0")), 1 << 16)
                     body = json.loads(self.rfile.read(length) or b"{}")

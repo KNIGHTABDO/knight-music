@@ -24,13 +24,21 @@ class SongError(Exception):
         self.code = code
 
 
-def _locate(db_path: str, song_id: str, user: str) -> tuple[str, str, str]:
-    """(absolute file path, library root, updated_at) for an admin."""
+def is_admin(db_path: str, user: str) -> bool:
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
     try:
         admin = conn.execute("select is_admin from user where user_name = ?", (user,)).fetchone()
-        if not admin or not admin[0]:
-            raise SongError(403, "only an admin can change music files")
+    finally:
+        conn.close()
+    return bool(admin and admin[0])
+
+
+def _locate(db_path: str, song_id: str, user: str) -> tuple[str, str, str]:
+    """(absolute file path, library root, updated_at) for an admin."""
+    if not is_admin(db_path, user):
+        raise SongError(403, "only an admin can change music files")
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+    try:
         row = conn.execute("""select m.path, l.path, m.updated_at from media_file m join library l on l.id = m.library_id
                               where m.id = ? and m.missing = 0""", (song_id,)).fetchone()
     finally:
