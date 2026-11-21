@@ -14,7 +14,8 @@ final class CarPlayDetailTemplates {
         var queryTask: Task<Void, Never>?
         var isObserving = true
 
-        let rebuild = {
+        let rebuild = { [weak coordinator] in
+            guard let coordinator else { return }
             let content = albumQuery.value
             guard let album = content.album else {
                 if albumQuery.isLoaded {
@@ -152,7 +153,8 @@ final class CarPlayDetailTemplates {
         var allSongsTask: Task<Void, Never>?
         var isObserving = true
 
-        let rebuild = {
+        let rebuild = { [weak coordinator] in
+            guard let coordinator else { return }
             guard let artist = artistQuery.value else {
                 if artistQuery.isLoaded {
                     template.emptyViewTitleVariants = ["Artist Not Found"]
@@ -277,7 +279,8 @@ final class CarPlayDetailTemplates {
         var queryTask: Task<Void, Never>?
         var isObserving = true
 
-        let rebuild = {
+        let rebuild = { [weak coordinator] in
+            guard let coordinator else { return }
             let songs = coordinator.playableFilter.filterSongs(topSongsQuery.value)
             guard !songs.isEmpty else {
                 if topSongsQuery.isLoaded {
@@ -360,7 +363,8 @@ final class CarPlayDetailTemplates {
         var songsTask: Task<Void, Never>?
         var isObserving = true
 
-        let rebuild = {
+        let rebuild = { [weak coordinator] in
+            guard let coordinator else { return }
             guard let playlist = playlistQuery.value else {
                 if playlistQuery.isLoaded {
                     template.emptyViewTitleVariants = ["Playlist Not Found"]
@@ -451,7 +455,8 @@ final class CarPlayDetailTemplates {
         var queryTask: Task<Void, Never>?
         var isObserving = true
 
-        let rebuild = {
+        let rebuild = { [weak coordinator] in
+            guard let coordinator else { return }
             let albums = albumsQuery.value
             if albums.isEmpty {
                 if albumsQuery.isLoaded {
@@ -529,7 +534,8 @@ final class CarPlayDetailTemplates {
         var queryTask: Task<Void, Never>?
         var isObserving = true
 
-        let rebuild = {
+        let rebuild = { [weak coordinator] in
+            guard let coordinator else { return }
             let stations = stationsQuery.value
             if stations.isEmpty {
                 if stationsQuery.isLoaded {
@@ -590,7 +596,8 @@ final class CarPlayDetailTemplates {
         var queryTask: Task<Void, Never>?
         var isObserving = true
 
-        let rebuild = {
+        let rebuild = { [weak coordinator] in
+            guard let coordinator else { return }
             let albums = query.value
             if albums.isEmpty {
                 if query.isLoaded {

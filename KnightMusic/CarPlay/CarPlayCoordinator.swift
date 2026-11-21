@@ -25,7 +25,8 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
 
     private var isStarted = false
     private var isShowingTabBar = false
-    private var lastHandledRevision = -1
+    /// Tabs are rebuilt only for a new account session; address handoffs (LAN <-> Tailscale) keep the same mirror.
+    private var lastHandledActivation = -1
 
     var scale: CGFloat {
         let carScale = interfaceController?.carTraitCollection.displayScale ?? 0
@@ -67,10 +68,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
         isStarted = false
         CPNowPlayingTemplate.shared.remove(self)
 
-        listenNowTab?.stop()
-        libraryTab?.stop()
-        playlistsTab?.stop()
-        downloadsTab?.stop()
+        stopTabsAndDetails()
         nowPlaying?.stop()
 
         listenNowTab = nil
@@ -81,7 +79,6 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
         nowPlaying = nil
 
         songItemMap.removeAll()
-        disappearanceHandlers.removeAll()
         artwork.cancelAll()
 
         interfaceController?.delegate = nil
@@ -101,10 +98,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
     private func showSignInPrompt() {
         Log.ui.info("CarPlay root: sign-in prompt")
         isShowingTabBar = false
-        listenNowTab?.stop()
-        libraryTab?.stop()
-        playlistsTab?.stop()
-        downloadsTab?.stop()
+        stopTabsAndDetails()
 
         let prompt = CPListTemplate(title: "Knight Music", sections: [])
         prompt.emptyViewTitleVariants = ["Sign in on your iPhone"]
@@ -113,9 +107,10 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
     }
 
     private func showTabBar() {
-        Log.ui.info("CarPlay root: tab bar (session revision \(appModel.sessionRevision))")
+        Log.ui.info("CarPlay root: tab bar (account activation \(appModel.accountActivation))")
         isShowingTabBar = true
-        lastHandledRevision = appModel.sessionRevision
+        lastHandledActivation = appModel.accountActivation
+        stopTabsAndDetails()
 
         let tab1 = CarPlayListenNowTab(coordinator: self)
         let tab2 = CarPlayLibraryTab(coordinator: self)
@@ -135,6 +130,18 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
         let tabBar = CPTabBarTemplate(templates: [tab1.template, tab2.template, tab3.template, tab4.template])
         tabBarTemplate = tabBar
         interfaceController?.setRootTemplate(tabBar, animated: true, completion: Self.reportFailure("set tab bar root"))
+    }
+
+    /// Ends the live queries of the tabs and of every pushed detail template (their handlers would otherwise only
+    /// run when the template disappears, which never happens once the root is replaced).
+    private func stopTabsAndDetails() {
+        listenNowTab?.stop()
+        libraryTab?.stop()
+        playlistsTab?.stop()
+        downloadsTab?.stop()
+        let handlers = Array(disappearanceHandlers.values)
+        disappearanceHandlers.removeAll()
+        handlers.forEach { $0() }
     }
 
     // MARK: - Navigation
@@ -348,7 +355,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
         guard isStarted else { return }
         withObservationTracking {
             _ = appModel.session
-            _ = appModel.sessionRevision
+            _ = appModel.accountActivation
         } onChange: {
             Task { @MainActor [weak self] in
                 guard let self, self.isStarted else { return }
@@ -361,7 +368,7 @@ final class CarPlayCoordinator: NSObject, CPInterfaceControllerDelegate, CPNowPl
     private func handleSessionOrRevisionChanged() {
         if appModel.session == .ready && !isShowingTabBar {
             showTabBar()
-        } else if appModel.session == .ready && isShowingTabBar && appModel.sessionRevision != lastHandledRevision {
+        } else if appModel.session == .ready && isShowingTabBar && appModel.accountActivation != lastHandledActivation {
             showTabBar()
         } else if appModel.session != .ready && appModel.activeAccount == nil && isShowingTabBar {
             showSignInPrompt()
