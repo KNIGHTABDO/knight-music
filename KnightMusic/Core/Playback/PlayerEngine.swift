@@ -264,6 +264,8 @@ final class PlayerEngine {
         currentSong = nil
         currentRadio = nil
         stationSeed = nil
+        stashedLibraryQueue = nil
+        plannedMix = nil
         duration = 0
         currentTime = 0
         bufferedFraction = 0
