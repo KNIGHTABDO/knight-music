@@ -703,7 +703,25 @@ final class LibraryRepository {
     func movePlaylistEntries(id: String, from source: IndexSet, to destination: Int) async throws {
         let client = try requireClient()
         let database = try requireDatabase()
+        if let playlist = try? await database.pool.read({ db in try Playlist.fetchOne(db, id: id) }),
+           !playlist.isOwned(by: client.username) {
+            throw PlaylistEditError.notOwner(playlist: playlist)
+        }
         let before = try await playlistSongIds(database, id: id)
+        // A reorder rewrites the whole server playlist: only send it if the mirror is what the server has.
+        let remote: (Playlist, [Song])
+        do {
+            remote = try await client.getPlaylist(id: id)
+        } catch {
+            report(error, "Could not reorder playlist")
+            throw error
+        }
+        guard self.database === database else { throw LibraryError.accountChanged }
+        if remote.1.map(\.id) != before {
+            try await database.storePlaylist(remote.0, songs: remote.1)
+            report(LibraryError.playlistChanged, "Could not reorder playlist")
+            throw LibraryError.playlistChanged
+        }
         var items = before
         let moving = source.sorted().compactMap { $0 < items.count ? items[$0] : nil }
         for index in source.sorted().reversed() where index < items.count { items.remove(at: index) }
