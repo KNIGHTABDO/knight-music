@@ -193,6 +193,9 @@ extension PlayerEngine {
         guard settings.serverQueueSyncEnabled, !services.isOffline, let server = services.server,
               currentRadio == nil, !order.isEmpty else { return }
         let ids = serverQueueWindowIds()
+        // A YouTube-only queue has nothing the server knows; an empty save would wipe the library queue
+        // on every device.
+        guard !ids.isEmpty else { return }
         do {
             try await server.savePlayQueue(songIds: ids, currentSongId: currentSong?.id,
                                            positionMs: Int(currentTime * 1000))
