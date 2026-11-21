@@ -336,7 +336,14 @@ extension PlayerEngine {
         nextPrepared = nil
 
         attachTap(session.outgoing)
-        session.outgoing.automation.set(deck: session.a)
+        // The tap runs on item time: an A that was itself a warped B needs its song-time curves moved onto it.
+        var aDeck = session.a
+        if let warp = session.outgoing.warp {
+            aDeck.gain = warp.itemFrames(aDeck.gain)
+            aDeck.hpf = warp.itemFrames(aDeck.hpf)
+            aDeck.lpf = warp.itemFrames(aDeck.lpf)
+        }
+        session.outgoing.automation.set(deck: aDeck)
         if session.outgoing.resolved.kind == .streaming || session.outgoing.resolved.kind == .radio {
             startVolumeAutomation(for: session.outgoing, gain: session.a.gain)
         }
@@ -461,7 +468,7 @@ extension PlayerEngine {
         }
         deck.defaultRate = session.deckRate
         let hostClock = CMClockGetHostTimeClock()
-        let startOnA = CMTime(seconds: session.a.start, preferredTimescale: 600_000)
+        let startOnA = CMTime(seconds: session.outgoing.itemTime(session.a.start), preferredTimescale: 600_000)
         let hostStart = CMSyncConvertTime(startOnA, from: timebase, to: hostClock)
         let now = CMClockGetTime(hostClock)
         guard hostStart.isValid, (hostStart - now).seconds > 0.05 else {
@@ -518,7 +525,7 @@ extension PlayerEngine {
         guard let tail = mixTail else { return }
         if !tail.finished {
             let t = tail.player.currentTime().seconds
-            if tail.player.currentItem == nil || (t.isFinite && t >= tail.stopAt) { stopOutgoing(tail) }
+            if tail.player.currentItem == nil || (t.isFinite && tail.prepared.songTime(t) >= tail.stopAt) { stopOutgoing(tail) }
         }
         let bTime = elapsedNow()
         // B returns to its own tempo on the ramp's first beat (A is silent by then), through its twin.
@@ -667,7 +674,8 @@ extension PlayerEngine {
                 guard let deck else { return }
                 let t = deck.currentTime().seconds
                 guard t.isFinite else { return }
-                deck.volume = self.deckVolume(for: prepared.entry.song) * max(0, min(1, curve.value(at: t)))
+                let songTime = prepared.songTime(t)
+                deck.volume = self.deckVolume(for: prepared.entry.song) * max(0, min(1, curve.value(at: songTime)))
             }
         }
         RunLoop.main.add(timer, forMode: .common)
