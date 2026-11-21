@@ -192,7 +192,9 @@ final class PlayerEngine {
     @ObservationIgnored var bufferingStartedAt: TimeInterval?
     @ObservationIgnored var trackedNetworkChangeCount = 0
     @ObservationIgnored var trackedBaseURL: URL?
-    @ObservationIgnored var isRetryingHandoff = false
+    /// The item the running handoff retry is reloading (nil when none runs).
+    @ObservationIgnored weak var handoffRetryTarget: PreparedItem?
+    var isRetryingHandoff: Bool { handoffRetryTarget != nil }
     @ObservationIgnored var playbackLoadRevision = 0
     @ObservationIgnored var stationRefillTask: Task<Void, Never>?
     @ObservationIgnored var stationDatabase: DatabaseWriter?
@@ -305,8 +307,9 @@ final class PlayerEngine {
         nowPlaying.artwork = services.artwork
         if !services.isOffline { scrobbler.flushPending() }
         // A paused stream still points at the old host (e.g. a LAN address after leaving home): rebind it now so
-        // pressing play doesn't first stall on a dead URL.
-        if !userWantsPlaying, !isAwaitingAddress, trackedStreamIsStale() {
+        // pressing play doesn't first stall on a dead URL. Not while a movie has focus: reloading would bump
+        // playbackLoadRevision and stop Intermission from resuming this song; resume() rebinds it then.
+        if !userWantsPlaying, !isAwaitingAddress, !DuetMedia.movieHasFocus, trackedStreamIsStale() {
             PlaybackLog.logger.info("Address changed while paused: re-preparing current song")
             load(index: currentIndex, autoplay: false, startAt: currentTime)
         }

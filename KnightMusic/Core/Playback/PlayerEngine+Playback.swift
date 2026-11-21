@@ -696,14 +696,13 @@ extension PlayerEngine {
         return true
     }
 
-    /// Runs one handoff retry at a time. If it can't reload the item and the item has failed meanwhile
-    /// (its own failure was deferred to this retry), the failure is finished here.
+    /// Runs one handoff retry per item; a retry for a newer item takes over. If it can't reload the item and the
+    /// item has failed meanwhile (its own failure was deferred to this retry), the failure is finished here.
     func startHandoffRetry(for p: PreparedItem, reason: String) {
-        isRetryingHandoff = true
+        handoffRetryTarget = p
         Task { @MainActor [weak self, weak p] in
-            guard let self else { return }
-            defer { self.isRetryingHandoff = false }
-            guard let p else { return }
+            guard let self, let p else { return }
+            defer { if self.handoffRetryTarget === p { self.handoffRetryTarget = nil } }
             let ok = await self.retryCurrentStreamAfterHandoff(for: p, reason: reason)
             if !ok, p === self.tracked, p.item.status == .failed {
                 self.finishFailedItem(p, message: p.item.error?.localizedDescription ?? "Unknown playback error")
@@ -738,8 +737,8 @@ extension PlayerEngine {
             let pathChanged = (services.networkChangeCount?() ?? 0) != trackedNetworkChangeCount
             let addressChanged = services.currentBaseURL?() != trackedBaseURL
             if pathChanged || addressChanged {
-                // A retry already running reloads this item, or finishes it as failed if it can't.
-                guard !isRetryingHandoff else { return }
+                // A retry already running for this item reloads it, or finishes it as failed if it can't.
+                guard handoffRetryTarget !== p else { return }
                 PlaybackLog.logger.info("Current stream item failed during network/address change: attempting handoff retry")
                 startHandoffRetry(for: p, reason: "stream item failed with network/address change")
                 return
