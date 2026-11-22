@@ -482,7 +482,13 @@ extension PlayerEngine {
             PlaybackLog.logger.info("Audio interruption began: keeping userWantsPlaying, settling AutoMix, pausing decks")
             self.isInterrupted = true
             self.remote?.cancelSeeking()
-            self.settleAutoMix(keepIncoming: true)
+            // Only a sounding transition is settled; a merely scheduled one is paused back to `.ready`
+            // by pauseAutoMixDecks so the current song keeps its remaining audio and reschedules on resume.
+            if self.mixSession?.phase == .mixing || self.mixTail != nil {
+                self.settleAutoMix(keepIncoming: true)
+            } else {
+                self.settleRetempo()
+            }
             self.player.pause()
             self.pauseAutoMixDecks()
             self.isPlaying = false
