@@ -20,6 +20,8 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
     private var usedAutomaticRetry = false
     private var authenticationSession: ASWebAuthenticationSession?
     private var authenticationID: UUID?
+    /// The page's pending reply for the open sign-in; called exactly once through finishAuthentication.
+    private var authenticationCompletion: (@MainActor @Sendable (String?) -> Void)?
 
     var statusBarHidden = false {
         didSet { if oldValue != statusBarHidden { setNeedsStatusBarAppearanceUpdate() } }
@@ -185,7 +187,7 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         Log.app.error("Streamora web content process ended")
-        cancelAuthentication()
+        // An open Google sign-in sheet is left to finish; the reloaded page picks up the approved session.
         bridge.tearDown()
         statusBarHidden = false
         if viewIfLoaded?.window?.isHidden == false {
@@ -260,36 +262,42 @@ final class StreamoraStageController: UIViewController, WKNavigationDelegate, WK
         let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "knightmusic") { [weak self] callback, error in
             Task { @MainActor in
                 guard let self, self.authenticationID == id else { return }
-                self.authenticationSession = nil
-                self.authenticationID = nil
                 if let error {
                     let cancelled = (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin
-                    completion(cancelled ? "Sign-in was cancelled." : "Sign-in did not complete.")
+                    self.finishAuthentication(error: cancelled ? "Sign-in was cancelled." : "Sign-in did not complete.")
                     return
                 }
                 guard let callback, callback.scheme == "knightmusic", callback.host == "streamora-auth",
                       URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "state" })?.value == state else {
-                    completion("Sign-in returned an invalid response."); return
+                    self.finishAuthentication(error: "Sign-in returned an invalid response."); return
                 }
-                completion(nil)
+                self.finishAuthentication(error: nil)
             }
         }
         session.presentationContextProvider = self
         session.prefersEphemeralWebBrowserSession = false
         authenticationSession = session
         authenticationID = id
+        authenticationCompletion = completion
         guard session.start() else {
-            authenticationSession = nil
-            authenticationID = nil
-            completion("Could not open secure sign-in.")
+            finishAuthentication(error: "Could not open secure sign-in.")
             return
         }
     }
 
     private func cancelAuthentication() {
-        authenticationID = nil
-        authenticationSession?.cancel()
+        let session = authenticationSession
+        finishAuthentication(error: "Sign-in was cancelled.")
+        session?.cancel()
+    }
+
+    /// Clears the open sign-in and answers the page once, whichever path ends it first.
+    private func finishAuthentication(error: String?) {
+        let completion = authenticationCompletion
+        authenticationCompletion = nil
         authenticationSession = nil
+        authenticationID = nil
+        completion?(error)
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
