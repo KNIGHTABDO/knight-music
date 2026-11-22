@@ -59,7 +59,12 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
             if let known = stream.contentLength {
                 length = known
             } else {
-                length = try await Self.probeLength(stream, session: session)
+                do { length = try await Self.probeLength(stream, session: session) }
+                catch {
+                    // The cached URL may point at an address that no longer answers: mint a fresh one next time.
+                    if !(error is CancellationError) { await YouTubeMusic.shared.invalidate(videoId: videoId) }
+                    throw error
+                }
             }
             guard length > 0 else { throw YouTubeError.invalidResponse }
             if let info = request.contentInformationRequest {
@@ -196,6 +201,10 @@ final class YouTubeResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unc
         } catch let error as URLError where error.code == .cancelled {
         } catch {
             Log.playback.warning("YouTube \(videoId) loading failed: \(error.localizedDescription)")
+            if error is URLError { await YouTubeMusic.shared.invalidate(videoId: videoId) }
+            else if let youTubeError = error as? YouTubeError, case .http = youTubeError {
+                await YouTubeMusic.shared.invalidate(videoId: videoId)
+            }
             request.finishLoading(with: error)
         }
     }

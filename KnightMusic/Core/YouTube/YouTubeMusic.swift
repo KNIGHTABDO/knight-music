@@ -411,6 +411,12 @@ actor YouTubeMusic {
         headOrder.removeAll { $0 == videoId }
     }
 
+    /// AutoMix server URLs embed the server address of the moment (LAN, Tailscale, another account):
+    /// drop them when that changes so the next request mints one for the current server.
+    func forgetServerStreams() {
+        for (videoId, stream) in streams where stream.client == "server" { invalidate(videoId: videoId) }
+    }
+
     private func resolveStream(_ videoId: String) async throws -> YTStream {
         let config = await store.current()
         if config.disabled { throw YouTubeError.disabled(config.message) }

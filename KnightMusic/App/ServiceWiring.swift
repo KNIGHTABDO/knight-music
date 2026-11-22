@@ -152,7 +152,10 @@ extension AppModel {
         addSessionObserver { app in
             ArtworkLoader.configure(provider: app.client)
             let youTubeServer: (@Sendable (String) -> URL?)? = app.client.map { client in { path in client.autoMixURL(path: path) } }
-            Task { await YouTubeConfigStore.shared.setServer(youTubeServer) }
+            Task {
+                await YouTubeConfigStore.shared.setServer(youTubeServer)
+                await YouTubeMusic.shared.forgetServerStreams()
+            }
             if app.client != nil {
                 // Have the YouTube visitor session ready before the first YouTube song is played.
                 Task.detached(priority: .utility) {
