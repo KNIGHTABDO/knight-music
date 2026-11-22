@@ -6,10 +6,25 @@ import SwiftUI
 struct PlayerBackgroundView: View {
     let song: Song?
     var isTall: Bool = true
+    /// Set when the owner already resolved the clip (and decides when the background may play it),
+    /// so the same video is not looked up and decoded twice.
+    private let providedArtwork: AnimatedArtwork?
+    private let usesProvidedArtwork: Bool
 
     init(song: Song?, isTall: Bool = true) {
         self.song = song
         self.isTall = isTall
+        self.providedArtwork = nil
+        self.usesProvidedArtwork = false
+        _palette = State(initialValue: ArtworkPalette.cachedPalette(for: song?.coverArt) ?? .fallback)
+    }
+
+    /// `animatedArtwork` is played as given; pass nil to show the palette backdrop instead.
+    init(song: Song?, isTall: Bool = true, animatedArtwork: AnimatedArtwork?) {
+        self.song = song
+        self.isTall = isTall
+        self.providedArtwork = animatedArtwork
+        self.usesProvidedArtwork = true
         _palette = State(initialValue: ArtworkPalette.cachedPalette(for: song?.coverArt) ?? .fallback)
     }
 
@@ -23,7 +38,7 @@ struct PlayerBackgroundView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let animated = animatedArtwork {
+            if let animated = usesProvidedArtwork ? providedArtwork : animatedArtwork {
                 let videoURL = isTall ? (animated.tallVideoURL ?? animated.squareVideoURL) : animated.squareVideoURL
                 // AVPlayerLayer already aspect-fills; a SwiftUI .fill here makes the 3:4 video
                 // report a size wider than the phone and drags the whole player layout off-screen.
@@ -68,6 +83,7 @@ struct PlayerBackgroundView: View {
             let pal = await ArtworkPalette.palette(for: song.coverArt)
             guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: 0.8)) { palette = pal }
+            guard !usesProvidedArtwork else { return }
             let art = await artworkService?.animatedArtwork(for: song)
             guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: 0.8)) { animatedArtwork = art }
@@ -182,10 +198,12 @@ private struct PaletteMeshBackground: View {
     var aurora: Bool
 
     @Environment(PlayerEngine.self) private var player
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @MusicVisualActivity private var isVisuallyActive
 
     var body: some View {
-        TimelineView(.animation(paused: !player.isPlaying || !isVisuallyActive)) { timeline in
+        // The drift is slow: 24 fps looks the same as 120 Hz at a fraction of the GPU work.
+        TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !player.isPlaying || !isVisuallyActive || reduceMotion)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             let t = Float(time * (aurora ? 0.5 : 0.22))
             MeshGradient(

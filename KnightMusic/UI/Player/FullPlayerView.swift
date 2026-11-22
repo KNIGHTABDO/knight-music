@@ -28,6 +28,14 @@ struct FullPlayerView: View {
         animatedArtwork != nil
     }
 
+    /// Mirrors the layout branches below: where `PlayerArtworkStage` gets `animatedVideoURL`.
+    private func stageShowsAnimatedArtwork(isRegular: Bool, geo: GeometryProxy, isLandscape: Bool) -> Bool {
+        if isRegular && geo.size.height >= 600 {
+            return ui.playerPanel == .artwork || !controlsHidden
+        }
+        return isLandscape && ui.playerPanel == .artwork
+    }
+
     /// Rating changes are written to the server only when the user taps a star.
     private var ratingBinding: Binding<Int> {
         Binding(
@@ -75,7 +83,14 @@ struct FullPlayerView: View {
                     // .background so it can never resize the controls laid out on top of it.
                     .background {
                         ZStack {
-                            PlayerBackgroundView(song: song, isTall: !isRegular && !isLandscape)
+                            // One decoder per clip: the background stays on the palette while the
+                            // artwork stage already plays the animated cover.
+                            PlayerBackgroundView(
+                                song: song,
+                                isTall: !isRegular && !isLandscape,
+                                animatedArtwork: stageShowsAnimatedArtwork(isRegular: isRegular, geo: geo, isLandscape: isLandscape)
+                                    ? nil : animatedArtwork
+                            )
 
                             // Legibility veil for Lyrics and Queue so text stays crisp over bright covers
                             if ui.playerPanel != .artwork {
