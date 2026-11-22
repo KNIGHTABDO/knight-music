@@ -19,13 +19,18 @@ extension PlayerEngine {
         stationRefillTask?.cancel()
         stationRefillTask = nil
         play([song], startAt: 0, shuffle: false)
+        // play() ends any station and may start an Autoplay refill; the seed's own batch below replaces it.
+        stationRefillTask?.cancel()
+        stationRefillTask = nil
         stationSeed = song
         let picks = await stationSongs(after: song, excluding: [song.id])
         guard !Task.isCancelled, stationSeed?.id == song.id else { return }
-        if picks.isEmpty {
-            report("No similar songs found for \(song.title).")
+        let known = Set(order.map(\.song.id))
+        let fresh = picks.filter { !known.contains($0.id) }
+        if fresh.isEmpty {
+            if picks.isEmpty { report("No similar songs found for \(song.title).") }
         } else {
-            enqueue(picks, next: false)
+            enqueue(fresh, next: false)
         }
     }
 

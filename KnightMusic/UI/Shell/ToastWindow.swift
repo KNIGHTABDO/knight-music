@@ -9,7 +9,7 @@ final class ToastWindow {
 
     fileprivate(set) var capsuleFrame: CGRect = .zero
     private var window: PassthroughWindow?
-    private var ui: UIState?
+    private(set) var ui: UIState?
     private var hideTask: Task<Void, Never>?
 
     func statusBarAppearanceChanged() {

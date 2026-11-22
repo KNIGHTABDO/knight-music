@@ -28,8 +28,11 @@ struct DuetHUDView: View {
     @State private var duet = DuetCoordinator.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
 
-    /// iPad: below the top tab bar. iPhone: above the tab bar and mini player, clear of navigation bars.
-    private var docksAtBottom: Bool { sizeClass == .compact }
+    /// iPad: below the top tab bar. iPhone: above the tab bar and mini player, clear of navigation bars;
+    /// over the full player (no navigation bar, controls at the bottom) it stays at the top, like toasts.
+    private var docksAtBottom: Bool {
+        sizeClass == .compact && ToastWindow.shared.ui?.isPlayerPresented != true
+    }
 
     var body: some View {
         VStack {
