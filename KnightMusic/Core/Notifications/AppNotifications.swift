@@ -90,9 +90,11 @@ final class AppNotifications: NSObject {
         didInstall = true
         center.delegate = self
         let open = UNNotificationAction(identifier: Action.open, title: "Open", options: [.foreground])
-        let retry = UNNotificationAction(identifier: Action.retry, title: "Retry", options: [],
+        // Retry and Play finish in the app (they open Downloads / the player), so they bring it to the front
+        // instead of queueing silently until the next time Duet is opened.
+        let retry = UNNotificationAction(identifier: Action.retry, title: "Retry", options: [.foreground],
                                          icon: UNNotificationActionIcon(systemImageName: "arrow.clockwise"))
-        let play = UNNotificationAction(identifier: Action.play, title: "Play", options: [],
+        let play = UNNotificationAction(identifier: Action.play, title: "Play", options: [.foreground],
                                         icon: UNNotificationActionIcon(systemImageName: "play.fill"))
         let reply = UNTextInputNotificationAction(identifier: Action.reply, title: "Reply", options: [],
                                                   icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
