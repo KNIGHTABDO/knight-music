@@ -2,28 +2,40 @@ import Foundation
 import GRDB
 
 /// One background-built index shared by every visible YouTube list. No network or row-level DB reads.
+/// Holds only the matching columns, so matched songs must be re-read in full before playing them.
 struct YouTubeLibraryIndex: Sendable, Equatable {
-    let revision: UUID
+    /// Content hash of the indexed rows: identical rebuilds compare equal and don't invalidate views.
+    let revision: Int
     private var titles: [String: [Song]]
     private var videoIDs: [String: Song]
 
-    static let empty = YouTubeLibraryIndex(revision: UUID(), titles: [:], videoIDs: [:])
+    private nonisolated(unsafe) static let videoIDRegex = try! NSRegularExpression(pattern: #"\[([A-Za-z0-9_-]{11})\]"#)
+
+    static let empty = YouTubeLibraryIndex(revision: 0, titles: [:], videoIDs: [:])
 
     init(songs: [Song]) {
-        revision = UUID()
+        var hasher = Hasher()
         titles = [:]
         videoIDs = [:]
         for song in songs where !song.isYouTube {
+            hasher.combine(song.id)
+            hasher.combine(song.title)
+            hasher.combine(song.artist)
+            hasher.combine(song.album)
+            hasher.combine(song.duration)
+            hasher.combine(song.path)
             titles[Self.titleKey(song.title), default: []].append(song)
             // Imports retain the source video ID in yt-dlp's [id] filename.
             if let path = song.path,
-               let range = path.range(of: #"\[[A-Za-z0-9_-]{11}\]"#, options: .regularExpression) {
-                videoIDs[String(path[range].dropFirst().dropLast())] = song
+               let match = Self.videoIDRegex.firstMatch(in: path, range: NSRange(path.startIndex..., in: path)),
+               let range = Range(match.range(at: 1), in: path) {
+                videoIDs[String(path[range])] = song
             }
         }
+        revision = hasher.finalize()
     }
 
-    private init(revision: UUID, titles: [String: [Song]], videoIDs: [String: Song]) {
+    private init(revision: Int, titles: [String: [Song]], videoIDs: [String: Song]) {
         self.revision = revision
         self.titles = titles
         self.videoIDs = videoIDs
@@ -67,7 +79,9 @@ struct YouTubeLibraryIndex: Sendable, Equatable {
 extension LibraryRepository {
     func youTubeLibraryIndex() -> LiveQuery<YouTubeLibraryIndex> {
         query("youtube-library-index", initial: .empty) { db in
-            YouTubeLibraryIndex(songs: try Song.fetchAll(db))
+            // Only the matched columns, so play counts, stars and ratings don't rebuild the index.
+            YouTubeLibraryIndex(songs: try Song.fetchAll(
+                db, sql: "SELECT id, title, artist, album, duration, path FROM song ORDER BY id"))
         }
     }
 }

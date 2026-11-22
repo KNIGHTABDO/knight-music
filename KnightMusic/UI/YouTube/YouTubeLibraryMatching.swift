@@ -20,11 +20,12 @@ extension EnvironmentValues {
 struct YouTubeLibraryMatching: ViewModifier {
     let songs: [Song]
     @Environment(\.youTubeLibraryIndex) private var index
+    @Environment(LibraryRepository.self) private var library
     @State private var matches: [String: Song] = [:]
 
     private struct Request: Equatable {
         let songs: [Song]
-        let revision: UUID
+        let revision: Int
     }
 
     func body(content: Content) -> some View {
@@ -35,7 +36,11 @@ struct YouTubeLibraryMatching: ViewModifier {
                 let sources = songs
                 let found = await Task.detached(priority: .userInitiated) { snapshot.matches(sources) }.value
                 guard !Task.isCancelled else { return }
-                matches = found
+                // The index only keeps matching columns; play the full, current rows.
+                let rows = await library.songs(ids: Array(Set(found.values.map(\.id))))
+                let full = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                guard !Task.isCancelled else { return }
+                matches = found.compactMapValues { full[$0.id] }
             }
     }
 }

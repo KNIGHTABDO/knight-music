@@ -38,28 +38,24 @@ final class ArrivalWatcher {
 
     // MARK: - Normalization & Matching
 
+    // Compiled once: `normalize` runs for every library song whenever the YouTube index rebuilds.
+    private nonisolated(unsafe) static let bracketRegex = try! NSRegularExpression(pattern: "\\[[^\\]]*\\]")
+    private nonisolated(unsafe) static let parenRegex = try! NSRegularExpression(pattern: "\\([^\\)]*\\)")
+    private nonisolated(unsafe) static let featRegex = try! NSRegularExpression(
+        pattern: "\\b(?:feat|ft|featuring)\\b\\.?[^,;]*", options: [.caseInsensitive])
+    private nonisolated(unsafe) static let artistSeparatorRegex = try! NSRegularExpression(
+        pattern: "[,;/&+]|\\b(?:feat\\.?|ft\\.?|featuring|vs\\.?|with|and)\\b", options: [.caseInsensitive])
+
     /// Normalizes a string for matching: lowercase, strip diacritics, remove "(feat. …)", "[…]", "(…)",
     /// punctuation, quotes, and extra whitespace.
     nonisolated static func normalize(_ string: String) -> String {
         var text = string.lowercased()
         text = text.folding(options: .diacriticInsensitive, locale: .current)
 
-        // Remove bracketed content: [...]
-        if let bracketRegex = try? NSRegularExpression(pattern: "\\[[^\\]]*\\]", options: []) {
+        // Remove bracketed content [...], parenthetical content (...), then unparenthesized feature credits.
+        for regex in [Self.bracketRegex, Self.parenRegex, Self.featRegex] {
             let range = NSRange(text.startIndex..., in: text)
-            text = bracketRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
-        }
-
-        // Remove parenthetical content: (...)
-        if let parenRegex = try? NSRegularExpression(pattern: "\\([^\\)]*\\)", options: []) {
-            let range = NSRange(text.startIndex..., in: text)
-            text = parenRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
-        }
-
-        // Remove unparenthesized feature credits: feat., ft., featuring
-        if let featRegex = try? NSRegularExpression(pattern: "\\b(?:feat|ft|featuring)\\b\\.?[^,;]*", options: [.caseInsensitive]) {
-            let range = NSRange(text.startIndex..., in: text)
-            text = featRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
+            text = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
         }
 
         // Strip quotes and apostrophes completely
@@ -85,7 +81,6 @@ final class ArrivalWatcher {
     /// Handles multiple artists separated by "/", ",", ";", "&", "+", or feature credits.
     nonisolated static func extractArtistTokens(_ artist: String) -> [String] {
         let raw = artist.lowercased().folding(options: .diacriticInsensitive, locale: .current)
-        let separatorPattern = "[,;/&+]|\\b(?:feat\\.?|ft\\.?|featuring|vs\\.?|with|and)\\b"
 
         var tokens: [String] = []
         let fullNormalized = normalize(artist)
@@ -93,10 +88,7 @@ final class ArrivalWatcher {
             tokens.append(fullNormalized)
         }
 
-        guard let regex = try? NSRegularExpression(pattern: separatorPattern, options: [.caseInsensitive]) else {
-            return tokens
-        }
-
+        let regex = Self.artistSeparatorRegex
         let range = NSRange(raw.startIndex..., in: raw)
         let replaced = regex.stringByReplacingMatches(in: raw, options: [], range: range, withTemplate: "|||")
         let parts = replaced.components(separatedBy: "|||")

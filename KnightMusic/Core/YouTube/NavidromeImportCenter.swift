@@ -474,12 +474,16 @@ final class NavidromeImportCenter {
         "remaster", "remastered", "extended", "radio edit", "edit", "cover", "version", "mix", "8d", "bass boosted",
         "unplugged", "demo", "a cappella", "acapella", "karaoke", "orchestral", "piano",
     ]
+    private nonisolated(unsafe) static let versionPatterns: [(word: String, regex: NSRegularExpression)] = versionWords.map { word in
+        (word, try! NSRegularExpression(pattern: "\\b\(NSRegularExpression.escapedPattern(for: word))\\b"))
+    }
 
     /// The version markers in a title ("slowed", "reverb", "remix"…), so "Song" and "Song (Slowed + Reverb)" differ.
     nonisolated static func versionTags(_ title: String) -> Set<String> {
         let lower = title.lowercased()
-        return Set(versionWords.filter { word in
-            lower.range(of: "\\b\(NSRegularExpression.escapedPattern(for: word))\\b", options: .regularExpression) != nil
+        let range = NSRange(lower.startIndex..., in: lower)
+        return Set(versionPatterns.compactMap { pattern in
+            pattern.regex.firstMatch(in: lower, range: range) == nil ? nil : pattern.word
         })
     }
 
