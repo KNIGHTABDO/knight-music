@@ -6,6 +6,8 @@ final class RemoteCommands {
     private weak var engine: PlayerEngine?
     private var targets: [(MPRemoteCommand, Any)] = []
     private var seekTask: Task<Void, Never>?
+    /// Bumped whenever a seek loop is cancelled or started, so a finishing old loop never clears a newer one's handle.
+    private var seekGeneration = 0
 
     init(engine: PlayerEngine) {
         self.engine = engine
@@ -65,6 +67,7 @@ final class RemoteCommands {
     }
 
     func cancelSeeking() {
+        seekGeneration += 1
         seekTask?.cancel()
         seekTask = nil
     }
@@ -74,15 +77,18 @@ final class RemoteCommands {
         switch seekEvent.type {
         case .beginSeeking:
             cancelSeeking()
+            seekGeneration += 1
+            let generation = seekGeneration
             seekTask = Task { @MainActor [weak self, weak engine] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(350))
                     guard !Task.isCancelled, let engine else { break }
                     let maxTime = max(0, engine.duration - 1)
                     let newTime = min(max(engine.currentTime + delta, 0), maxTime)
+                    guard newTime != engine.currentTime else { break }
                     engine.seek(to: newTime)
                 }
-                self?.seekTask = nil
+                if self?.seekGeneration == generation { self?.seekTask = nil }
             }
         case .endSeeking:
             cancelSeeking()
