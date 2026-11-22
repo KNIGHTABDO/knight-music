@@ -53,6 +53,8 @@ final class DownloadManager {
 
     let directory: URL
     @ObservationIgnored var database: DatabaseWriter?
+    /// Called with (songId, ownerId) once a download is verified and saved, e.g. to cache its lyrics for offline.
+    @ObservationIgnored var onSongDownloaded: (@MainActor (String, String) -> Void)?
     @ObservationIgnored private var services = PlaybackServices()
     @ObservationIgnored private var session: URLSession!
     @ObservationIgnored private let delegate: DownloadSessionDelegate
@@ -829,6 +831,7 @@ final class DownloadManager {
                 self.statuses[id] = DownloadStatus(state: .completed, progress: 1, bytes: byteCount, errorMessage: nil)
                 TransferReceiptStore.remove(receipt, under: self.directory)
                 self.startQueued()
+                self.onSongDownloaded?(id, owner)
             } catch {
                 PlaybackLog.logger.error("Finalizing download failed: \(error.localizedDescription)")
                 if verified { self.discardIfAbandoned(receipt) }

@@ -3,6 +3,7 @@ import SwiftUI
 struct AlbumsView: View {
     @Environment(AppModel.self) private var app
     @Environment(LibraryRepository.self) private var library
+    @Environment(DownloadManager.self) private var downloads
     @State private var searchText = ""
     @State private var debouncedSearchText = ""
     @State private var sortOrder: AlbumSort = .name
@@ -11,6 +12,9 @@ struct AlbumsView: View {
     @AppStorage("albums.layout") private var layout: LibraryLayout = .grid
     @AppStorage("albums.favoritesOnly") private var favoritesOnly = false
     @AppStorage("albums.descending") private var descending = false
+    @AppStorage("albums.downloadedOnly") private var downloadedOnly = false
+    /// Albums with at least one downloaded song; nil until read for the current downloads.
+    @State private var downloadedAlbumIds: Set<String>?
 
     private var hasLetterSections: Bool {
         sortOrder == .name || sortOrder == .artist
@@ -21,7 +25,7 @@ struct AlbumsView: View {
         let loaded = query.isLoaded ? query.value : (hasLoadedInitial ? previousAlbums : query.value)
         let albums = refine(loaded)
         let sections = descending ? Array(letterSections(from: albums).reversed()) : letterSections(from: albums)
-        let showSkeleton = !query.isLoaded && !hasLoadedInitial
+        let showSkeleton = (!query.isLoaded && !hasLoadedInitial) || (downloadedOnly && downloadedAlbumIds == nil)
 
         let isScrubberVisible = hasLetterSections && sections.count > 1 && (query.isLoaded || hasLoadedInitial)
 
@@ -35,10 +39,11 @@ struct AlbumsView: View {
                         title: "No Albums",
                         systemImage: "square.stack",
                         message: emptyMessage,
-                        actionTitle: favoritesOnly ? "Show All Albums" : (searchText.isEmpty ? "Sync Now" : nil),
+                        actionTitle: isFiltered ? "Show All Albums" : (searchText.isEmpty ? "Sync Now" : nil),
                         action: {
-                            if favoritesOnly {
+                            if isFiltered {
                                 favoritesOnly = false
+                                downloadedOnly = false
                             } else {
                                 Task { await app.pullToRefresh() }
                             }
@@ -107,6 +112,12 @@ struct AlbumsView: View {
                 hasLoadedInitial = true
             }
         }
+        .task(id: downloadedOnly ? downloads.downloadedSongIds : nil) {
+            guard downloadedOnly else { downloadedAlbumIds = nil; return }
+            let songs = await downloads.downloadedSongs()
+            guard !Task.isCancelled else { return }
+            downloadedAlbumIds = Set(songs.compactMap(\.albumId))
+        }
         .refreshable { await app.pullToRefresh() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -134,9 +145,12 @@ struct AlbumsView: View {
                         Toggle(isOn: $favoritesOnly) {
                             Label("Favorites Only", systemImage: "heart")
                         }
+                        Toggle(isOn: $downloadedOnly) {
+                            Label("Downloaded Only", systemImage: "arrow.down.circle")
+                        }
                     }
                 } label: {
-                    Image(systemName: favoritesOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    Image(systemName: isFiltered ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 }
             }
         }
@@ -178,12 +192,16 @@ struct AlbumsView: View {
     }
 
     private func refine(_ albums: [Album]) -> [Album] {
-        let filtered = favoritesOnly ? albums.filter { $0.starred != nil } : albums
+        var filtered = favoritesOnly ? albums.filter { $0.starred != nil } : albums
+        if downloadedOnly, let downloadedAlbumIds { filtered = filtered.filter { downloadedAlbumIds.contains($0.id) } }
         return descending ? filtered.reversed() : filtered
     }
 
+    private var isFiltered: Bool { favoritesOnly || downloadedOnly }
+
     private var emptyMessage: String {
         if !searchText.isEmpty { return "No results for “\(searchText)”." }
+        if downloadedOnly { return "No downloaded albums. Turn off the Downloaded filter to see everything." }
         return favoritesOnly ? "No favorite albums. Turn off the Favorites filter to see everything." : "No albums in your library."
     }
 

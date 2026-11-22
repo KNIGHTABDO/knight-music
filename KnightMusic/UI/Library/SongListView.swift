@@ -67,7 +67,8 @@ struct SongListView: View {
                                 showsArtwork: true,
                                 isPlaying: player.currentSong?.id == song.id,
                                 isPaused: !player.isPlaying,
-                                isDownloaded: downloads.isDownloaded(song.id)
+                                isDownloaded: downloads.isDownloaded(song.id),
+                                isDimmed: app.isOffline && !player.isPlayable(song)
                             ) {
                                 SongActionsMenu(song: song)
                             }

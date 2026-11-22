@@ -11,10 +11,12 @@ struct SongsView: View {
     @State private var sort: SongSort = .title
     @State private var hasLoadedInitial = false
     @State private var previousSongs: [Song] = []
+    @AppStorage("songs.downloadedOnly") private var downloadedOnly = false
 
     var body: some View {
         let query = library.songs(sort: sort, search: debouncedSearchText)
-        let songs = query.isLoaded ? query.value : (hasLoadedInitial ? previousSongs : query.value)
+        let loaded = query.isLoaded ? query.value : (hasLoadedInitial ? previousSongs : query.value)
+        let songs = downloadedOnly ? loaded.filter { downloads.isDownloaded($0.id) } : loaded
         let showSkeleton = !query.isLoaded && !hasLoadedInitial
 
         Group {
@@ -29,9 +31,15 @@ struct SongsView: View {
                 EmptyStateView(
                     title: "No Songs",
                     systemImage: "music.note",
-                    message: searchText.isEmpty ? "No songs in your library." : "No results for “\(searchText)”.",
-                    actionTitle: "Sync Now",
-                    action: { Task { await app.pullToRefresh() } }
+                    message: emptyMessage,
+                    actionTitle: downloadedOnly ? "Show All Songs" : "Sync Now",
+                    action: {
+                        if downloadedOnly {
+                            downloadedOnly = false
+                        } else {
+                            Task { await app.pullToRefresh() }
+                        }
+                    }
                 )
             } else {
                 List {
@@ -71,7 +79,8 @@ struct SongsView: View {
                                 showsArtwork: true,
                                 isPlaying: player.currentSong?.id == song.id,
                                 isPaused: !player.isPlaying,
-                                isDownloaded: downloads.isDownloaded(song.id)
+                                isDownloaded: downloads.isDownloaded(song.id),
+                                isDimmed: app.isOffline && !player.isPlayable(song)
                             ) {
                                 SongActionsMenu(song: song)
                             }
@@ -148,11 +157,21 @@ struct SongsView: View {
                         Text("Recently Added").tag(SongSort.recentlyAdded)
                         Text("Most Played").tag(SongSort.mostPlayed)
                     }
+                    Section("Filter") {
+                        Toggle(isOn: $downloadedOnly) {
+                            Label("Downloaded Only", systemImage: "arrow.down.circle")
+                        }
+                    }
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
+                    Image(systemName: downloadedOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 }
             }
         }
         .observing(query)
+    }
+
+    private var emptyMessage: String {
+        if !searchText.isEmpty { return "No results for “\(searchText)”." }
+        return downloadedOnly ? "No downloaded songs. Turn off the Downloaded filter to see everything." : "No songs in your library."
     }
 }

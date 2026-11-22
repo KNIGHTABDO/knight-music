@@ -75,6 +75,13 @@ final class AppModel {
         player = PlayerEngine()
         network.onChange = { [weak self] in self?.networkChanged() }
         library.isOfflineProvider = { [weak self] in self?.isOffline ?? false }
+        downloads.onSongDownloaded = { [weak self] songId, ownerId in
+            // Synced lyrics go into the local cache alongside the offline audio.
+            Task(priority: .background) { @MainActor in
+                guard let self, self.activeAccount?.id.uuidString == ownerId else { return }
+                _ = await self.library.lyrics(songId: songId)
+            }
+        }
         NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.library.dropCaches() }
         }

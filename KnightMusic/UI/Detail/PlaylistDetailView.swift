@@ -283,7 +283,8 @@ struct PlaylistDetailView: View {
                 showsArtwork: true,
                 isPlaying: isPlaying,
                 isPaused: isPaused,
-                isDownloaded: isDownloaded
+                isDownloaded: isDownloaded,
+                isDimmed: app.isOffline && !player.isPlayable(song)
             ) {
                 SongActionsMenu(song: song)
                 if isOwned {

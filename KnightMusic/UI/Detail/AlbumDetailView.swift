@@ -242,7 +242,8 @@ struct AlbumDetailView: View {
                 leading: .trackNumber(song.track),
                 isPlaying: isPlaying,
                 isPaused: isPlaying && !player.isPlaying,
-                isDownloaded: downloads.isDownloaded(song.id)
+                isDownloaded: downloads.isDownloaded(song.id),
+                isDimmed: app.isOffline && !player.isPlayable(song)
             ) {
                 SongActionsMenu(song: song)
             }

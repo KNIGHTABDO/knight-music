@@ -34,10 +34,10 @@ struct SongRow<MenuContent: View>: View {
     }
 
     init(song: Song, showsArtwork: Bool = true, isPlaying: Bool = false, isPaused: Bool = false,
-         isDownloaded: Bool = false, @ViewBuilder menu: () -> MenuContent) {
+         isDownloaded: Bool = false, isDimmed: Bool = false, @ViewBuilder menu: () -> MenuContent) {
         self.init(title: song.title, subtitle: song.artist, duration: song.durationSeconds,
                   leading: showsArtwork ? .artwork(song.coverArt) : .trackNumber(song.track),
-                  isPlaying: isPlaying, isPaused: isPaused, isDownloaded: isDownloaded, menu: menu)
+                  isPlaying: isPlaying, isPaused: isPaused, isDownloaded: isDownloaded, isDimmed: isDimmed, menu: menu)
     }
 
     var body: some View {
