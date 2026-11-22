@@ -166,7 +166,7 @@ struct QueueView: View {
                 }
             }
 
-            // Shuffle · Repeat · AutoMix, as in Apple Music's queue
+            // Shuffle · Repeat · AutoMix · Autoplay, as in Apple Music's queue
             GlassEffectContainer(spacing: 8) {
                 HStack(spacing: 8) {
                     queueToggle(systemImage: "shuffle", title: "Shuffle", isOn: player.shuffleEnabled) {
@@ -180,6 +180,12 @@ struct QueueView: View {
                         settings.autoMixEnabled.toggle()
                     }
                     .accessibilityHint("Blends songs into each other with beat-matched transitions")
+                    queueToggle(systemImage: "infinity", title: nil, isOn: settings.autoplayEnabled) {
+                        settings.autoplayEnabled.toggle()
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityLabel("Autoplay")
+                    .accessibilityHint("Keeps playing similar songs when the queue ends")
                 }
             }
 
@@ -194,7 +200,7 @@ struct QueueView: View {
         .padding(.vertical, 10)
     }
 
-    private func queueToggle(systemImage: String, title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+    private func queueToggle(systemImage: String, title: String?, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.impact(.light)
             action()
@@ -203,8 +209,10 @@ struct QueueView: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 13, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                if let title {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                }
             }
             .foregroundStyle(isOn ? Theme.accent : Color.white)
             .padding(.horizontal, 12)

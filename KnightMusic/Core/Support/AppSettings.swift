@@ -52,6 +52,8 @@ final class AppSettings {
     var autoMixEnabled: Bool { didSet { save(autoMixEnabled, "autoMixEnabled") } }
     /// Consecutive tracks of one album, played in order, keep the album's own transitions instead of mixing.
     var autoMixKeepsAlbums: Bool { didSet { save(autoMixKeepsAlbums, "autoMixKeepsAlbums") } }
+    /// Autoplay (∞): keep playing similar songs when the queue ends.
+    var autoplayEnabled: Bool { didSet { save(autoplayEnabled, "autoplayEnabled") } }
     var replayGainMode: ReplayGainMode { didSet { save(replayGainMode.rawValue, "replayGainMode") } }
     var scrobblingEnabled: Bool { didSet { save(scrobblingEnabled, "scrobblingEnabled") } }
     var animatedArtworkEnabled: Bool { didSet { save(animatedArtworkEnabled, "animatedArtworkEnabled") } }
@@ -89,6 +91,7 @@ final class AppSettings {
         gaplessEnabled = bool("gaplessEnabled", true)
         autoMixEnabled = bool("autoMixEnabled", true)
         autoMixKeepsAlbums = bool("autoMixKeepsAlbums", true)
+        autoplayEnabled = bool("autoplayEnabled", false)
         replayGainMode = ReplayGainMode(rawValue: string("replayGainMode", "")) ?? .off
         scrobblingEnabled = bool("scrobblingEnabled", true)
         animatedArtworkEnabled = bool("animatedArtworkEnabled", true)
@@ -124,6 +127,7 @@ final class AppSettings {
         gaplessEnabled = fresh.gaplessEnabled
         autoMixEnabled = fresh.autoMixEnabled
         autoMixKeepsAlbums = fresh.autoMixKeepsAlbums
+        autoplayEnabled = fresh.autoplayEnabled
         replayGainMode = fresh.replayGainMode
         scrobblingEnabled = fresh.scrobblingEnabled
         animatedArtworkEnabled = fresh.animatedArtworkEnabled

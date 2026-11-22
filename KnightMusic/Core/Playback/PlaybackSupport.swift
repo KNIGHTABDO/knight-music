@@ -36,6 +36,8 @@ struct PlaybackSettings: Equatable, Sendable {
     /// Apple-Music-style AutoMix: beat-matched transitions planned by the server.
     var autoMix: Bool = true
     var autoMixKeepsAlbums: Bool = true
+    /// Autoplay (∞): when the queue runs low (repeat off), keep it going with similar songs.
+    var autoplay: Bool = false
     var replayGain: ReplayGainMode = .off
     var scrobblingEnabled: Bool = true
     var offlineMode: Bool = false

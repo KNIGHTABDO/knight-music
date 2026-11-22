@@ -333,6 +333,7 @@ final class PlayerEngine {
         if tracked != nil { prepareNext() }
         applySpeed()
         syncCache()
+        refillStationIfNeeded()
     }
 
     /// Pushes the EQ to the audio taps; songs already loaded get a tap when the EQ is switched on.
@@ -593,6 +594,7 @@ final class PlayerEngine {
         prepareNext()
         remote?.refresh()
         saveQueueSoon()
+        refillStationIfNeeded()
     }
 
     func toggleStarCurrent() {

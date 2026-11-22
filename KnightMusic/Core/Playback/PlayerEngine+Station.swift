@@ -6,6 +6,14 @@ import GRDB
 extension PlayerEngine {
     private static let stationBatch = 25
     private static let stationLowWater = 3
+    private static let autoplayLowWater = 2
+
+    /// A station, or Autoplay (∞) continuing a finite library/YouTube queue with similar songs.
+    private var autoRefillLowWater: Int? {
+        if stationSeed != nil { return Self.stationLowWater }
+        if settings.autoplay, repeatMode == .off, currentRadio == nil { return Self.autoplayLowWater }
+        return nil
+    }
 
     func startStation(from song: Song) async {
         stationRefillTask?.cancel()
@@ -28,15 +36,15 @@ extension PlayerEngine {
     }
 
     func refillStationIfNeeded() {
-        guard stationSeed != nil, stationRefillTask == nil, let current = currentSong,
-              order.count - currentIndex - 1 < Self.stationLowWater else { return }
+        guard let lowWater = autoRefillLowWater, stationRefillTask == nil, let current = currentSong,
+              order.count - currentIndex - 1 < lowWater else { return }
         stationRefillTask = Task { [weak self] in
             guard let self else { return }
             let known = Set(self.order.map(\.song.id))
             let picks = await self.stationSongs(after: current, excluding: known)
             guard !Task.isCancelled else { return }
             self.stationRefillTask = nil
-            guard self.stationSeed != nil, !picks.isEmpty else { return }
+            guard self.autoRefillLowWater != nil, self.currentSong != nil, !picks.isEmpty else { return }
             self.enqueue(picks, next: false)
         }
     }

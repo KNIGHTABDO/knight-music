@@ -112,6 +112,7 @@ extension AppModel {
             s.gapless = self.settings.gaplessEnabled
             s.autoMix = self.settings.autoMixEnabled
             s.autoMixKeepsAlbums = self.settings.autoMixKeepsAlbums
+            s.autoplay = self.settings.autoplayEnabled
             s.replayGain = ReplayGainMode(rawValue: self.settings.replayGainMode.rawValue) ?? .off
             s.scrobblingEnabled = self.settings.scrobblingEnabled
             s.offlineMode = self.isOffline
@@ -208,6 +209,7 @@ extension AppModel {
             _ = settings.gaplessEnabled
             _ = settings.autoMixEnabled
             _ = settings.autoMixKeepsAlbums
+            _ = settings.autoplayEnabled
             _ = settings.replayGainMode
             _ = settings.scrobblingEnabled
             _ = settings.syncPlayQueueWithServer
