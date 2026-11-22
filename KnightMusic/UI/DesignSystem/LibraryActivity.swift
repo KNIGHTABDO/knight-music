@@ -28,8 +28,13 @@ extension View {
     }
 
     /// Opens routes from `knightmusic://album/<id>` (and artist / playlist), Spotlight results and continued activities.
-    func libraryDeepLinks(_ open: @escaping (Route) -> Void) -> some View {
-        self
+    /// Brings Knight Music forward first, so the route isn't opened behind Streamora.
+    func libraryDeepLinks(_ openRoute: @escaping (Route) -> Void) -> some View {
+        let open: (Route) -> Void = { route in
+            DuetCoordinator.shared.open(.music)
+            openRoute(route)
+        }
+        return self
             .onOpenURL { url in
                 guard url.scheme?.lowercased() == "knightmusic", let host = url.host?.lowercased() else { return }
                 if host == "recognize" {
