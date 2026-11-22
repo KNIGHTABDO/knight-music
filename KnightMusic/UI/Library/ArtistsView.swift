@@ -19,6 +19,7 @@ struct ArtistsView: View {
         let source = query.isLoaded ? query.value : previousArtists
         let allArtists = sortedArtists(favoritesOnly ? source.filter { $0.starred != nil } : source)
         let sections = Sectioning.byFirstLetter(allArtists, letterFor: \.name)
+        let isScrubberVisible = sortOrder == .name && sections.count > 1 && query.isLoaded
 
         ScrollViewReader { proxy in
             Group {
@@ -49,7 +50,7 @@ struct ArtistsView: View {
                         ForEach(sections) { section in
                             Section {
                                 ForEach(section.items) { artist in
-                                    artistRow(artist)
+                                    artistRow(artist, clearsScrubber: isScrubberVisible)
                                 }
                             } header: {
                                 Text(section.letter)
@@ -71,7 +72,7 @@ struct ArtistsView: View {
             .scrollContentBackground(.hidden)
             .background(Theme.background.ignoresSafeArea())
             .overlay(alignment: .trailing) {
-                if sortOrder == .name && sections.count > 1 && query.isLoaded {
+                if isScrubberVisible {
                     AlphabetIndexScrubber(
                         activeLetters: Set(sections.map(\.letter))
                     ) { letter in
@@ -117,7 +118,7 @@ struct ArtistsView: View {
     }
 
     @ViewBuilder
-    private func artistRow(_ artist: Artist) -> some View {
+    private func artistRow(_ artist: Artist, clearsScrubber: Bool = false) -> some View {
         ZStack {
             NavigationLink(value: Route.artist(artist.id)) {
                 EmptyView()
@@ -126,6 +127,8 @@ struct ArtistsView: View {
 
             ArtistRow(artist: artist)
                 .padding(.vertical, 4)
+                // Keeps the chevron out from under the trailing A–Z index.
+                .padding(.trailing, clearsScrubber ? 24 : 0)
         }
         .listRowBackground(Color.clear)
         .contextMenu {
