@@ -704,8 +704,11 @@ extension PlayerEngine {
             guard let self, let p else { return }
             defer { if self.handoffRetryTarget === p { self.handoffRetryTarget = nil } }
             let ok = await self.retryCurrentStreamAfterHandoff(for: p, reason: reason)
-            if !ok, p === self.tracked, p.item.status == .failed {
-                self.finishFailedItem(p, message: p.item.error?.localizedDescription ?? "Unknown playback error")
+            // failedToPlayToEndTime leaves item.status at .readyToPlay, so the deferred record decides, not status.
+            let deferred = p.deferredFailureMessage
+            p.deferredFailureMessage = nil
+            if !ok, p === self.tracked, deferred != nil || p.item.status == .failed {
+                self.finishFailedItem(p, message: p.item.error?.localizedDescription ?? deferred ?? "Unknown playback error")
             }
         }
     }
@@ -738,7 +741,10 @@ extension PlayerEngine {
             let addressChanged = services.currentBaseURL?() != trackedBaseURL
             if pathChanged || addressChanged {
                 // A retry already running for this item reloads it, or finishes it as failed if it can't.
-                guard handoffRetryTarget !== p else { return }
+                guard handoffRetryTarget !== p else {
+                    p.deferredFailureMessage = message
+                    return
+                }
                 PlaybackLog.logger.info("Current stream item failed during network/address change: attempting handoff retry")
                 startHandoffRetry(for: p, reason: "stream item failed with network/address change")
                 return

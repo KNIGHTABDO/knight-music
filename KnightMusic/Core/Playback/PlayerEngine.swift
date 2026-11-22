@@ -45,6 +45,8 @@ final class PreparedItem {
     var isRadio: Bool { resolved.kind == .radio }
     /// Set when the item is an AutoMix incoming song with its blend tempo baked in (item time ≠ song time).
     var warp: TimeWarp?
+    /// A failure handed to the running handoff retry; the retry finishes it with this message if it can't reload.
+    var deferredFailureMessage: String?
     /// Startup bookkeeping: when play was asked for (for the time-to-first-sound log), how many times a stalled
     /// start was nudged, and whether upcoming YouTube songs were already resolved ahead.
     var startRequestedAt: TimeInterval?
