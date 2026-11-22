@@ -32,8 +32,17 @@ final class ToastWindow {
         switch interfaceStyle {
         case .light: return .darkContent
         case .dark: return .lightContent
-        default: return .default
+        default:
+            // The HUD window is forced dark, so `.default` would resolve to light content; use the system style.
+            return systemInterfaceStyle == .light ? .darkContent : .lightContent
         }
+    }
+
+    /// The scene's own style; window overrides don't change it.
+    private var systemInterfaceStyle: UIUserInterfaceStyle {
+        let scene = window?.windowScene
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        return scene?.traitCollection.userInterfaceStyle ?? .dark
     }
 
     /// Visible only while a toast is up, so an idle topmost window never owns the status bar.
