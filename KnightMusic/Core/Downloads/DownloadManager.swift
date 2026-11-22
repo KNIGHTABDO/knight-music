@@ -414,7 +414,62 @@ final class DownloadManager {
         }
         guard self.ownerId == ownerId, configurationEpoch == epoch else { return }
         receiptsReconciled = true
+        sweepUnreferencedFiles(ownerId: ownerId)
         startQueued()
+    }
+
+    /// Deletes audio and staging files of this account that no download row or receipt refers to any more
+    /// (left by removals that raced a finishing transfer, or by crashes). Fresh files are left alone so a
+    /// transfer landing right now is never touched.
+    private func sweepUnreferencedFiles(ownerId: String) {
+        let referencedPaths = Set(paths.values)
+        let referencedAttempts = Set(attempts.values)
+        let root = directory
+        Task.detached(priority: .utility) {
+            let fm = FileManager.default
+            let ownerFolder = root.appendingPathComponent(ownerId, isDirectory: true)
+            var keepAttempts = referencedAttempts
+            for receipt in (try? TransferReceiptStore.readAll(ownerId: ownerId, under: root)) ?? [] {
+                keepAttempts.insert(receipt.attemptId)
+            }
+            let cutoff = Date().addingTimeInterval(-600)
+            func sweep(_ folder: URL, relativePrefix: String) {
+                let files = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey])) ?? []
+                for file in files {
+                    guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
+                          values.isRegularFile == true,
+                          (values.contentModificationDate ?? .distantFuture) < cutoff else { continue }
+                    let name = file.lastPathComponent
+                    let attempt = String(name.prefix { $0 != "." })
+                    guard !keepAttempts.contains(attempt),
+                          !referencedPaths.contains(relativePrefix + name) else { continue }
+                    PlaybackLog.logger.info("Removing unreferenced download file \(relativePrefix + name)")
+                    try? fm.removeItem(at: file)
+                }
+            }
+            sweep(ownerFolder, relativePrefix: ownerId + "/")
+            sweep(ownerFolder.appendingPathComponent(".staging", isDirectory: true),
+                  relativePrefix: ownerId + "/.staging/")
+        }
+    }
+
+    /// Deletes a receipt together with the staged file it points at.
+    private func discardReceipt(_ receipt: TransferReceipt) {
+        if let stagedPath = receipt.stagedPath {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(stagedPath))
+        }
+        TransferReceiptStore.remove(receipt, under: directory)
+    }
+
+    /// After finalizing raced a removal or replacement of the same account's attempt, nothing owns the files
+    /// it may have just moved into place: delete them so they don't sit on disk forever.
+    private func discardIfAbandoned(_ receipt: TransferReceipt) {
+        guard ownerId == receipt.ownerId, attempts[receipt.songId] != receipt.attemptId else { return }
+        let rel = receipt.relativePath
+        if rel.hasPrefix(receipt.ownerId + "/"), rel.contains(receipt.attemptId), !rel.contains("..") {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(rel))
+        }
+        discardReceipt(receipt)
     }
 
     private func markRecoveryBlocked(ownerId: String, epoch: UInt64) {
@@ -589,6 +644,10 @@ final class DownloadManager {
             if let rel = paths[id], let ownerId, rel.hasPrefix(ownerId + "/"),
                let attempt = oldAttempts[id], rel.contains(attempt) {
                 doomedFiles.append(directory.appendingPathComponent(rel))
+                let ext = (rel as NSString).pathExtension
+                doomedFiles.append(directory.appendingPathComponent(ownerId, isDirectory: true)
+                    .appendingPathComponent(".staging", isDirectory: true)
+                    .appendingPathComponent("\(attempt).partial.\(ext)"))
             } else if oldAttempts[id] == nil, let rel = paths[id], !rel.isEmpty,
                       !rel.hasPrefix("/"), !rel.contains("..") {
                 doomedFiles.append(directory.appendingPathComponent(rel))
@@ -675,6 +734,7 @@ final class DownloadManager {
                 PlaybackLog.logger.error("Download failed (\(id)): \(failure)")
                 statuses[id] = DownloadStatus(state: .failed, progress: 0, bytes: 0, errorMessage: failure)
                 persist(id)
+                discardReceipt(receipt)
                 startQueued()
             } else {
                 statuses[id] = DownloadStatus(state: .downloading, progress: 1, bytes: receipt.bytes, errorMessage: nil)
@@ -733,7 +793,10 @@ final class DownloadManager {
                 verified = true
                 guard self.configurationEpoch == capturedConfiguration,
                       self.ownerId == owner, self.attemptEpochs[id] == epoch,
-                      self.attempts[id] == receipt.attemptId else { return }
+                      self.attempts[id] == receipt.attemptId else {
+                    self.discardIfAbandoned(receipt)
+                    return
+                }
                 let record = DownloadRecord(songId: id, state: DownloadState.completed.rawValue, progress: 1,
                                             bytes: byteCount, relativePath: receipt.relativePath,
                                             addedAt: self.addedAt[id] ?? Date(), errorMessage: nil,
@@ -768,6 +831,7 @@ final class DownloadManager {
                 self.startQueued()
             } catch {
                 PlaybackLog.logger.error("Finalizing download failed: \(error.localizedDescription)")
+                if verified { self.discardIfAbandoned(receipt) }
                 guard self.configurationEpoch == capturedConfiguration, self.ownerId == owner,
                       self.attemptEpochs[id] == epoch, self.attempts[id] == receipt.attemptId else { return }
                 self.active[id] = nil
@@ -778,6 +842,12 @@ final class DownloadManager {
                     self.statuses[id] = DownloadStatus(state: .failed, progress: 0, bytes: 0,
                                                        errorMessage: Self.unverifiableMessage)
                     self.persist(id)
+                    // A corrupt copy would be re-verified (and fail) on every launch; retry downloads afresh.
+                    let rel = receipt.relativePath
+                    if rel.hasPrefix(owner + "/"), rel.contains(receipt.attemptId), !rel.contains("..") {
+                        try? FileManager.default.removeItem(at: self.directory.appendingPathComponent(rel))
+                    }
+                    self.discardReceipt(receipt)
                 }
                 self.startQueued()
             }
