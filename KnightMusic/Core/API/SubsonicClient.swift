@@ -437,8 +437,20 @@ actor SubsonicClient {
         for attempt in 1...attempts {
             do {
                 let (data, response) = try await session.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 200
+                // Timeouts, rate limits and 5xx (often a reverse proxy whose backend is down) can be transient.
+                if Self.isRetryableHTTP(status), attempt < attempts {
+                    lastError = SubsonicError.http(status: status)
+                    Log.api.warning("\(endpoint) attempt \(attempt)/\(attempts) got HTTP \(status)")
+                    try await Task.sleep(nanoseconds: 400_000_000 * UInt64(attempt))
+                    continue
+                }
                 return try decode(data, response: response, endpoint: endpoint)
             } catch let error as SubsonicError {
+                // A dead backend or a different service on this address: let the app try the other addresses.
+                if case .http(let status) = error, status == 404 || (500...599).contains(status) {
+                    onTransportError?()
+                }
                 throw error
             } catch {
                 if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
@@ -449,6 +461,10 @@ actor SubsonicClient {
         }
         onTransportError?()
         throw SubsonicError.transport(lastError)
+    }
+
+    private nonisolated static func isRetryableHTTP(_ status: Int) -> Bool {
+        status == 408 || status == 429 || (500...599).contains(status)
     }
 
     private func decode<T: Decodable>(_ data: Data, response: URLResponse, endpoint: String) throws -> T {

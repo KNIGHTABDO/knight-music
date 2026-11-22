@@ -119,7 +119,13 @@ actor SyncEngine {
             }
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             Log.sync.error("sync failed: \(error)")
-            await status.finish(error: message, completedAt: nil)
+            let transport: Bool
+            if let subsonic = error as? SubsonicError {
+                if case .noReachableServer = subsonic { transport = true } else { transport = subsonic.isTransport }
+            } else {
+                transport = error is URLError
+            }
+            await status.finish(error: message, completedAt: nil, transportFailure: transport)
             return false
         }
 

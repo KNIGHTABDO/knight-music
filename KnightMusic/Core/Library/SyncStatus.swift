@@ -10,6 +10,9 @@ final class SyncStatus {
     private(set) var fraction: Double = 0
     private(set) var lastSyncAt: Date?
     private(set) var lastError: String?
+    /// True when `lastError` came from failing to reach the server (network, timeout, HTTP failure),
+    /// as opposed to e.g. bad credentials or a response the app couldn't read.
+    private(set) var isTransportFailure = false
 
     /// Only the engine that last called `begin` may publish; a torn-down account's run is ignored.
     @ObservationIgnored private var currentToken: UUID?
@@ -21,6 +24,7 @@ final class SyncStatus {
         self.phase = phase
         fraction = 0
         lastError = nil
+        isTransportFailure = false
     }
 
     func update(phase: String? = nil, fraction: Double? = nil, token: UUID? = nil) {
@@ -29,13 +33,14 @@ final class SyncStatus {
         if let fraction { self.fraction = max(self.fraction, min(1, fraction)) }
     }
 
-    func finish(error: String?, completedAt: Date?, token: UUID? = nil) {
+    func finish(error: String?, completedAt: Date?, transportFailure: Bool = false, token: UUID? = nil) {
         guard token == nil || token == currentToken else { return }
         isSyncing = false
         isInitialSync = false
         phase = ""
         fraction = error == nil ? 1 : fraction
         lastError = error
+        isTransportFailure = error != nil && transportFailure
         if let completedAt { lastSyncAt = completedAt }
     }
 
@@ -47,6 +52,7 @@ final class SyncStatus {
         fraction = 0
         lastSyncAt = nil
         lastError = nil
+        isTransportFailure = false
     }
 
     func restore(from database: LibraryDatabase) async {
@@ -63,7 +69,9 @@ struct SyncStatusHandle: Sendable {
 
     func begin(phase: String, initial: Bool) async { await status.begin(phase: phase, initial: initial, token: token) }
     func update(phase: String? = nil, fraction: Double? = nil) async { await status.update(phase: phase, fraction: fraction, token: token) }
-    func finish(error: String?, completedAt: Date?) async { await status.finish(error: error, completedAt: completedAt, token: token) }
+    func finish(error: String?, completedAt: Date?, transportFailure: Bool = false) async {
+        await status.finish(error: error, completedAt: completedAt, transportFailure: transportFailure, token: token)
+    }
 }
 
 enum SyncKey {

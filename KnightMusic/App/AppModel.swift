@@ -267,10 +267,7 @@ final class AppModel {
         }
     }
 
-    private var syncStatusIndicatesTransportFailure: Bool {
-        guard let message = syncStatus.lastError else { return false }
-        return message.contains("Could not reach") || message.contains("did not respond") || message.contains("not connected")
-    }
+    private var syncStatusIndicatesTransportFailure: Bool { syncStatus.isTransportFailure }
 
     private func networkChanged() {
         player.networkDidChange()
