@@ -21,26 +21,33 @@ final class DuetHUDWindow: UIWindow {
 /// Keeps the status bar the way the side underneath wants it while the HUD is the top window.
 final class DuetHUDHostingController: UIHostingController<DuetHUDView> {
     override var prefersStatusBarHidden: Bool { DuetCoordinator.shared.statusBarHidden }
-    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
+    override var preferredStatusBarStyle: UIStatusBarStyle { ToastWindow.shared.statusBarStyle }
 }
 
 struct DuetHUDView: View {
     @State private var duet = DuetCoordinator.shared
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// iPad: below the top tab bar. iPhone: above the tab bar and mini player, clear of navigation bars.
+    private var docksAtBottom: Bool { sizeClass == .compact }
 
     var body: some View {
         VStack {
+            if docksAtBottom { Spacer(minLength: 0) }
             if let prompt = duet.prompt {
                 DuetPromptPill(prompt: prompt)
                     .id(prompt.id)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
                         DuetCoordinator.shared.promptFrame = frame
                     }
-                    .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9, anchor: .top)))
+                    .transition(.move(edge: docksAtBottom ? .bottom : .top).combined(with: .opacity)
+                        .combined(with: .scale(scale: 0.9, anchor: docksAtBottom ? .bottom : .top)))
             }
-            Spacer(minLength: 0)
+            if !docksAtBottom { Spacer(minLength: 0) }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 6)
+        .padding(.top, sizeClass == .regular ? 64 : 6)
+        .padding(.bottom, docksAtBottom ? 120 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.snappy, value: duet.prompt?.id)
         .tint(LookStore.shared.accent)
